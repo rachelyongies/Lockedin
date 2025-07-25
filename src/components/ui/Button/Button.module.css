@@ -1,0 +1,265 @@
+/* Button Module CSS - Additional styles that complement Tailwind */
+
+/* CSS Custom Properties for theming */
+:root {
+  --color-primary-contrast: #0066cc;
+  --color-primary-contrast-dark: #003d7a;
+  --color-contrast-border: #000000;
+}
+
+/* Effect styles - Semantic naming for clarity */
+.withOverlayEffect::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.1), transparent);
+  opacity: 0;
+  transition: opacity 300ms ease;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.withOverlayEffect:hover::before {
+  opacity: 1;
+}
+
+/* Glass shine effect */
+.withGlassShine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom right, rgba(255, 255, 255, 0.05), transparent, transparent);
+  opacity: 0;
+  transition: opacity 300ms ease;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.withGlassShine:hover::after {
+  opacity: 1;
+}
+
+/* Enhanced focus ring for accessibility */
+.focusRing:focus-visible {
+  outline: none;
+  box-shadow: 
+    0 0 0 2px var(--background-dark, #0a0b0d),
+    0 0 0 4px var(--primary-500, #0ea5e9);
+}
+
+/* Loading state shimmer effect - Scoped to button elements */
+button.loadingShimmer,
+.btn.loadingShimmer {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Ripple animation - Scoped to button ripple containers */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.btn .rippleContainer .rippleEffect,
+button .rippleContainer .rippleEffect {
+  animation: ripple 0.4s ease-out;
+}
+
+/* Button variants that need CSS-only implementations */
+
+/* Gradient animation for animated variants */
+.withGradientAnimation {
+  background-size: 200% 200%;
+  animation: gradientShift 3s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Pulse effect for special states */
+.withPulseEffect {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Enhanced shadows for different button states */
+.shadowPrimary {
+  box-shadow: 
+    0 4px 14px 0 rgba(102, 126, 234, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.shadowPrimary:hover {
+  box-shadow: 
+    0 8px 25px 0 rgba(102, 126, 234, 0.3),
+    0 4px 10px 0 rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.shadowSuccess {
+  box-shadow: 
+    0 4px 14px 0 rgba(72, 187, 120, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.shadowSuccess:hover {
+  box-shadow: 
+    0 8px 25px 0 rgba(72, 187, 120, 0.3),
+    0 4px 10px 0 rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.shadowError {
+  box-shadow: 
+    0 4px 14px 0 rgba(245, 101, 101, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.shadowError:hover {
+  box-shadow: 
+    0 8px 25px 0 rgba(245, 101, 101, 0.3),
+    0 4px 10px 0 rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* State classes - Semantic naming */
+.isDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+  box-shadow: none;
+}
+
+.isDisabled::before,
+.isDisabled::after {
+  display: none;
+}
+
+.isLoading {
+  cursor: wait;
+  position: relative;
+}
+
+.isActive {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* High contrast mode support with CSS variables */
+@media (prefers-contrast: high) {
+  .btn,
+  button[class*="btn"] {
+    border-width: 2px;
+  }
+  
+  .btnPrimary {
+    background: var(--color-primary-contrast);
+    border-color: var(--color-primary-contrast-dark);
+  }
+  
+  .btnSecondary {
+    border-color: var(--color-contrast-border);
+    background: transparent;
+  }
+  
+  .btnGhost {
+    border: 1px solid currentColor;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  button[class*="btn"],
+  .withOverlayEffect::before,
+  .withGlassShine::after {
+    transition: none;
+    animation: none;
+  }
+  
+  .withGradientAnimation {
+    animation: none;
+    background-size: 100% 100%;
+  }
+  
+  .withPulseEffect {
+    animation: none;
+  }
+}
+
+/* Print styles - Limited use of !important for print media */
+@media print {
+  .btn,
+  button[class*="btn"] {
+    background: white !important;
+    color: black !important;
+    border: 1px solid black !important;
+    box-shadow: none;
+    transform: none;
+  }
+  
+  /* Hide decorative elements in print */
+  .withOverlayEffect::before,
+  .withGlassShine::after,
+  .rippleContainer {
+    display: none;
+  }
+}
+
+/* Dark mode enhancements */
+.dark {
+  --color-primary-contrast: #4d94ff;
+  --color-primary-contrast-dark: #0066cc;
+  --color-contrast-border: #ffffff;
+}
+
+/* Focus trap for modal buttons */
+.focusTrap:focus {
+  outline: 2px solid var(--primary-500, #0ea5e9);
+  outline-offset: 2px;
+}
+
+/* Hover lift effect */
+.hoverLift {
+  transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+}
+
+.hoverLift:hover:not(.isDisabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.15);
+}
+
+/* Active press effect */
+.activePress:active:not(.isDisabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+}
