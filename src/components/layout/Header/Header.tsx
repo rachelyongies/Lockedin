@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils/helpers';
 import { Button } from '@/components/ui/Button';
 import { QuickTooltip } from '@/components/ui/Tooltip';
+import { WalletConnector } from '@/components/ui/WalletConnector/WalletConnector';
 
 // Environment-based feature flags
 const FEATURES = {
@@ -254,11 +255,9 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
 
               {/* Wallet Connection */}
               <Suspense fallback={<WalletSkeleton />}>
-                <WalletConnection 
-                  walletState={walletState}
-                  walletActions={walletActions}
-                  formatAddress={formatAddress}
-                  environment={environment}
+                <WalletConnector 
+                  variant="primary"
+                  size="sm"
                 />
               </Suspense>
 
@@ -342,10 +341,10 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
 
                 {/* Mobile Wallet */}
                 <Suspense fallback={<div className="h-10 bg-background-tertiary animate-pulse rounded" />}>
-                  <MobileWalletConnection 
-                    walletState={walletState}
-                    walletActions={walletActions}
-                    environment={environment}
+                  <WalletConnector 
+                    variant="primary"
+                    size="sm"
+                    className="w-full"
                   />
                 </Suspense>
               </div>

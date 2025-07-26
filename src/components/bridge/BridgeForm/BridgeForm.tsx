@@ -7,6 +7,7 @@ import { SwapButton } from './SwapButton';
 import { BridgeDetails } from '../BridgeDetails';
 import { ActionButton } from '../ActionButton';
 import { useBridgeFormState } from './useBridgeFormState';
+import { TransactionMonitor } from '../TransactionFlow/TransactionMonitor';
 import { cn } from '@/lib/utils/helpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Token } from '@/types/bridge';
@@ -65,6 +66,11 @@ export function BridgeForm({
     fromAmount,
     setFromAmount,
     toAmount,
+    resolver,
+    setResolver,
+    timelock,
+    setTimelock,
+    setHtlcId,
     isValidAmount,
     balanceError,
     isSwapping,
@@ -75,8 +81,10 @@ export function BridgeForm({
     bridgeSuccess,
     handleSwapDirection,
     handleBridge,
+    handleInitiateSwap,
     resetForm,
-  } = useBridgeFormState({ onBridge, onQuoteError });
+    htlcId,
+  } = useBridgeFormState({ onBridge, onQuoteError, walletAddress });
 
   // UI state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -121,7 +129,7 @@ export function BridgeForm({
     return `${fromToken.symbol} → ${toToken.symbol}`;
   }, [fromToken, toToken]);
 
-  // Check if there's meaningful content to show details
+
   const shouldShowDetails = useMemo(() => {
     return quote || quoteLoading || (quoteError && fromToken && toToken && isValidAmount);
   }, [quote, quoteLoading, quoteError, fromToken, toToken, isValidAmount]);
@@ -223,6 +231,32 @@ export function BridgeForm({
               data-testid="bridge-to-card"
             />
 
+            {/* Timelock Input */}
+            <div className="space-y-2">
+              <label htmlFor="timelock" className="text-sm font-medium text-text-secondary">Timelock (seconds)</label>
+              <input
+                id="timelock"
+                type="number"
+                value={timelock}
+                onChange={(e) => setTimelock(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-background-secondary border border-border-primary rounded-md text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                min="3600"
+              />
+            </div>
+
+            {/* Resolver Address Input */}
+            <div className="space-y-2">
+              <label htmlFor="resolver" className="text-sm font-medium text-text-secondary">Resolver Address</label>
+              <input
+                id="resolver"
+                type="text"
+                value={resolver}
+                onChange={(e) => setResolver(e.target.value)}
+                className="w-full px-3 py-2 bg-background-secondary border border-border-primary rounded-md text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                placeholder="Enter resolver address"
+              />
+            </div>
+
             {/* Bridge Details with Enhanced UX */}
             <AnimatePresence>
               {shouldShowDetails && (
@@ -264,7 +298,7 @@ export function BridgeForm({
               onConnectWallet={onConnectWallet}
               onSwitchNetwork={onSwitchNetwork}
               onApprove={onApprove}
-              onBridge={handleBridge}
+              onBridge={handleInitiateSwap}
               onError={onError}
               onSuccess={onSuccess}
               data-testid="bridge-action-button"
@@ -289,6 +323,9 @@ export function BridgeForm({
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Transaction Monitor */}
+            <TransactionMonitor htlcId={htlcId} />
           </div>
         </div>
       </motion.div>

@@ -7,6 +7,8 @@ import { ToastContainer, useToast } from '@/components/ui/Toast';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useBridgeStore } from '@/store/useBridgeStore';
 import { Token } from '@/types/bridge';
+import { bridgeService } from '@/lib/services/bridge-service';
+import { WalletConnector } from '@/components/ui/WalletConnector/WalletConnector';
 
 export default function Home() {
   // Global state
@@ -36,17 +38,8 @@ export default function Home() {
 
   // Enhanced handlers with loading states
   const handleConnectWallet = async () => {
-    setConnecting(true);
-    try {
-      // Simulate wallet connection
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const mockAddress = '0x1234...5678';
-      setConnected(true, mockAddress);
-      addToast({ type: 'success', message: 'Wallet connected successfully!' });
-    } catch {
-      addToast({ type: 'error', message: 'Failed to connect wallet' });
-      setConnecting(false);
-    }
+    // This is now handled by the WalletConnector component
+    console.log('Wallet connection handled by WalletConnector');
   };
 
   const handleSwitchNetwork = async () => {
@@ -81,14 +74,33 @@ export default function Home() {
 
   const handleBridge = async (fromToken: Token, toToken: Token, amount: string) => {
     console.log('Bridging:', { fromToken, toToken, amount });
+    
+    if (!walletAddress) {
+      addToast({ type: 'error', message: 'Wallet not connected' });
+      return;
+    }
+
     try {
-      // Simulate bridge transaction
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Execute bridge using 1inch Fusion
+      const transaction = await bridgeService.executeBridge(
+        fromToken,
+        toToken,
+        amount,
+        walletAddress,
+        0.5, // 0.5% slippage
+        (status, data) => {
+          console.log('Bridge progress:', status, data);
+          // You can add progress notifications here
+        }
+      );
+
       addToast({ 
         type: 'success', 
-        message: `Successfully bridged ${amount} ${fromToken.symbol} to ${toToken.symbol}!`,
-        duration: 7000 // Longer duration for success messages
+        message: `Successfully bridged ${amount} ${fromToken.symbol} to ${toToken.symbol}! Transaction: ${transaction.id}`,
+        duration: 7000
       });
+
+      console.log('Bridge transaction completed:', transaction);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Bridge transaction failed';
       addToast({ type: 'error', message: errorMessage });
@@ -286,28 +298,11 @@ export default function Home() {
 
         {/* Status Bar */}
         <div className="mt-8 text-center">
-          <div 
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm"
-            style={{ 
-              color: '#a0aec0',
-              background: 'rgba(16, 18, 22, 0.8)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              backdropFilter: 'blur(8px)'
-            }}
-          >
-            <div 
-              className={`w-2 h-2 rounded-full ${isWalletConnected ? 'animate-pulse' : ''}`}
-              style={{ backgroundColor: isWalletConnected ? '#48bb78' : '#6b7280' }}
-            />
-            Wallet: {isWalletConnected ? `Connected (${walletAddress})` : 'Not Connected'}
-            {isCorrectNetwork && isWalletConnected && (
-              <>
-                <div className="w-px h-4 mx-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
-                <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: '#48bb78' }} />
-                Network: Ethereum Mainnet
-              </>
-            )}
-          </div>
+          <WalletConnector 
+            variant="gradient"
+            size="lg"
+            className="mx-auto"
+          />
         </div>
       </div>
 

@@ -1,12 +1,15 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
+import { ethers } from 'ethers'
+import { solanaWalletService } from '@/lib/services/solana-wallet'
 
 /**
  * Supported wallet types for the bridge
  */
 export type WalletType = 
   | 'metamask'
+  | 'phantom'
   | 'walletconnect' 
   | 'coinbase'
   | 'injected'
@@ -119,16 +122,17 @@ export interface WalletState {
   isSwitchingNetwork: boolean
   
   // Actions
-  connect: (walletType: WalletType) => Promise<void>
-  disconnect: () => Promise<void>
-  switchNetwork: (chainId: number) => Promise<void>
-  updateBalances: (tokenAddresses?: string[]) => Promise<void>
-  updateAccount: (account: Partial<AccountInfo>) => void
-  setError: (error: WalletError | null) => void
-  clearError: () => void
-  setShowWalletModal: (show: boolean) => void
-  setAutoConnect: (enabled: boolean) => void
-  setPreferredWallet: (walletType: WalletType | null) => void
+  connect: (walletType: WalletType) => Promise<void>;
+  disconnect: () => Promise<void>;
+  switchNetwork: (chainId: number) => Promise<void>;
+  updateBalances: (tokenAddresses?: string[]) => Promise<void>;
+  updateAccount: (account: Partial<AccountInfo>) => void;
+  setError: (error: WalletError | null) => void;
+  clearError: () => void;
+  setShowWalletModal: (show: boolean) => void;
+  setAutoConnect: (enabled: boolean) => void;
+  setPreferredWallet: (walletType: WalletType | null) => void;
+  setProvider: (provider: ethers.BrowserProvider | null) => void;
   
   // Legacy action compatibility
   setConnected: (connected: boolean, address?: string) => void
@@ -199,6 +203,7 @@ export const useWalletStore = create<WalletState>()(
       isConnecting: false,
       isReconnecting: false,
       showWalletModal: false,
+      provider: null,
 
       // Legacy compatibility computed properties
       get isConnected() {
@@ -248,26 +253,68 @@ export const useWalletStore = create<WalletState>()(
         })
 
         try {
-          // TODO: Implement actual wallet connection logic
-          // This is a placeholder that simulates connection
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          
-          // Mock successful connection
-          const mockAccount: AccountInfo = {
-            address: '0x742d35Cc6634C0532925a3b8D45fb9af0332da',
-            ensName: 'user.eth',
+          let provider: ethers.Provider | null = null;
+          let address: string;
+          let network: any;
+
+          switch (walletType) {
+            case 'metamask':
+            case 'coinbase':
+            case 'injected':
+              if (typeof window.ethereum === 'undefined') {
+                throw new Error('No Ethereum wallet detected. Please install MetaMask or similar.')
+              }
+              provider = new ethers.BrowserProvider(window.ethereum)
+              const signer = await provider.getSigner()
+              address = await signer.getAddress()
+              network = await provider.getNetwork()
+              break;
+
+            case 'phantom':
+              if (!solanaWalletService.isPhantomInstalled()) {
+                throw new Error('No Solana wallet detected. Please install Phantom or similar.')
+              }
+              // Connect to Phantom wallet
+              const phantomConnection = await solanaWalletService.connectToPhantom();
+              address = phantomConnection.address;
+              network = {
+                chainId: 101, // Solana mainnet
+                name: 'Solana',
+                endpoint: phantomConnection.network
+              };
+              break;
+
+            case 'walletconnect':
+              // WalletConnect implementation
+              throw new Error('WalletConnect not yet implemented')
+              break;
+
+            default:
+              throw new Error(`Unsupported wallet type: ${walletType}`)
+          }
+
+          const account: AccountInfo = {
+            address,
             balances: {},
             lastBalanceUpdate: Date.now()
           }
 
-          const mockNetwork = DEFAULT_NETWORKS[1] // Ethereum mainnet
+          const networkInfo: NetworkInfo = {
+            chainId: Number(network.chainId),
+            name: network.name,
+            currency: 'ETH', // This might need to be dynamic based on chain
+            rpcUrl: '', // Not directly available from provider
+            blockExplorerUrl: '', // Not directly available from provider
+            isTestnet: network.chainId !== 1n // Assuming mainnet is 1
+          }
 
           set((state) => {
             state.status = 'connected'
-            state.account = mockAccount
-            state.network = mockNetwork
+            state.account = account
+            state.network = networkInfo
             state.isConnecting = false
             state.showWalletModal = false
+            state.provider = provider
             if (state.autoConnect) {
               state.preferredWallet = walletType
             }
@@ -460,6 +507,12 @@ export const useWalletStore = create<WalletState>()(
       setPreferredWallet: (walletType: WalletType | null) => {
         set((state) => {
           state.preferredWallet = walletType
+        })
+      },
+
+      setProvider: (provider: ethers.BrowserProvider | null) => {
+        set((state) => {
+          state.provider = provider
         })
       },
 

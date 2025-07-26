@@ -1,4 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { ethers } from 'ethers';
+import { useWalletStore } from '@/store/useWalletStore';
 import { useDebounce } from '@/hooks/useDebounce';
 import { validateAmount, validateBalance } from '@/lib/utils/validation';
 import { Token, BridgeQuote } from '@/types/bridge';
@@ -16,6 +18,12 @@ interface BridgeFormState {
   fromAmount: string;
   setFromAmount: (amount: string) => void;
   toAmount: string;
+  resolver: string;
+  setResolver: (resolver: string) => void;
+  timelock: number;
+  setTimelock: (timelock: number) => void;
+  htlcId: string | null;
+  setHtlcId: (htlcId: string | null) => void;
   isValidAmount: boolean;
   balanceError: string | undefined;
   isSwapping: boolean;
@@ -26,53 +34,46 @@ interface BridgeFormState {
   bridgeSuccess: boolean;
   handleSwapDirection: () => void;
   handleBridge: () => Promise<void>;
+  handleInitiateSwap: () => Promise<void>;
   resetForm: () => void;
 }
 
-// Mock quote fetching function - replace with actual API call
+// Import bridge service
+import { bridgeService } from '@/lib/services/bridge-service';
+
+// Real quote fetching function using 1inch Fusion API
 async function fetchBridgeQuote(
   fromToken: Token, 
   toToken: Token, 
-  amount: string
+  amount: string,
+  walletAddress?: string
 ): Promise<BridgeQuote> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 400));
-  
-  // Mock exchange rate calculation
-  const mockRate = fromToken.symbol === 'BTC' ? 0.065 : 15.4;
-  const fromAmountNum = parseFloat(amount);
-  const toAmountNum = fromAmountNum * mockRate;
-  
-  // Mock fees
-  const networkFee = fromAmountNum * 0.001; // 0.1%
-  const protocolFee = fromAmountNum * 0.0025; // 0.25%
-  
-  return {
-    id: Math.random().toString(36).substr(2, 9),
-    fromToken,
-    toToken,
-    fromAmount: amount,
-    toAmount: toAmountNum.toString(),
-    exchangeRate: mockRate.toString(),
-    networkFee: networkFee.toString(),
-    protocolFee: protocolFee.toString(),
-    totalFee: (networkFee + protocolFee).toString(),
-    estimatedTime: '5-10 minutes',
-    minimumReceived: (toAmountNum * 0.97).toString(), // 3% slippage tolerance
-    priceImpact: '0.12',
-    expiresAt: Date.now() + 30000, // 30 seconds
-  };
+  if (!walletAddress) {
+    throw new Error('Wallet address required for quote');
+  }
+
+  // Check if pair is supported
+  if (!bridgeService.isPairSupported(fromToken, toToken)) {
+    throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported`);
+  }
+
+  // Get quote from 1inch Fusion
+  return await bridgeService.getQuote(fromToken, toToken, amount, walletAddress);
 }
 
 export function useBridgeFormState({ 
   onBridge, 
-  onQuoteError 
-}: UseBridgeFormStateProps = {}): BridgeFormState {
+  onQuoteError,
+  walletAddress 
+}: UseBridgeFormStateProps & { walletAddress?: string } = {}): BridgeFormState {
   // Core form state
   const [fromToken, setFromToken] = useState<Token | null>(null);
   const [toToken, setToToken] = useState<Token | null>(null);
   const [fromAmount, setFromAmount] = useState('');
   const [toAmount, setToAmount] = useState('');
+  const [resolver, setResolver] = useState('');
+  const [timelock, setTimelock] = useState(3600); // Default to 1 hour
+  const [htlcId, setHtlcId] = useState<string | null>(null);
   
   // UI state
   const [isSwapping, setIsSwapping] = useState(false);
@@ -120,7 +121,7 @@ export function useBridgeFormState({
     setQuoteLoading(true);
     setQuoteError(undefined);
 
-    fetchBridgeQuote(fromToken, toToken, debouncedFromAmount)
+    fetchBridgeQuote(fromToken, toToken, debouncedFromAmount, walletAddress)
       .then((newQuote) => {
         if (signal.aborted) return;
         
@@ -146,7 +147,7 @@ export function useBridgeFormState({
     return () => {
       quoteAbortController.current?.abort();
     };
-  }, [fromToken, toToken, debouncedFromAmount, isValidAmount, onQuoteError]);
+  }, [fromToken, toToken, debouncedFromAmount, isValidAmount, onQuoteError, walletAddress]);
 
   // Handle swap direction
   const handleSwapDirection = useCallback(async () => {
@@ -189,6 +190,59 @@ export function useBridgeFormState({
     }
   }, [fromToken, toToken, fromAmount, isValidAmount, quote, bridgeLoading, onBridge]);
 
+  // Handle HTLC initiation
+  const handleInitiateSwap = useCallback(async () => {
+    if (!fromToken || !toToken || !isValidAmount || !resolver || bridgeLoading) {
+      return;
+    }
+
+    const { provider } = useWalletStore.getState();
+
+    if (!provider) {
+      console.error('Ethereum provider not found.');
+      return;
+    }
+
+    setBridgeLoading(true);
+    setBridgeSuccess(false);
+
+    try {
+      // Replace with your deployed contract address
+      const contractAddress = "0xYourDeployedContractAddressHere"; 
+      const contractABI = [
+        // Only include the initiate function ABI for now
+        "function initiate(bytes32 id, address resolver, bytes32 hash, uint256 timelock) payable"
+      ];
+
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+      // In a real application, the hash and id would be generated from a secret preimage
+      // For now, we'll use a simple hash and a random ID
+      const preimage = ethers.utils.randomBytes(32);
+      const hash = ethers.utils.sha256(preimage);
+      const id = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(Date.now().toString())); // Simple unique ID
+
+      const amountInWei = ethers.utils.parseEther(fromAmount); // Convert amount to Wei
+
+      const transaction = await contract.initiate(id, resolver, hash, timelock, {
+        value: amountInWei,
+      });
+
+      console.log('Transaction sent:', transaction.hash);
+      await transaction.wait();
+      console.log('Transaction confirmed!');
+
+      setHtlcId(id);
+      setBridgeSuccess(true);
+    } catch (error) {
+      console.error('Initiate swap failed:', error);
+      // Error handling would be done by the parent component
+    } finally {
+      setBridgeLoading(false);
+    }
+  }, [fromToken, toToken, fromAmount, isValidAmount, resolver, timelock, bridgeLoading, setHtlcId]);
+
   // Reset form after successful bridge
   useEffect(() => {
     if (bridgeSuccess) {
@@ -225,6 +279,12 @@ export function useBridgeFormState({
     fromAmount,
     setFromAmount,
     toAmount,
+    resolver,
+    setResolver,
+    timelock,
+    setTimelock,
+    htlcId,
+    setHtlcId,
     isValidAmount,
     balanceError,
     isSwapping,
@@ -235,6 +295,7 @@ export function useBridgeFormState({
     bridgeSuccess,
     handleSwapDirection,
     handleBridge,
+    handleInitiateSwap,
     resetForm,
   };
 }
