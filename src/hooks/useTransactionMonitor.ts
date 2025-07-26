@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { BridgeTransaction, BridgeErrorCode } from '@/types/bridge';
-import { bridgeService } from '@/lib/services/bridge-service';
 
 interface UseTransactionMonitorProps {
   transactionId?: string;
@@ -82,8 +81,10 @@ export function useTransactionMonitor({
     if (!transactionId) return;
 
     try {
-      // For now, we'll simulate transaction updates
-      // In a real implementation, you'd fetch from your backend or blockchain
+      // Enhanced to support Fusion RFQ and Bitcoin HTLC monitoring
+      // TODO: Implement bridgeService.getTransactionStatus once service is ready
+      
+      // For now, use mock for development
       const mockTransaction: BridgeTransaction = {
         id: transactionId,
         from: {

@@ -2,3 +2,4 @@
 /* tslint:disable */
 /* eslint-disable */
 export type { BitcoinBridge } from "./BitcoinBridge";
+export type { Fusion1inchBitcoinBridge } from "./Fusion1inchBitcoinBridge";

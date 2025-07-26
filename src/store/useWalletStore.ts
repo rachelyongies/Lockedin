@@ -104,6 +104,7 @@ export interface WalletState {
   account: AccountInfo | null
   network: NetworkInfo | null
   error: WalletError | null
+  provider: ethers.BrowserProvider | null
   
   // Settings
   autoConnect: boolean
@@ -205,10 +206,8 @@ export const useWalletStore = create<WalletState>()(
       showWalletModal: false,
       provider: null,
 
-      // Legacy compatibility computed properties
-      get isConnected() {
-        return get().status === 'connected' && !!get().account
-      },
+      // Legacy compatibility - now a regular state property updated manually
+      isConnected: false,
 
       get address() {
         return get().account?.address
@@ -315,6 +314,7 @@ export const useWalletStore = create<WalletState>()(
             state.isConnecting = false
             state.showWalletModal = false
             state.provider = provider
+            state.isConnected = true
             if (state.autoConnect) {
               state.preferredWallet = walletType
             }
@@ -348,9 +348,11 @@ export const useWalletStore = create<WalletState>()(
             state.account = null
             state.network = null
             state.error = null
+            state.provider = null
             state.isConnecting = false
             state.isReconnecting = false
             state.showWalletModal = false
+            state.isConnected = false
           })
 
         } catch (error: unknown) {
@@ -361,6 +363,8 @@ export const useWalletStore = create<WalletState>()(
             state.walletType = null
             state.account = null
             state.network = null
+            state.provider = null
+            state.isConnected = false
           })
         }
       },
@@ -526,9 +530,11 @@ export const useWalletStore = create<WalletState>()(
               balances: {},
               lastBalanceUpdate: Date.now()
             }
+            state.isConnected = true
           } else {
             state.status = 'disconnected'
             state.account = null
+            state.isConnected = false
           }
           state.isConnecting = false
         })
@@ -572,10 +578,7 @@ export const useWalletStore = create<WalletState>()(
       // Hydration handling
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // Reset connection state on hydration
-          state.status = 'disconnected'
-          state.account = null
-          state.network = null
+          // Only reset loading states on hydration, keep connection if it exists
           state.error = null
           state.isConnecting = false
           state.isReconnecting = false
@@ -630,6 +633,8 @@ class WalletAutoReconnect {
       await state.connect(state.preferredWallet)
       this.reconnectAttempts = 0 // Reset on success
       console.log('Auto-reconnect successful')
+      // Ensure isConnected is synced
+      useWalletStore.setState({ isConnected: true })
     } catch (error) {
       this.reconnectAttempts++
       console.warn(`Reconnection attempt ${this.reconnectAttempts} failed:`, error)
@@ -766,6 +771,7 @@ export const formatWalletAddress = (address: string, length = 6): string => {
 export const getWalletDisplayName = (walletType: WalletType): string => {
   const names: Record<WalletType, string> = {
     metamask: 'MetaMask',
+    phantom: 'Phantom',
     walletconnect: 'WalletConnect',
     coinbase: 'Coinbase Wallet',
     injected: 'Injected Wallet',
@@ -781,6 +787,7 @@ export const getWalletDisplayName = (walletType: WalletType): string => {
 export function getWalletIcon(walletType: WalletType): string {
   const iconMap: Record<WalletType, string> = {
     metamask: '🦊',
+    phantom: '👻',
     walletconnect: '🔗',
     coinbase: '🔵',
     injected: '💼',
