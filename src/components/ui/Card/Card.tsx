@@ -68,7 +68,7 @@ const cardVariants = cva(
         // Glass morphism effect
         glass: [
           'bg-glass-bg backdrop-blur-md',
-          'border border-glass-border',
+          'border-none',
           'shadow-glass',
           'hover:bg-glass-hover-bg',
         ],

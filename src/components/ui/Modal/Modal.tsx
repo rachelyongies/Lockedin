@@ -182,7 +182,8 @@ export const Modal = React.forwardRef<HTMLDivElement, ModalProps>(
       renderCloseButton,
       id,
       ...props
-    }
+    },
+    ref
   ) => {
     const modalRef = useRef<HTMLDivElement>(null);
     const fallbackFocusRef = useRef<HTMLDivElement>(null);
@@ -386,7 +387,16 @@ export const Modal = React.forwardRef<HTMLDivElement, ModalProps>(
 
           {/* Modal */}
           <motion.div
-            ref={modalRef}
+            ref={(node) => {
+              modalRef.current = node;
+              if (ref) {
+                if (typeof ref === 'function') {
+                  ref(node);
+                } else {
+                  ref.current = node;
+                }
+              }
+            }}
             className={cn(
               modalVariants({ variant: modalVariantToUse, size }),
               shouldUseMobileFullScreen && 'h-[90vh] max-h-none rounded-t-2xl rounded-b-none',

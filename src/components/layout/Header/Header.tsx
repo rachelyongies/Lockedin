@@ -587,6 +587,7 @@ const WalletConnection = React.forwardRef<HTMLDivElement, WalletConnectionProps>
           size="sm"
           onClick={actions.connect}
           disabled={wallet.isLoading}
+          className={!wallet.isConnected && !wallet.isLoading ? 'bg-wallet-connect-gradient bg-[length:200%_100%] animate-gradient-flow' : ''}
         >
           {wallet.isLoading ? 'Connecting...' : 'Connect Wallet'}
         </Button>
@@ -629,7 +630,7 @@ const MobileWalletConnection = React.forwardRef<HTMLDivElement, MobileWalletConn
             variant={environment === 'testnet' ? 'warning' : 'primary'}
             size="sm"
             onClick={actions.connect}
-            className="w-full"
+            className={`w-full ${!wallet.isConnected && !wallet.isLoading && environment !== 'testnet' ? 'bg-wallet-connect-gradient bg-[length:200%_100%] animate-gradient-flow' : ''}`}
             disabled={wallet.isLoading}
           >
             {wallet.isLoading ? 'Connecting...' : `Connect Wallet${environment === 'testnet' ? ' (Testnet)' : ''}`}

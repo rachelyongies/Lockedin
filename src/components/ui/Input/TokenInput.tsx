@@ -139,17 +139,18 @@ export const TokenInput = React.forwardRef<HTMLInputElement, TokenInputProps>(
             aria-label={onTokenSelect ? `Select token (current: ${token.symbol})` : `Token: ${token.symbol}`}
           >
             {token.logoUrl && (
-              <Image
-                src={token.logoUrl}
-                alt={token.symbol}
-                width={20}
-                height={20}
-                className="rounded-full"
-                onError={(e) => {
-                  // Hide broken images gracefully
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
+              <div className="relative w-5 h-5">
+                <Image
+                  src={token.logoUrl}
+                  alt={token.symbol}
+                  fill
+                  className="object-contain rounded-full"
+                  onError={(e) => {
+                    // Hide broken images gracefully
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              </div>
             )}
             <span className="font-medium text-sm">{token.symbol}</span>
             {onTokenSelect && (

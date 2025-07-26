@@ -34,40 +34,9 @@ export function createAmount(value: string | bigint, decimals: number): Amount {
   }
 }
 
-function parseUnits(value: string, decimals: number): bigint {
-  try {
-    // Handle empty or invalid input
-    if (!value || value === '.' || isNaN(Number(value))) {
-      return 0n;
-    }
-    
-    const [whole = '0', fraction = ''] = value.split('.');
-    const wholeStr = whole || '0';
-    const fractionStr = fraction.padEnd(decimals, '0').slice(0, decimals);
-    
-    const wholeBN = BigInt(wholeStr) * (10n ** BigInt(decimals));
-    const fractionBN = fractionStr ? BigInt(fractionStr) : 0n;
-    
-    return wholeBN + fractionBN;
-  } catch {
-    return 0n;
-  }
-}
-
-function formatUnits(value: bigint, decimals: number): string {
-  const divisor = 10n ** BigInt(decimals);
-  const quotient = value / divisor;
-  const remainder = value % divisor;
-  
-  if (remainder === 0n) {
-    return quotient.toString();
-  }
-  
-  const fractionStr = remainder.toString().padStart(decimals, '0');
-  const trimmedFraction = fractionStr.replace(/0+$/, '');
-  
-  return trimmedFraction ? `${quotient}.${trimmedFraction}` : quotient.toString();
-}
+// Utility functions for amount parsing - reserved for future use
+// function parseUnits(value: string, decimals: number): bigint { ... }
+// function formatUnits(value: bigint, decimals: number): string { ... }
 
 // Base Token Interface
 interface BaseToken {
@@ -188,6 +157,23 @@ export function createBridgeFees(
       amountUSD: networkAmountUSD + protocolAmountUSD
     }
   };
+}
+
+// Bridge Quote for real-time pricing
+export interface BridgeQuote {
+  id: string;
+  fromToken: Token;
+  toToken: Token;
+  fromAmount: string;
+  toAmount: string;
+  exchangeRate: string;
+  networkFee: string;
+  protocolFee: string;
+  totalFee: string;
+  estimatedTime: string;
+  minimumReceived: string;
+  priceImpact: string;
+  expiresAt: number; // Timestamp when quote expires
 }
 
 // Bridge Route with derived formatters

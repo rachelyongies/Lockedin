@@ -106,7 +106,7 @@
 
 /* Text Utilities */
 .text-gradient {
-  background: var(--primary-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  background: var(--primary-gradient, linear-gradient(135deg, #06b6d4 0%, #1e3a8a 100%));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -142,21 +142,27 @@
 
 /* Background Utilities */
 .bg-gradient-primary {
-  background: var(--primary-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  background: var(--primary-gradient, linear-gradient(135deg, #06b6d4 0%, #1e3a8a 100%));
 }
 
 .bg-gradient-primary-hover:hover {
-  background: var(--primary-gradient-hover, linear-gradient(135deg, #5a6fd8 0%, #684a94 100%));
+  background: var(--primary-gradient-hover, linear-gradient(135deg, #0891b2 0%, #1e40af 100%));
 }
 
 .bg-gradient-primary-active:active {
-  background: var(--primary-gradient-active, linear-gradient(135deg, #4e60c6 0%, #5a4186 100%));
+  background: var(--primary-gradient-active, linear-gradient(135deg, #0e7490 0%, #1d4ed8 100%));
 }
 
 .bg-gradient-animated {
-  background: var(--primary-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  background: var(--primary-gradient, linear-gradient(135deg, #06b6d4 0%, #1e3a8a 100%));
   background-size: 200% 200%;
   animation: gradientShift 3s ease infinite;
+}
+
+.bg-wallet-connect-animated {
+  background: linear-gradient(90deg, #0e7490 0%, #0891b2 20%, #67e8f9 50%, #0891b2 80%, #0e7490 100%);
+  background-size: 200% 100%;
+  animation: gradientFlow 10s linear infinite;
 }
 
 .bg-dark {
@@ -202,13 +208,13 @@
   position: relative;
   overflow: hidden;
   /* Primary specific styles */
-  background: var(--primary-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  background: var(--primary-gradient, linear-gradient(135deg, #06b6d4 0%, #1e3a8a 100%));
   color: white;
   border: none;
 }
 
 .btn-primary:hover {
-  background: var(--primary-gradient-hover, linear-gradient(135deg, #5a6fd8 0%, #684a94 100%));
+  background: var(--primary-gradient-hover, linear-gradient(135deg, #0891b2 0%, #1e40af 100%));
   transform: translateY(-1px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
 }
@@ -314,7 +320,7 @@
 .form-input:focus {
   outline: none;
   border-color: var(--primary-500, #0ea5e9);
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
 }
 
 .form-input:disabled {

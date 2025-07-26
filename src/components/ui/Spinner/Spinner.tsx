@@ -160,7 +160,7 @@ const MotionDotsSpinner = React.forwardRef<HTMLDivElement,
     hover: interactive ? {
       opacity: [0.3, 1, 0.3],
       scale: [0.8, 1.2, 0.8],
-      backgroundColor: ['#667eea', '#764ba2', '#667eea'],
+      backgroundColor: ['#06b6d4', '#1e3a8a', '#06b6d4'],
       transition: {
         duration: 0.8,
         ease: 'easeInOut',

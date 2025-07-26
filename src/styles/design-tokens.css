@@ -16,9 +16,9 @@
   --primary-900: #0c4a6e;
   
   /* Primary Gradients */
-  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --primary-gradient-hover: linear-gradient(135deg, #5a6fd8 0%, #684a94 100%);
-  --primary-gradient-active: linear-gradient(135deg, #4e60c6 0%, #5a4186 100%);
+  --primary-gradient: linear-gradient(135deg, #06b6d4 0%, #1e3a8a 100%);
+  --primary-gradient-hover: linear-gradient(135deg, #0891b2 0%, #1e40af 100%);
+  --primary-gradient-active: linear-gradient(135deg, #0e7490 0%, #1d4ed8 100%);
   
   /* Accent Colors */
   --success: #48bb78;

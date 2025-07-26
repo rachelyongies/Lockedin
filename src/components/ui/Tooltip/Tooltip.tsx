@@ -185,7 +185,7 @@ export interface TooltipProps extends VariantProps<typeof tooltipVariants> {
   onHide?: () => void;
 }
 
-export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
+export const Tooltip = React.forwardRef<HTMLElement, TooltipProps>(
   (
     {
       content,
@@ -205,7 +205,8 @@ export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
       onShow,
       onHide,
       ...props
-    }
+    },
+    ref
   ) => {
     // className is intentionally omitted as it should be applied to children, not tooltip content
     const [isVisible, setIsVisible] = useDebouncedState(false, 50);
@@ -425,6 +426,15 @@ export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
           ref: (node: HTMLElement) => {
             triggerRef.current = node;
             
+            // Forward the forwardRef ref
+            if (ref) {
+              if (typeof ref === 'function') {
+                ref(node);
+              } else {
+                ref.current = node;
+              }
+            }
+            
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const originalRef = (child as any).ref;
             if (typeof originalRef === 'function') {
@@ -511,7 +521,7 @@ export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
 Tooltip.displayName = 'Tooltip';
 
 // Specialized tooltip variants for DeFi contexts
-export const InfoTooltip = React.forwardRef<HTMLDivElement,
+export const InfoTooltip = React.forwardRef<HTMLElement,
   Omit<TooltipProps, 'variant' | 'children'> & { children: React.ReactElement }
 >(({ children, ...props }, ref) => (
   <Tooltip ref={ref} variant="info" {...props}>
@@ -521,7 +531,7 @@ export const InfoTooltip = React.forwardRef<HTMLDivElement,
 
 InfoTooltip.displayName = 'InfoTooltip';
 
-export const ErrorTooltip = React.forwardRef<HTMLDivElement,
+export const ErrorTooltip = React.forwardRef<HTMLElement,
   Omit<TooltipProps, 'variant' | 'children'> & { children: React.ReactElement }
 >(({ children, ...props }, ref) => (
   <Tooltip ref={ref} variant="error" {...props}>
@@ -531,7 +541,7 @@ export const ErrorTooltip = React.forwardRef<HTMLDivElement,
 
 ErrorTooltip.displayName = 'ErrorTooltip';
 
-export const WarningTooltip = React.forwardRef<HTMLDivElement,
+export const WarningTooltip = React.forwardRef<HTMLElement,
   Omit<TooltipProps, 'variant' | 'children'> & { children: React.ReactElement }
 >(({ children, ...props }, ref) => (
   <Tooltip ref={ref} variant="warning" {...props}>
@@ -549,7 +559,7 @@ export interface QuickTooltipProps {
   variant?: TooltipProps['variant'];
 }
 
-export const QuickTooltip = React.forwardRef<HTMLDivElement, QuickTooltipProps>(
+export const QuickTooltip = React.forwardRef<HTMLElement, QuickTooltipProps>(
   ({ text, children, placement = 'top', variant = 'default' }, ref) => (
     <Tooltip
       ref={ref}

@@ -124,14 +124,17 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
 
   // Handle focus trap - close modal if focus escapes entirely
   const handleModalBlur = useCallback((e: React.FocusEvent) => {
-    // Check if the new focus target is outside the modal
-    if (modalRef.current && !modalRef.current.contains(e.relatedTarget as Node)) {
+    // Only close if focus is moving completely outside of the modal
+    // and not to another element within the modal or trigger button
+    if (modalRef.current && 
+        !modalRef.current.contains(e.relatedTarget as Node) &&
+        !triggerButtonRef.current?.contains(e.relatedTarget as Node)) {
       // Small delay to avoid conflicts with other focus events
       setTimeout(() => {
         if (isOpen) {
           handleModalClose();
         }
-      }, 100);
+      }, 150);
     }
   }, [isOpen, handleModalClose]);
 
@@ -173,7 +176,7 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
           'border-border-color hover:border-border-color-hover',
           'focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500',
           selectedToken && 'justify-between',
-          'transition-all duration-200'
+          'transition-all duration-200 overflow-visible'
         )}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
@@ -181,20 +184,19 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
       >
         {selectedToken ? (
           <>
-            <div className="flex items-center gap-2">
-              <div className="relative w-6 h-6">
+            <div className="flex items-center gap-2 h-full">
+              <div className="relative w-8 h-8 z-10">
                 <Image
                   src={selectedToken.logoUrl}
                   alt={selectedToken.name}
-                  width={24}
-                  height={24}
-                  className="rounded-full"
+                  fill
+                  className="object-contain rounded-full"
                 />
                 {selectedToken.verified && (
                   <CheckIcon className="absolute -top-1 -right-1 w-3 h-3 text-success bg-background rounded-full" />
                 )}
               </div>
-              <span className="font-medium text-sm">
+              <span className="flex items-center h-full font-bold text-base leading-none">
                 {getDisplaySymbol(selectedToken)}
               </span>
             </div>
@@ -229,7 +231,6 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
           role="dialog"
           aria-labelledby="token-selector-title"
           aria-describedby="token-selector-description"
-          onBlur={handleModalBlur}
         >
           <ModalHeader>
             <ModalTitle id="token-selector-title">Select Token</ModalTitle>
@@ -306,13 +307,12 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
                       aria-describedby={`token-${token.id}-description`}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="relative flex-shrink-0">
+                        <div className="relative flex-shrink-0 w-8 h-8">
                           <Image
                             src={token.logoUrl}
                             alt={token.name}
-                            width={32}
-                            height={32}
-                            className="rounded-full"
+                            fill
+                            className="object-contain rounded-full"
                           />
                           {token.verified && (
                             <CheckIcon 

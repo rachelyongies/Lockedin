@@ -1,103 +1,323 @@
-import Image from "next/image";
+'use client';
+
+import React from 'react';
+import { PageWrapper } from '@/components/layout/PageWrapper';
+import { BridgeForm } from '@/components/bridge/BridgeForm';
+import { ToastContainer, useToast } from '@/components/ui/Toast';
+import { useWalletStore } from '@/store/useWalletStore';
+import { useBridgeStore } from '@/store/useBridgeStore';
+import { Token } from '@/types/bridge';
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  // Global state
+  const {
+    isConnected: isWalletConnected,
+    isConnecting,
+    address: walletAddress,
+    isCorrectNetwork,
+    isSwitchingNetwork,
+    setConnected,
+    setConnecting,
+    setNetwork,
+    setSwitchingNetwork,
+  } = useWalletStore();
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  const {
+    approvalNeeded,
+    approvalLoading,
+    approvalSuccess,
+    setApprovalLoading,
+    setApprovalSuccess,
+    setApprovalError,
+  } = useBridgeStore();
+
+  // Toast notifications
+  const { toasts, addToast, removeToast } = useToast();
+
+  // Enhanced handlers with loading states
+  const handleConnectWallet = async () => {
+    setConnecting(true);
+    try {
+      // Simulate wallet connection
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const mockAddress = '0x1234...5678';
+      setConnected(true, mockAddress);
+      addToast({ type: 'success', message: 'Wallet connected successfully!' });
+    } catch {
+      addToast({ type: 'error', message: 'Failed to connect wallet' });
+      setConnecting(false);
+    }
+  };
+
+  const handleSwitchNetwork = async () => {
+    setSwitchingNetwork(true);
+    try {
+      // Simulate network switch
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setNetwork(1, true); // Mainnet
+      addToast({ type: 'success', message: 'Network switched successfully!' });
+    } catch {
+      addToast({ type: 'error', message: 'Failed to switch network' });
+      setSwitchingNetwork(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    setApprovalLoading(true);
+    setApprovalError(undefined);
+    try {
+      // Simulate token approval
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setApprovalSuccess(true);
+      addToast({ type: 'success', message: 'Token approval successful!' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Approval failed';
+      setApprovalError(errorMessage);
+      addToast({ type: 'error', message: errorMessage });
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
+
+  const handleBridge = async (fromToken: Token, toToken: Token, amount: string) => {
+    console.log('Bridging:', { fromToken, toToken, amount });
+    try {
+      // Simulate bridge transaction
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      addToast({ 
+        type: 'success', 
+        message: `Successfully bridged ${amount} ${fromToken.symbol} to ${toToken.symbol}!`,
+        duration: 7000 // Longer duration for success messages
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Bridge transaction failed';
+      addToast({ type: 'error', message: errorMessage });
+      throw error; // Re-throw to let the form handle it
+    }
+  };
+
+  const handleQuoteError = (error: string) => {
+    addToast({ type: 'error', message: `Quote error: ${error}` });
+  };
+
+  const handleError = (message: string) => {
+    addToast({ type: 'error', message });
+  };
+
+  const handleSuccess = (message: string) => {
+    addToast({ type: 'success', message });
+  };
+
+  return (
+    <div 
+      className="min-h-screen bg-slate-900"
+      style={{ 
+        background: 'linear-gradient(135deg, #0a0b0d 0%, #111318 50%, rgba(6, 182, 212, 0.1) 100%)'
+      }}
+    >
+    <PageWrapper
+      title="ETH-BTC Bridge"
+      description="Bridge your tokens between Bitcoin and Ethereum networks"
+    >
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Hero Section */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gradient">
+            Cross-Chain Bridge
+          </h1>
+          <p className="text-lg max-w-2xl mx-auto text-text-secondary">
+            Seamlessly bridge your assets between Bitcoin and Ethereum networks with the best rates and lowest fees.
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+
+        {/* Bridge Form */}
+        <div className="flex justify-center">
+          <BridgeForm
+            onBridge={handleBridge}
+            onQuoteError={handleQuoteError}
+            isWalletConnected={isWalletConnected}
+            isCorrectNetwork={isCorrectNetwork && !isSwitchingNetwork}
+            walletAddress={walletAddress}
+            onConnectWallet={handleConnectWallet}
+            onSwitchNetwork={handleSwitchNetwork}
+            approvalNeeded={approvalNeeded}
+            approvalLoading={approvalLoading}
+            approvalSuccess={approvalSuccess}
+            onApprove={handleApprove}
+            onError={handleError}
+            onSuccess={handleSuccess}
+            className="w-full max-w-md"
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        </div>
+
+        {/* Loading States Overlay */}
+        {(isConnecting || isSwitchingNetwork) && (
+          <div className="fixed inset-0 backdrop-blur-sm z-40 flex items-center justify-center" style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
+            <div 
+              className="max-w-sm mx-4 p-6 rounded-xl"
+              style={{
+                background: 'rgba(16, 18, 22, 0.9)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                backdropFilter: 'blur(8px)'
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div 
+                  className="w-8 h-8 border-2 rounded-full animate-spin"
+                  style={{ 
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderTopColor: '#06b6d4'
+                  }}
+                />
+                <div>
+                  <p className="font-medium" style={{ color: '#ffffff' }}>
+                    {isConnecting ? 'Connecting Wallet...' : 'Switching Network...'}
+                  </p>
+                  <p className="text-sm" style={{ color: '#a0aec0' }}>
+                    {isConnecting ? 'Please approve the connection in your wallet' : 'Please confirm the network switch'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Features Grid */}
+        <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+          <div className="card-hover text-center">
+            <div 
+              className="rounded-lg flex items-center justify-center mx-auto mb-4" 
+              style={{ 
+                background: 'linear-gradient(135deg, #06b6d4 0%, #1e3a8a 100%)',
+                width: '48px',
+                height: '48px'
+              }}
+            >
+              <svg 
+                className="text-white" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+                style={{ width: '24px', height: '24px' }}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold mb-2 text-text-primary">Lightning Fast</h3>
+            <p className="text-text-secondary">Complete cross-chain transfers in minutes, not hours.</p>
+          </div>
+
+          <div 
+            className="text-center p-6 rounded-xl transition-all duration-300 hover:transform hover:-translate-y-1 hover:shadow-lg group"
+            style={{
+              background: 'rgba(16, 18, 22, 0.8)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(8px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(22, 25, 31, 0.9)';
+              e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.3)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(16, 18, 22, 0.8)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            }}
+          >
+            <div 
+              className="rounded-lg flex items-center justify-center mx-auto mb-4" 
+              style={{ 
+                backgroundColor: '#48bb78',
+                width: '48px',
+                height: '48px'
+              }}
+            >
+              <svg 
+                className="text-white" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+                style={{ width: '24px', height: '24px' }}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold mb-2 text-text-primary">Secure &amp; Trusted</h3>
+            <p className="text-text-secondary">Built with industry-leading security standards and audited smart contracts.</p>
+          </div>
+
+          <div 
+            className="text-center p-6 rounded-xl transition-all duration-300 hover:transform hover:-translate-y-1 hover:shadow-lg group"
+            style={{
+              background: 'rgba(16, 18, 22, 0.8)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(8px)'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(22, 25, 31, 0.9)';
+              e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.3)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(16, 18, 22, 0.8)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            }}
+          >
+            <div 
+              className="rounded-lg flex items-center justify-center mx-auto mb-4" 
+              style={{ 
+                backgroundColor: '#ed8936',
+                width: '48px',
+                height: '48px'
+              }}
+            >
+              <svg 
+                className="text-white" 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+                style={{ width: '24px', height: '24px' }}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold mb-2 text-text-primary">Best Rates</h3>
+            <p className="text-text-secondary">Competitive exchange rates with minimal slippage and transparent fees.</p>
+          </div>
+        </div>
+
+        {/* Status Bar */}
+        <div className="mt-8 text-center">
+          <div 
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm"
+            style={{ 
+              color: '#a0aec0',
+              background: 'rgba(16, 18, 22, 0.8)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(8px)'
+            }}
+          >
+            <div 
+              className={`w-2 h-2 rounded-full ${isWalletConnected ? 'animate-pulse' : ''}`}
+              style={{ backgroundColor: isWalletConnected ? '#48bb78' : '#6b7280' }}
+            />
+            Wallet: {isWalletConnected ? `Connected (${walletAddress})` : 'Not Connected'}
+            {isCorrectNetwork && isWalletConnected && (
+              <>
+                <div className="w-px h-4 mx-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
+                <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: '#48bb78' }} />
+                Network: Ethereum Mainnet
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Toast Notifications */}
+      <ToastContainer
+        toasts={toasts}
+        onRemoveToast={removeToast}
+        position="top-right"
+      />
+    </PageWrapper>
     </div>
   );
 }

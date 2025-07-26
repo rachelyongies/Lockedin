@@ -53,12 +53,12 @@ const buttonVariants = cva(
         // Glass - glassmorphism effect for premium feel
         glass: [
           'bg-glass-bg backdrop-blur-md',
-          'border border-glass-border',
           'text-text-primary hover:text-white',
-          'hover:bg-glass-hover-bg hover:border-glass-border',
+          'hover:bg-glass-hover-bg',
           'hover:-translate-y-0.5',
           'shadow-glass',
           'with-glass-shine', // Custom class for glass shine
+          '!border-none',
         ],
         
         // Success - for positive actions like "Confirm"
