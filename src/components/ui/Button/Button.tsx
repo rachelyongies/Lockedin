@@ -186,7 +186,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const hasGlassShine = buttonClass.includes('with-glass-shine');
 
     const buttonContent = (
-      <>
+      <div className="contents">
         {/* Loading state */}
         {loading && (
           <motion.div
@@ -256,7 +256,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             transition={{ duration: 0.4, ease: 'easeOut' }}
           />
         </div>
-      </>
+      </div>
     );
 
     if (asChild) {
@@ -270,7 +270,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       ];
       
       const slotProps = Object.fromEntries(
-        Object.entries(props).filter(([key]) => !motionProps.includes(key))
+        Object.entries(props).filter(([key]) => !motionProps.includes(key) && key !== 'className')
       );
       
       return (
