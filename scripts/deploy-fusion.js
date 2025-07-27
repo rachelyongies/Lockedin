@@ -2,12 +2,14 @@ const { ethers, run, network } = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
+// Load environment variables from .env.local
+require("dotenv").config({ path: path.join(__dirname, "../.env.local") });
+
 async function main() {
   console.time("⏱ Deployment time");
   
   // Configure provider with better timeout settings
   const provider = ethers.provider;
-  provider._network.timeout = 60000; // 60 second timeout
   
   // Get network context with retry
   let networkInfo;
@@ -26,6 +28,7 @@ async function main() {
   
   console.log(`🌐 Network: ${network.name} (chainId: ${networkInfo.chainId})`);
   console.log("Deploying Fusion1inchBitcoinBridge contract...");
+  console.log(`🔍 Debug - FUSION_PROTOCOL_SEPOLIA env var: ${process.env.FUSION_PROTOCOL_SEPOLIA}`);
 
   // Network-specific addresses
   const addresses = {

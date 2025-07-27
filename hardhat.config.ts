@@ -15,12 +15,15 @@ module.exports = {
   },
   networks: {
     sepolia: {
-      url: process.env.NEXT_PUBLIC_ETH_RPC_URL || "https://rpc.sepolia.org",
+      url: process.env.NEXT_PUBLIC_ETH_RPC_URL || "https://eth-sepolia.public.blastapi.io",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [
         // Test account - NEVER use for mainnet
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
       ],
       chainId: 11155111,
+      timeout: 60000,
+      gas: 2100000,
+      gasPrice: 8000000000
     },
     localhost: {
       url: "http://127.0.0.1:8545",
