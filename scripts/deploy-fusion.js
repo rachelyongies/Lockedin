@@ -5,10 +5,26 @@ const path = require("path");
 async function main() {
   console.time("⏱ Deployment time");
   
-  // Get network context
-  const networkInfo = await ethers.provider.getNetwork();
-  console.log(`🌐 Network: ${network.name} (chainId: ${networkInfo.chainId})`);
+  // Configure provider with better timeout settings
+  const provider = ethers.provider;
+  provider._network.timeout = 60000; // 60 second timeout
   
+  // Get network context with retry
+  let networkInfo;
+  let retries = 3;
+  while (retries > 0) {
+    try {
+      networkInfo = await provider.getNetwork();
+      break;
+    } catch (error) {
+      console.log(`⚠️  Network connection attempt failed. Retries left: ${retries - 1}`);
+      retries--;
+      if (retries === 0) throw error;
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+    }
+  }
+  
+  console.log(`🌐 Network: ${network.name} (chainId: ${networkInfo.chainId})`);
   console.log("Deploying Fusion1inchBitcoinBridge contract...");
 
   // Network-specific addresses

@@ -100,7 +100,7 @@ export class BitcoinHTLCService {
    */
   async fundHTLC(
     htlcId: string,
-    utxos: any[],
+    utxos: Array<{ txid: string; vout: number; value: number; scriptPubKey: string; confirmations: number; address?: string }>,
     changeAddress: string
   ): Promise<{ htlcState: HTLCState; fundingTx: TransactionResult }> {
     const htlcState = this.getHTLCState(htlcId);
@@ -114,15 +114,11 @@ export class BitcoinHTLCService {
       htlcState.script.address,
       changeAddress,
       htlcState.config.amount,
-      htlcState.config.feeRate
+      htlcState.config.feeRate,
+      htlcState.config.enableRBF
     );
 
-    // Enable RBF if configured
-    if (htlcState.config.enableRBF) {
-      for (let i = 0; i < psbt.inputCount; i++) {
-        psbt.updateInput(i, { sequence: 0xfffffffd }); // Enable RBF
-      }
-    }
+    // RBF is now enabled during input creation in networkService.createHTLCTransaction
 
     // Secure signing via key provider (no raw private key exposure)
     for (let i = 0; i < psbt.inputCount; i++) {
@@ -518,7 +514,7 @@ export class BrowserKeyProvider implements SecureKeyProvider {
   private address: string;
 
   constructor(
-    private walletAPI: any, // Could be MetaMask, hardware wallet API, etc.
+    private walletAPI: { signPSBT: (psbt: string) => Promise<string>; isHardwareWallet?: boolean }, // Could be MetaMask, hardware wallet API, etc.
     publicKey: Buffer,
     address: string
   ) {

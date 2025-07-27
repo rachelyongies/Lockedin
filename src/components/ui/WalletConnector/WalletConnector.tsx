@@ -9,11 +9,15 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useToast } from '@/components/ui/Toast';
 
-// Extend Window interface for MetaMask
+// Extend Window interface for MetaMask (solana is defined in solana-wallet.ts)
 declare global {
   interface Window {
-    ethereum?: any;
-    solana?: any;
+    ethereum?: {
+      isMetaMask?: boolean;
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+      on: (event: string, handler: (...args: unknown[]) => void) => void;
+      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
+    };
   }
 }
 
@@ -158,7 +162,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
     const checkExistingConnection = async () => {
       if (typeof window !== 'undefined' && window.ethereum) {
         try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[];
           
           if (accounts && accounts.length > 0 && !isConnected) {
             await connect('metamask');
@@ -188,7 +192,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
           isInstalled = typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
           break;
         case 'phantom':
-          isInstalled = typeof window !== 'undefined' && typeof window.solana !== 'undefined' && window.solana?.isPhantom;
+          isInstalled = typeof window !== 'undefined' && typeof window.solana !== 'undefined' && !!window.solana?.isPhantom;
           break;
         case 'walletconnect':
           isInstalled = true; // Always available
@@ -228,7 +232,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
       }
 
       // Connect to wallet
-      await connect(walletId as any);
+      await connect(walletId as 'metamask' | 'phantom' | 'walletconnect' | 'coinbase');
       
       addToast({ 
         type: 'success', 
@@ -357,7 +361,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
         whileTap={{ scale: 0.98 }}
       >
         <Button
-          variant={variant === 'outline' ? 'primary' : variant}
+          variant={variant === 'outline' ? 'primary' : variant === 'gradient' ? 'primary' : variant}
           size={size}
           onClick={openWalletModal}
           disabled={isConnecting}
@@ -439,14 +443,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
       <Modal
         isOpen={isModalOpen}
         onClose={closeWalletModal}
-        title={
-          <div className="text-center">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Connect Your Wallet
-            </h2>
-            <p className="text-gray-600 mt-1">Choose your preferred wallet to continue</p>
-          </div>
-        }
+        title="Connect Your Wallet"
         size="md"
       >
         <div className="space-y-6">

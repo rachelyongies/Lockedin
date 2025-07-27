@@ -144,42 +144,44 @@ class FusionAPIError extends Error {
 }
 
 // Utility functions
-function createFusionAPIError(error: any): FusionAPIError {
+function createFusionAPIError(error: unknown): FusionAPIError {
   if (error instanceof FusionAPIError) {
     return error;
   }
 
   // Handle different error types
-  if (error.status === 429) {
+  const errorObj = error as Record<string, unknown>;
+  
+  if (errorObj?.status === 429) {
     return new FusionAPIError(
       'Rate limit exceeded. Please try again later.',
       BridgeErrorCode.NETWORK_ERROR,
-      error.status
+      errorObj.status as number
     );
   }
 
-  if (error.status >= 500) {
+  if (typeof errorObj?.status === 'number' && errorObj.status >= 500) {
     return new FusionAPIError(
       '1inch Fusion service is temporarily unavailable.',
       BridgeErrorCode.NETWORK_ERROR,
-      error.status
+      errorObj.status
     );
   }
 
-  if (error.status === 400) {
+  if (errorObj?.status === 400) {
     return new FusionAPIError(
       'Invalid request parameters.',
       BridgeErrorCode.AMOUNT_TOO_LOW,
-      error.status,
-      error.details
+      errorObj.status as number,
+      errorObj.details as Record<string, unknown>
     );
   }
 
   return new FusionAPIError(
-    error.message || 'Unknown error occurred',
+    typeof errorObj?.message === 'string' ? errorObj.message : 'Unknown error occurred',
     BridgeErrorCode.UNKNOWN,
-    error.status,
-    error.details
+    typeof errorObj?.status === 'number' ? errorObj.status : undefined,
+    errorObj?.details as Record<string, unknown> | undefined
   );
 }
 
@@ -212,7 +214,7 @@ async function fetchWithRetry(
 
     return response;
   } catch (error) {
-    if (retries > 0 && (error instanceof TypeError || error.name === 'AbortError')) {
+    if (retries > 0 && (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError'))) {
       await new Promise(resolve => setTimeout(resolve, FUSION_API_CONFIG.retryDelay));
       return fetchWithRetry(url, options, retries - 1);
     }
@@ -357,7 +359,13 @@ export class FusionAPIService {
   }
 
   // Get supported tokens
-  async getSupportedTokens(chainId: number = 1): Promise<any[]> {
+  async getSupportedTokens(chainId: number = 1): Promise<Array<{
+    address: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+    logoURI?: string;
+  }>> {
     try {
       const response = await fetchWithRetry(
         `${FUSION_API_CONFIG.baseUrl}/tokens/${chainId}`,

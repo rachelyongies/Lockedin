@@ -254,7 +254,7 @@ export const useWalletStore = create<WalletState>()(
         try {
           let provider: ethers.Provider | null = null;
           let address: string;
-          let network: any;
+          let network: ethers.Network | null = null;
 
           switch (walletType) {
             case 'metamask':
@@ -264,7 +264,7 @@ export const useWalletStore = create<WalletState>()(
                 throw new Error('No Ethereum wallet detected. Please install MetaMask or similar.')
               }
               provider = new ethers.BrowserProvider(window.ethereum)
-              const signer = await provider.getSigner()
+              const signer = await (provider as ethers.BrowserProvider).getSigner()
               address = await signer.getAddress()
               network = await provider.getNetwork()
               break;
@@ -276,11 +276,8 @@ export const useWalletStore = create<WalletState>()(
               // Connect to Phantom wallet
               const phantomConnection = await solanaWalletService.connectToPhantom();
               address = phantomConnection.address;
-              network = {
-                chainId: 101, // Solana mainnet
-                name: 'Solana',
-                endpoint: phantomConnection.network
-              };
+              // For Solana, network is not applicable as it's not an Ethereum network
+              network = null;
               break;
 
             case 'walletconnect':
@@ -299,12 +296,12 @@ export const useWalletStore = create<WalletState>()(
           }
 
           const networkInfo: NetworkInfo = {
-            chainId: Number(network.chainId),
-            name: network.name,
-            currency: 'ETH', // This might need to be dynamic based on chain
+            chainId: walletType === 'phantom' ? 101 : Number(network?.chainId || 0),
+            name: walletType === 'phantom' ? 'Solana' : (network?.name || 'Unknown'),
+            currency: walletType === 'phantom' ? 'SOL' : 'ETH',
             rpcUrl: '', // Not directly available from provider
             blockExplorerUrl: '', // Not directly available from provider
-            isTestnet: network.chainId !== 1n // Assuming mainnet is 1
+            isTestnet: walletType === 'phantom' ? false : ((network?.chainId || 0n) !== 1n)
           }
 
           set((state) => {
@@ -313,7 +310,7 @@ export const useWalletStore = create<WalletState>()(
             state.network = networkInfo
             state.isConnecting = false
             state.showWalletModal = false
-            state.provider = provider
+            state.provider = provider as ethers.BrowserProvider
             state.isConnected = true
             if (state.autoConnect) {
               state.preferredWallet = walletType

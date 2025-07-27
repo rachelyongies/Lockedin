@@ -74,7 +74,7 @@ export class BridgeService {
     amount: string,
     walletAddress: string,
     slippage: number = BRIDGE_CONFIG.defaultSlippage,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     try {
       // Validate inputs
@@ -99,7 +99,7 @@ export class BridgeService {
   // Monitor order status
   private async monitorOrder(
     order: FusionOrderResponse,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     const orderId = order.orderId;
     let attempts = 0;
@@ -231,13 +231,13 @@ export class BridgeService {
   }
 
   // Map Fusion token to our Token format
-  private mapTokenFromFusion(fusionToken: any): Token {
+  private mapTokenFromFusion(fusionToken: { symbol: string; name: string; decimals: number; address: string; logoURI?: string; tags?: string[] }): Token {
     return {
       id: `${fusionToken.symbol.toLowerCase()}-ethereum-1`,
       symbol: fusionToken.symbol,
       name: fusionToken.name,
       decimals: fusionToken.decimals,
-      logoUrl: fusionToken.logoURI,
+      logoUrl: fusionToken.logoURI || '',
       coingeckoId: fusionToken.symbol.toLowerCase(),
       network: 'ethereum',
       chainId: 1,
@@ -333,7 +333,7 @@ export class BridgeService {
   }
 
   // Error handling
-  private handleError(error: any, defaultMessage: string): BridgeServiceError {
+  private handleError(error: unknown, defaultMessage: string): BridgeServiceError {
     if (error instanceof BridgeServiceError) {
       return error;
     }

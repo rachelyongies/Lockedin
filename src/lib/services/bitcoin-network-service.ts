@@ -3,6 +3,7 @@ import * as ecc from 'tiny-secp256k1';
 import { BIP32Factory } from 'bip32';
 import * as bip39 from 'bip39';
 import { ECPairFactory } from 'ecpair';
+import * as crypto from 'crypto';
 
 bitcoin.initEccLib(ecc);
 const bip32 = BIP32Factory(ecc);
@@ -164,7 +165,7 @@ export class BitcoinNetworkService {
     return uri;
   }
 
-  private async makeApiRequestWithFallback(endpoint: string, options?: RequestInit): Promise<any> {
+  private async makeApiRequestWithFallback(endpoint: string, options?: RequestInit): Promise<unknown> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < this.retryAttempts; attempt++) {
@@ -244,16 +245,16 @@ export class BitcoinNetworkService {
 
   async getUTXOs(address: string): Promise<UTXO[]> {
     try {
-      const utxos = await this.makeApiRequestWithFallback(`/address/${address}/utxo`);
+      const utxos = await this.makeApiRequestWithFallback(`/address/${address}/utxo`) as Array<{ txid: string; vout: number; value: number; scriptpubkey?: string; script?: string; status?: { confirmed: boolean; block_height?: number } }>;
       
-      return utxos.map((utxo: any) => {
+      return utxos.map((utxo) => {
         const scriptPubKey = this.getScriptPubKeyFromAddress(address);
         
         return {
           txid: utxo.txid,
           vout: utxo.vout,
           value: utxo.value,
-          scriptPubKey: scriptPubKey || utxo.scriptpubkey || utxo.script,
+          scriptPubKey: scriptPubKey || utxo.scriptpubkey || utxo.script || '',
           confirmations: utxo.status?.confirmed ? (utxo.status.block_height || 1) : 0,
           address,
         };
@@ -276,7 +277,28 @@ export class BitcoinNetworkService {
 
   async getTransaction(txid: string): Promise<BitcoinTransaction | null> {
     try {
-      const tx = await this.makeApiRequestWithFallback(`/tx/${txid}`);
+      const tx = await this.makeApiRequestWithFallback(`/tx/${txid}`) as {
+        txid: string;
+        hex?: string;
+        status?: {
+          confirmed: boolean;
+          block_height?: number;
+          block_hash?: string;
+          block_time?: number;
+        };
+        vin?: Array<{
+          txid: string;
+          vout: number;
+          scriptsig?: string;
+          sequence?: number;
+          witness?: string[];
+        }>;
+        vout?: Array<{
+          value: number;
+          scriptpubkey?: string;
+          scriptpubkey_address?: string;
+        }>;
+      };
       
       return {
         txid: tx.txid,
@@ -284,14 +306,14 @@ export class BitcoinNetworkService {
         confirmations: tx.status?.confirmed ? (tx.status.block_height || 1) : 0,
         blockHash: tx.status?.block_hash,
         blockTime: tx.status?.block_time,
-        inputs: tx.vin?.map((input: any) => ({
+        inputs: tx.vin?.map((input) => ({
           txid: input.txid,
           vout: input.vout,
           scriptSig: input.scriptsig || '',
           sequence: input.sequence || 0xffffffff,
           witness: input.witness || [],
         })) || [],
-        outputs: tx.vout?.map((output: any) => ({
+        outputs: tx.vout?.map((output) => ({
           value: output.value,
           scriptPubKey: output.scriptpubkey || '',
           address: output.scriptpubkey_address,
@@ -496,7 +518,8 @@ export class BitcoinNetworkService {
     htlcAddress: string,
     changeAddress: string,
     amount: number,
-    feeRate: number = 10
+    feeRate: number = 10,
+    enableRBF: boolean = false
   ): Promise<{ psbt: bitcoin.Psbt; estimatedFee: number; actualFee: number }> {
     if (!this.validateAddress(htlcAddress)) {
       throw new Error('Invalid HTLC address');
@@ -524,6 +547,8 @@ export class BitcoinNetworkService {
           script: Buffer.from(utxo.scriptPubKey, 'hex'),
           value: utxo.value,
         },
+        // Enable RBF (Replace-By-Fee) if requested
+        sequence: enableRBF ? 0xfffffffd : 0xfffffffe,
       });
 
       totalInput += utxo.value;
@@ -692,7 +717,7 @@ export class BitcoinNetworkService {
     // Validate before finalizing
     this.validatePSBTBeforeBroadcast(psbt);
 
-    psbt.finalizeInput(0, (_inputIndex: number, input: any) => {
+    psbt.finalizeInput(0, (_inputIndex: number, input: { partialSig?: Array<{ signature: Buffer }> }) => {
       const signature = input.partialSig?.[0]?.signature;
       if (!signature) {
         throw new Error('Missing signature');
@@ -786,7 +811,7 @@ export class BitcoinNetworkService {
 
     this.validatePSBTBeforeBroadcast(psbt);
 
-    psbt.finalizeInput(0, (_inputIndex: number, input: any) => {
+    psbt.finalizeInput(0, (_inputIndex: number, input: { partialSig?: Array<{ signature: Buffer }> }) => {
       const signature = input.partialSig?.[0]?.signature;
       if (!signature) {
         throw new Error('Missing signature');
@@ -870,10 +895,10 @@ export class BitcoinNetworkService {
 
   private async findSpendingTransaction(address: string): Promise<BitcoinTransaction | null> {
     try {
-      const addressInfo = await this.makeApiRequestWithFallback(`/address/${address}`);
+      const addressInfo = await this.makeApiRequestWithFallback(`/address/${address}`) as { chain_stats?: { spent_txo_count: number } };
       
-      if (addressInfo.chain_stats?.spent_txo_count > 0) {
-        const txs = await this.makeApiRequestWithFallback(`/address/${address}/txs`);
+      if (addressInfo.chain_stats?.spent_txo_count && addressInfo.chain_stats.spent_txo_count > 0) {
+        const txs = await this.makeApiRequestWithFallback(`/address/${address}/txs`) as Array<{ txid: string; vin?: Array<{ txid: string; vout: number }> }>;
         
         for (const tx of txs) {
           for (const input of tx.vin || []) {
@@ -922,8 +947,8 @@ export class BitcoinNetworkService {
     // Retry block height fetching with extra attempts due to security criticality
     for (let attempt = 0; attempt < this.retryAttempts + 2; attempt++) {
       try {
-        const blockTip = await this.makeApiRequestWithFallback('/blocks/tip/height');
-        const height = typeof blockTip === 'number' ? blockTip : parseInt(blockTip);
+        const blockTip = await this.makeApiRequestWithFallback('/blocks/tip/height') as number | string;
+        const height = typeof blockTip === 'number' ? blockTip : parseInt(String(blockTip));
         
         if (isNaN(height) || height <= 0) {
           throw new Error(`Invalid block height received: ${blockTip}`);
@@ -962,11 +987,12 @@ export class BitcoinNetworkService {
       
       // Parse fee estimates
       if (fees.status === 'fulfilled') {
+        const feeData = fees.value as Record<string, number>;
         baseFees = {
-          fastestFee: fees.value['1'] || 20,
-          halfHourFee: fees.value['3'] || 15,
-          hourFee: fees.value['6'] || 10,
-          economyFee: fees.value['144'] || 5,
+          fastestFee: feeData['1'] || 20,
+          halfHourFee: feeData['3'] || 15,
+          hourFee: feeData['6'] || 10,
+          economyFee: feeData['144'] || 5,
           minimumFee: 1,
         };
       }
@@ -994,7 +1020,7 @@ export class BitcoinNetworkService {
 
   private async getMempoolStats(): Promise<{ congestionMultiplier: number; vsize: number }> {
     try {
-      const mempool = await this.makeApiRequestWithFallback('/mempool');
+      const mempool = await this.makeApiRequestWithFallback('/mempool') as { vsize?: number };
       const vsize = mempool.vsize || 0;
       
       // Calculate congestion multiplier based on mempool size
@@ -1018,7 +1044,7 @@ export class BitcoinNetworkService {
 
   generateSecret(): { secret: Buffer; hash: Buffer } {
     const secret = Buffer.allocUnsafe(32);
-    require('crypto').randomFillSync(secret);
+    crypto.randomFillSync(secret);
     
     const hash = bitcoin.crypto.sha256(secret);
     

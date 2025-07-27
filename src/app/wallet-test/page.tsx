@@ -129,7 +129,7 @@ export default function WalletTestPage() {
               <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
                 <li>Install MetaMask browser extension</li>
                 <li>Create or import a wallet</li>
-                <li>Click "Connect Wallet" button</li>
+                <li>Click &quot;Connect Wallet&quot; button</li>
                 <li>Select MetaMask from the modal</li>
                 <li>Approve the connection in MetaMask</li>
               </ol>
@@ -140,7 +140,7 @@ export default function WalletTestPage() {
               <ol className="list-decimal list-inside space-y-1 text-sm text-gray-600">
                 <li>Install Phantom browser extension</li>
                 <li>Create or import a wallet</li>
-                <li>Click "Connect Wallet" button</li>
+                <li>Click &quot;Connect Wallet&quot; button</li>
                 <li>Select Phantom from the modal</li>
                 <li>Approve the connection in Phantom</li>
               </ol>

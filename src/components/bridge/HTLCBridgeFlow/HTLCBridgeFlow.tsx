@@ -136,6 +136,9 @@ export const HTLCBridgeFlow: React.FC<HTLCBridgeFlowProps> = ({ className }) => 
       setShowModal(true);
 
       // Get provider and signer
+      if (!window.ethereum) {
+        throw new Error('MetaMask is not installed');
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
 
@@ -156,7 +159,9 @@ export const HTLCBridgeFlow: React.FC<HTLCBridgeFlowProps> = ({ className }) => 
       // Extract HTLC parameters
       if (transaction.txIdentifier.htlc) {
         setHtlcId(transaction.txIdentifier.htlc.id);
-        setPreimage(transaction.txIdentifier.htlc.preimage);
+        if (transaction.txIdentifier.htlc.preimage) {
+          setPreimage(transaction.txIdentifier.htlc.preimage);
+        }
       }
 
       // Update steps
@@ -189,6 +194,9 @@ export const HTLCBridgeFlow: React.FC<HTLCBridgeFlowProps> = ({ className }) => 
       setIsProcessing(true);
 
       // Get provider and signer
+      if (!window.ethereum) {
+        throw new Error('MetaMask is not installed');
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
 
@@ -231,6 +239,9 @@ export const HTLCBridgeFlow: React.FC<HTLCBridgeFlowProps> = ({ className }) => 
       setIsProcessing(true);
 
       // Get provider and signer
+      if (!window.ethereum) {
+        throw new Error('MetaMask is not installed');
+      }
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
 
@@ -353,11 +364,11 @@ export const HTLCBridgeFlow: React.FC<HTLCBridgeFlowProps> = ({ className }) => 
                 onClick={() => setCurrentStep(3)}
                 className="flex-1"
               >
-                I've Sent Bitcoin
+                I&apos;ve Sent Bitcoin
               </Button>
               <Button
                 onClick={handleRefundHTLC}
-                variant="outline"
+                variant="secondary"
                 className="flex-1"
               >
                 Refund HTLC
