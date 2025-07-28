@@ -3,11 +3,18 @@ import { Connection, PublicKey, clusterApiUrl } from '@solana/web3.js';
 // Solana wallet service
 export class SolanaWalletService {
   private connection: Connection;
-  private wallet: any; // Phantom wallet
+  private wallet: {
+    connect: () => Promise<{ publicKey: { toString: () => string } }>;
+    disconnect: () => Promise<void>;
+    signTransaction: (transaction: unknown) => Promise<unknown>;
+    signMessage: (message: Uint8Array, encoding: string) => Promise<{ signature: Uint8Array; publicKey: string }>;
+    publicKey?: { toString: () => string };
+    isConnected?: boolean;
+  } | null = null; // Phantom wallet
 
   constructor() {
     // Use mainnet-beta for production, devnet for testing
-    const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet';
+    const network = (process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet') as 'devnet' | 'testnet' | 'mainnet-beta';
     this.connection = new Connection(clusterApiUrl(network));
   }
 
@@ -28,10 +35,13 @@ export class SolanaWalletService {
 
     try {
       // Connect to Phantom
+      if (!window.solana) {
+        throw new Error('Phantom wallet is not installed');
+      }
       const response = await window.solana.connect();
       const publicKey = new PublicKey(response.publicKey.toString());
       
-      this.wallet = window.solana;
+      this.wallet = (typeof window !== 'undefined' && window.solana) || null;
 
       return {
         publicKey,
@@ -69,7 +79,7 @@ export class SolanaWalletService {
   }
 
   // Sign a transaction
-  async signTransaction(transaction: any): Promise<any> {
+  async signTransaction(transaction: unknown): Promise<unknown> {
     if (!this.wallet) {
       throw new Error('Wallet not connected');
     }
@@ -113,7 +123,7 @@ export class SolanaWalletService {
 
   // Check if wallet is connected
   isConnected(): boolean {
-    return this.wallet && this.wallet.isConnected;
+    return Boolean(this.wallet?.isConnected);
   }
 
   // Get connected wallet info
@@ -140,7 +150,7 @@ declare global {
       isPhantom?: boolean;
       connect: () => Promise<{ publicKey: { toString: () => string } }>;
       disconnect: () => Promise<void>;
-      signTransaction: (transaction: any) => Promise<any>;
+      signTransaction: (transaction: unknown) => Promise<unknown>;
       signMessage: (message: Uint8Array, encoding: string) => Promise<{
         signature: Uint8Array;
         publicKey: string;

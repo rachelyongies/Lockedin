@@ -1,12 +1,12 @@
 import { ethers } from 'ethers';
 import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode } from '@/types/bridge';
-import { BitcoinBridge__factory } from '../contracts/typechain-types';
+import { Fusion1inchBitcoinBridge__factory, type Fusion1inchBitcoinBridge } from '@/types/contracts';
 
 // True cross-chain bridge service
 export class TrueBridgeService {
   private ethereumProvider: ethers.Provider;
-  private bridgeContract: any;
-  private wbtcContract: any;
+  private bridgeContract: Fusion1inchBitcoinBridge;
+  private wbtcContract: ethers.Contract;
   private isInitialized = false;
 
   constructor(
@@ -15,7 +15,7 @@ export class TrueBridgeService {
     wbtcContractAddress: string
   ) {
     this.ethereumProvider = new ethers.JsonRpcProvider(ethereumRpcUrl);
-    this.bridgeContract = BitcoinBridge__factory.connect(
+    this.bridgeContract = Fusion1inchBitcoinBridge__factory.connect(
       bridgeContractAddress,
       this.ethereumProvider
     );
@@ -105,7 +105,7 @@ export class TrueBridgeService {
           coingeckoId: 'wrapped-bitcoin',
           network: 'ethereum',
           chainId: 1,
-          address: this.wbtcContract.target,
+          address: this.wbtcContract.target.toString(),
           isNative: false,
           isWrapped: true,
           verified: true,
@@ -158,7 +158,7 @@ export class TrueBridgeService {
           coingeckoId: 'wrapped-bitcoin',
           network: 'ethereum',
           chainId: 1,
-          address: this.wbtcContract.target,
+          address: this.wbtcContract.target.toString(),
           isNative: false,
           isWrapped: true,
           verified: true,
@@ -203,7 +203,7 @@ export class TrueBridgeService {
     amount: string,
     bitcoinAddress: string,
     walletAddress: string,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     try {
       await this.initialize();
@@ -245,7 +245,7 @@ export class TrueBridgeService {
           coingeckoId: 'wrapped-bitcoin',
           network: 'ethereum',
           chainId: 1,
-          address: this.wbtcContract.target,
+          address: this.wbtcContract.target.toString(),
           isNative: false,
           isWrapped: true,
           verified: true,
@@ -285,7 +285,7 @@ export class TrueBridgeService {
         toAddress: bitcoinAddress,
         status: 'pending',
         txIdentifier: {
-          ethereum: lockTx.hash || 'pending'
+          ethereum: 'pending' // Transaction hash will be available after execution
         },
         confirmations: 0,
         requiredConfirmations: 1,
@@ -335,7 +335,7 @@ export class TrueBridgeService {
   async executeEthereumToBitcoin(
     amount: string,
     ethereumAddress: string,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     try {
       await this.initialize();
@@ -377,7 +377,7 @@ export class TrueBridgeService {
           coingeckoId: 'wrapped-bitcoin',
           network: 'ethereum',
           chainId: 1,
-          address: this.wbtcContract.target,
+          address: this.wbtcContract.target.toString(),
           isNative: false,
           isWrapped: true,
           verified: true,
@@ -525,7 +525,7 @@ export class TrueBridgeService {
   }
 
   // Error handling
-  private handleError(error: any, defaultMessage: string): BridgeError {
+  private handleError(error: unknown, defaultMessage: string): BridgeError {
     if (error instanceof Error) {
       return {
         code: BridgeErrorCode.UNKNOWN,

@@ -2,3 +2,4 @@
 /* tslint:disable */
 /* eslint-disable */
 export { BitcoinBridge__factory } from "./BitcoinBridge__factory";
+export { Fusion1inchBitcoinBridge__factory } from "./Fusion1inchBitcoinBridge__factory";

@@ -219,11 +219,11 @@ export function useBridgeFormState({
 
       // In a real application, the hash and id would be generated from a secret preimage
       // For now, we'll use a simple hash and a random ID
-      const preimage = ethers.utils.randomBytes(32);
-      const hash = ethers.utils.sha256(preimage);
-      const id = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(Date.now().toString())); // Simple unique ID
+      const preimage = ethers.randomBytes(32);
+      const hash = ethers.sha256(preimage);
+      const id = ethers.keccak256(ethers.toUtf8Bytes(Date.now().toString())); // Simple unique ID
 
-      const amountInWei = ethers.utils.parseEther(fromAmount); // Convert amount to Wei
+      const amountInWei = ethers.parseEther(fromAmount); // Convert amount to Wei
 
       const transaction = await contract.initiate(id, resolver, hash, timelock, {
         value: amountInWei,

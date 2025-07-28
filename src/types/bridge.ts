@@ -214,7 +214,8 @@ export type TransactionStatus =
   | 'confirmed'
   | 'completed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'refunded';
 
 // Bridge Transaction
 export interface BridgeTransaction {
@@ -239,6 +240,14 @@ export interface BridgeTransaction {
   txIdentifier: {
     ethereum?: string; // tx hash
     bitcoin?: string;  // tx id
+    htlc?: {
+      id: string;
+      preimage?: string; // Optional - only set when needed
+      hash?: string;
+      timelock?: number; // Absolute timestamp for HTLC expiry
+      redeemed?: boolean;
+      refunded?: boolean;
+    };
   };
   
   // Confirmation tracking

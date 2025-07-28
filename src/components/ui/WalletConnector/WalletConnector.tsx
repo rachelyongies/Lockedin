@@ -9,6 +9,18 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useToast } from '@/components/ui/Toast';
 
+// Extend Window interface for MetaMask (solana is defined in solana-wallet.ts)
+declare global {
+  interface Window {
+    ethereum?: {
+      isMetaMask?: boolean;
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+      on: (event: string, handler: (...args: unknown[]) => void) => void;
+      removeListener: (event: string, handler: (...args: unknown[]) => void) => void;
+    };
+  }
+}
+
 // Wallet types and their configurations
 interface WalletConfig {
   id: string;
@@ -92,6 +104,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
   // Local state
   const [isModalOpen, setIsModalOpen] = useState(showModal);
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
+  const [isButtonHovered, setIsButtonHovered] = useState(false);
 
   // Available wallets with beautiful styling
   const [availableWallets, setAvailableWallets] = useState<WalletConfig[]>([
@@ -141,15 +154,33 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
     }
   ]);
 
-  // Check wallet availability on mount
+  // Check wallet availability and connection on mount
   useEffect(() => {
     checkWalletAvailability();
-  }, []);
+    
+    // Force check if wallet is actually connected
+    const checkExistingConnection = async () => {
+      if (typeof window !== 'undefined' && window.ethereum) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[];
+          
+          if (accounts && accounts.length > 0 && !isConnected) {
+            await connect('metamask');
+          }
+        } catch (error) {
+          // Silent error handling
+        }
+      }
+    };
+    
+    checkExistingConnection();
+  }, [isConnected, connect]);
 
   // Update modal state when showModal prop changes
   useEffect(() => {
     setIsModalOpen(showModal);
   }, [showModal]);
+
 
   // Check which wallets are installed
   const checkWalletAvailability = () => {
@@ -161,7 +192,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
           isInstalled = typeof window !== 'undefined' && typeof window.ethereum !== 'undefined';
           break;
         case 'phantom':
-          isInstalled = typeof window !== 'undefined' && typeof window.solana !== 'undefined' && window.solana?.isPhantom;
+          isInstalled = typeof window !== 'undefined' && typeof window.solana !== 'undefined' && !!window.solana?.isPhantom;
           break;
         case 'walletconnect':
           isInstalled = true; // Always available
@@ -201,7 +232,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
       }
 
       // Connect to wallet
-      await connect(walletId as any);
+      await connect(walletId as 'metamask' | 'phantom' | 'walletconnect' | 'coinbase');
       
       addToast({ 
         type: 'success', 
@@ -258,43 +289,64 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.3 }}
+        onHoverStart={() => setIsButtonHovered(true)}
+        onHoverEnd={() => setIsButtonHovered(false)}
       >
         <Button
-          variant="outline"
+          variant="success"
           size={size}
           onClick={handleWalletDisconnect}
-          className="group relative overflow-hidden bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 hover:border-green-300 hover:from-green-100 hover:to-emerald-100 transition-all duration-300"
+          className="group relative overflow-hidden bg-green-500 hover:bg-green-600 text-white border-green-500 hover:border-green-600 transition-all duration-300 px-5 py-3"
         >
-          <div className="flex items-center gap-3">
-            <motion.div 
-              className="w-3 h-3 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full"
-              animate={{ 
-                scale: [1, 1.2, 1],
-                opacity: [0.7, 1, 0.7]
-              }}
-              transition={{ 
-                duration: 2,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-            />
+          <div className="flex items-center gap-4 w-full">
+            {/* MetaMask Icon for MetaMask wallet */}
+            {walletType === 'metamask' ? (
+              <img 
+                src="/MetaMask.svg" 
+                alt="MetaMask" 
+                className="w-5 h-5"
+              />
+            ) : (
+              <motion.div 
+                className="w-2 h-2 bg-white rounded-full"
+                animate={{ 
+                  scale: [1, 1.2, 1],
+                  opacity: [0.7, 1, 0.7]
+                }}
+                transition={{ 
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              />
+            )}
+            
+            {/* Connected text and address */}
             <div className="flex flex-col items-start">
-              <span className="font-mono text-sm font-semibold text-gray-800">
+              <span className="text-sm font-semibold">Connected</span>
+              <span className="font-mono text-xs opacity-90">
                 {account.address.slice(0, 6)}...{account.address.slice(-4)}
               </span>
-              <span className="text-xs text-gray-500 capitalize">
-                {walletType}
-              </span>
             </div>
+            
+            {/* Disconnect icon - spins when button is hovered */}
             <motion.div
-              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-              whileHover={{ rotate: 180 }}
-              transition={{ duration: 0.3 }}
+              className="ml-1"
+              animate={{ 
+                rotate: isButtonHovered ? 360 : 0
+              }}
+              transition={{ 
+                duration: 0.6,
+                ease: "easeInOut"
+              }}
             >
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
             </motion.div>
+            
+            {/* Spacer to maintain button width */}
+            <div className="flex-1"></div>
           </div>
         </Button>
       </motion.div>
@@ -309,7 +361,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
         whileTap={{ scale: 0.98 }}
       >
         <Button
-          variant={variant}
+          variant={variant === 'outline' ? 'primary' : variant === 'gradient' ? 'primary' : variant}
           size={size}
           onClick={openWalletModal}
           disabled={isConnecting}
@@ -391,14 +443,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
       <Modal
         isOpen={isModalOpen}
         onClose={closeWalletModal}
-        title={
-          <div className="text-center">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Connect Your Wallet
-            </h2>
-            <p className="text-gray-600 mt-1">Choose your preferred wallet to continue</p>
-          </div>
-        }
+        title="Connect Your Wallet"
         size="md"
       >
         <div className="space-y-6">
