@@ -108,6 +108,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
         ...(FEATURES.ANALYTICS ? [{ href: '/analytics', label: 'Analytics', emoji: '📈' }] : []),
         ...(FEATURES.MULTICHAIN ? [{ href: '/multichain', label: 'Multi-Chain', emoji: '⛓️' }] : []),
         { href: '/docs', label: 'Documentation', emoji: '📚' },
+        // Add Solana test page for development
+        { href: '/solana-test', label: 'Solana Test', emoji: '🔬' },
       ];
 
       return [...baseItems, ...conditionalItems];

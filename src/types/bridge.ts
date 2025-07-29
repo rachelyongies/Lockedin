@@ -3,7 +3,10 @@ import { parseUnits as ethersParseUnits, formatUnits as ethersFormatUnits } from
 // Chain Types
 export type EthereumChainId = 1 | 5 | 11155111; // Mainnet, Goerli, Sepolia
 export type BitcoinChainId = 'mainnet' | 'testnet' | 'regtest';
-export type Network = 'ethereum' | 'bitcoin';
+export type SolanaChainId = 'mainnet-beta' | 'devnet' | 'testnet';
+export type StarknetChainId = 'mainnet' | 'goerli' | 'sepolia';
+export type StellarChainId = 'public' | 'testnet';
+export type Network = 'ethereum' | 'bitcoin' | 'solana' | 'starknet' | 'stellar';
 
 // Amount handling with automatic sync
 export interface Amount {
@@ -78,8 +81,33 @@ export interface BitcoinToken extends BaseToken {
   address?: never;
 }
 
+// Solana-specific Token
+export interface SolanaToken extends BaseToken {
+  network: 'solana';
+  chainId: SolanaChainId;
+  address?: string; // Optional SPL token address
+  isNative: boolean;
+}
+
+// Starknet-specific Token
+export interface StarknetToken extends BaseToken {
+  network: 'starknet';
+  chainId: StarknetChainId;
+  address?: string; // Optional contract address
+  isNative: boolean;
+}
+
+// Stellar-specific Token
+export interface StellarToken extends BaseToken {
+  network: 'stellar';
+  chainId: StellarChainId;
+  assetCode?: string; // For non-native assets (e.g., USDC, BTC)
+  assetIssuer?: string; // For non-native assets
+  isNative: boolean;
+}
+
 // Union type for all tokens
-export type Token = EthereumToken | BitcoinToken;
+export type Token = EthereumToken | BitcoinToken | SolanaToken | StarknetToken | StellarToken;
 
 // Type guards
 export const isEthereumToken = (token: Token): token is EthereumToken => 
@@ -87,6 +115,15 @@ export const isEthereumToken = (token: Token): token is EthereumToken =>
 
 export const isBitcoinToken = (token: Token): token is BitcoinToken => 
   token.network === 'bitcoin';
+
+export const isSolanaToken = (token: Token): token is SolanaToken => 
+  token.network === 'solana';
+
+export const isStarknetToken = (token: Token): token is StarknetToken => 
+  token.network === 'starknet';
+
+export const isStellarToken = (token: Token): token is StellarToken => 
+  token.network === 'stellar';
 
 // Check if bridging is actually just wrapping/unwrapping
 export const isWrappingOperation = (from: Token, to: Token): boolean => {
@@ -239,6 +276,9 @@ export interface BridgeTransaction {
   txIdentifier: {
     ethereum?: string; // tx hash
     bitcoin?: string;  // tx id
+    solana?: string;   // tx signature
+    starknet?: string; // tx hash
+    stellar?: string;  // tx hash
   };
   
   // Confirmation tracking
@@ -356,8 +396,26 @@ export const SUPPORTED_PAIRS = [
   { from: 'WBTC', to: 'BTC' },
   { from: 'ETH', to: 'WETH' },
   { from: 'WETH', to: 'ETH' },
+  { from: 'SOL', to: 'WSOL' },
+  { from: 'WSOL', to: 'SOL' },
+  { from: 'STARK', to: 'WSTARK' },
+  { from: 'WSTARK', to: 'STARK' },
+  { from: 'XLM', to: 'WXLM' },
+  { from: 'WXLM', to: 'XLM' },
   { from: 'BTC', to: 'ETH' },
   { from: 'ETH', to: 'BTC' },
+  { from: 'ETH', to: 'SOL' },
+  { from: 'SOL', to: 'ETH' },
+  { from: 'ETH', to: 'STARK' },
+  { from: 'STARK', to: 'ETH' },
+  { from: 'ETH', to: 'XLM' },
+  { from: 'XLM', to: 'ETH' },
+  { from: 'BTC', to: 'SOL' },
+  { from: 'SOL', to: 'BTC' },
+  { from: 'BTC', to: 'STARK' },
+  { from: 'STARK', to: 'BTC' },
+  { from: 'BTC', to: 'XLM' },
+  { from: 'XLM', to: 'BTC' },
 ] as const;
 
 export type SupportedPair = typeof SUPPORTED_PAIRS[number];

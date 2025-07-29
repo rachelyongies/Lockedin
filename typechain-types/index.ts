@@ -14,3 +14,9 @@ export type { ReentrancyGuard } from "./@openzeppelin/contracts/utils/Reentrancy
 export { ReentrancyGuard__factory } from "./factories/@openzeppelin/contracts/utils/ReentrancyGuard__factory";
 export type { BitcoinBridge } from "./contracts/BitcoinBridge";
 export { BitcoinBridge__factory } from "./factories/contracts/BitcoinBridge__factory";
+export type { SolanaBridge } from "./contracts/SolanaBridge";
+export { SolanaBridge__factory } from "./factories/contracts/SolanaBridge__factory";
+export type { StarknetBridge } from "./contracts/StarknetBridge";
+export { StarknetBridge__factory } from "./factories/contracts/StarknetBridge__factory";
+export type { StellarBridge } from "./contracts/StellarBridge";
+export { StellarBridge__factory } from "./factories/contracts/StellarBridge__factory";

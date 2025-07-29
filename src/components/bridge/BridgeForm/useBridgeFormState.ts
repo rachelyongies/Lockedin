@@ -38,10 +38,13 @@ interface BridgeFormState {
   resetForm: () => void;
 }
 
-// Import bridge service
+// Import bridge services
 import { bridgeService } from '@/lib/services/bridge-service';
+import { solanaBridgeService } from '@/lib/services/solana-bridge-service';
+import { starknetBridgeService } from '@/lib/services/starknet-bridge-service';
+import { stellarBridgeService } from '@/lib/services/stellar-bridge-service';
 
-// Real quote fetching function using 1inch Fusion API
+// Real quote fetching function using bridge services
 async function fetchBridgeQuote(
   fromToken: Token, 
   toToken: Token, 
@@ -52,13 +55,36 @@ async function fetchBridgeQuote(
     throw new Error('Wallet address required for quote');
   }
 
-  // Check if pair is supported
-  if (!bridgeService.isPairSupported(fromToken, toToken)) {
-    throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported`);
+  // Check bridge type based on token networks
+  const isSolanaBridge = fromToken.network === 'solana' || toToken.network === 'solana';
+  const isStarknetBridge = fromToken.network === 'starknet' || toToken.network === 'starknet';
+  const isStellarBridge = fromToken.network === 'stellar' || toToken.network === 'stellar';
+  
+  if (isSolanaBridge) {
+    // Use Solana bridge service
+    if (!solanaBridgeService.isPairSupported(fromToken, toToken)) {
+      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported for Solana bridge`);
+    }
+    return await solanaBridgeService.getQuote(fromToken, toToken, amount, walletAddress);
+  } else if (isStarknetBridge) {
+    // Use Starknet bridge service
+    if (!starknetBridgeService.isPairSupported(fromToken, toToken)) {
+      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported for Starknet bridge`);
+    }
+    return await starknetBridgeService.getQuote(fromToken, toToken, amount, walletAddress);
+  } else if (isStellarBridge) {
+    // Use Stellar bridge service
+    if (!stellarBridgeService.isPairSupported(fromToken, toToken)) {
+      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported for Stellar bridge`);
+    }
+    return await stellarBridgeService.getQuote(fromToken, toToken, amount, walletAddress);
+  } else {
+    // Use regular bridge service for Ethereum/Bitcoin
+    if (!bridgeService.isPairSupported(fromToken, toToken)) {
+      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported`);
+    }
+    return await bridgeService.getQuote(fromToken, toToken, amount, walletAddress);
   }
-
-  // Get quote from 1inch Fusion
-  return await bridgeService.getQuote(fromToken, toToken, amount, walletAddress);
 }
 
 export function useBridgeFormState({ 
