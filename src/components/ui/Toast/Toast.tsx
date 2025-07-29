@@ -129,10 +129,24 @@ export function ToastContainer({
 // Hook for managing toasts
 export function useToast() {
   const [toasts, setToasts] = React.useState<Toast[]>([]);
+  const recentMessages = React.useRef<Set<string>>(new Set());
 
   const addToast = React.useCallback((toast: Omit<Toast, 'id'>) => {
-    const id = Math.random().toString(36).substr(2, 9);
+    const messageKey = `${toast.type}:${toast.message}`;
+    
+    // Prevent duplicate toasts within 2 seconds
+    if (recentMessages.current.has(messageKey)) {
+      return '';
+    }
+    
+    const id = Math.random().toString(36).substring(2, 11);
     const newToast = { ...toast, id };
+    
+    // Add to recent messages tracking
+    recentMessages.current.add(messageKey);
+    setTimeout(() => {
+      recentMessages.current.delete(messageKey);
+    }, 2000);
     
     setToasts(prev => [...prev, newToast]);
     

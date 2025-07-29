@@ -1,5 +1,6 @@
 import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode } from '@/types/bridge';
 import { fusionAPI, FusionOrderResponse, FusionOrderStatusResponse } from './1inch-fusion';
+import { mockFusionAPI } from './mock-fusion-testnet';
 import { parseUnits, formatUnits } from 'ethers';
 
 // Bridge Service Configuration
@@ -55,8 +56,12 @@ export class BridgeService {
       // Validate inputs
       this.validateQuoteRequest(fromToken, toToken, amount, walletAddress);
 
-      // Get quote from 1inch Fusion
-      const quote = await fusionAPI.getQuote(fromToken, toToken, amount, walletAddress);
+      // Detect network and use appropriate service
+      const isTestnet = process.env.NEXT_PUBLIC_ENABLE_TESTNET === 'true';
+      const quoteService = isTestnet ? mockFusionAPI : fusionAPI;
+      
+      // Get quote from appropriate service
+      const quote = await quoteService.getQuote(fromToken, toToken, amount, walletAddress);
 
       // Validate quote
       this.validateQuote(quote);
@@ -82,13 +87,17 @@ export class BridgeService {
 
       onProgress?.('Creating order...');
 
-      // Create order with 1inch Fusion
-      const order = await fusionAPI.createOrder(fromToken, toToken, amount, walletAddress);
+      // Detect network and use appropriate service
+      const isTestnet = process.env.NEXT_PUBLIC_ENABLE_TESTNET === 'true';
+      const orderService = isTestnet ? mockFusionAPI : fusionAPI;
+      
+      // Create order with appropriate service
+      const order = await orderService.createOrder(fromToken, toToken, amount, walletAddress);
 
       onProgress?.('Order created', { orderId: order.orderId });
 
       // Start monitoring the order
-      const transaction = await this.monitorOrder(order, onProgress);
+      const transaction = await this.monitorOrder(order, onProgress, isTestnet ? mockFusionAPI : fusionAPI);
 
       return transaction;
     } catch (error) {
@@ -99,10 +108,12 @@ export class BridgeService {
   // Monitor order status
   private async monitorOrder(
     order: FusionOrderResponse,
-    onProgress?: (status: string, data?: unknown) => void
+    onProgress?: (status: string, data?: unknown) => void,
+    statusService?: typeof fusionAPI | typeof mockFusionAPI
   ): Promise<BridgeTransaction> {
     const orderId = order.orderId;
     let attempts = 0;
+    const service = statusService || fusionAPI;
 
     return new Promise((resolve, reject) => {
       const pollOrder = async () => {
@@ -117,7 +128,7 @@ export class BridgeService {
             return;
           }
 
-          const status = await fusionAPI.getOrderStatus(orderId);
+          const status = await service.getOrderStatus(orderId);
           
           onProgress?.(`Order status: ${status.orderStatus}`, status);
 
@@ -283,9 +294,9 @@ export class BridgeService {
       );
     }
 
-    if (!amount || parseFloat(amount) <= 0) {
+    if (!amount || amount.trim() === '' || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
       throw new BridgeServiceError(
-        'Invalid amount',
+        `Invalid amount: ${amount}. Amount must be a positive number.`,
         BridgeErrorCode.AMOUNT_TOO_LOW
       );
     }
@@ -297,12 +308,16 @@ export class BridgeService {
       );
     }
 
-    // Check if tokens are on the same network (for now, we only support Ethereum)
-    if (fromToken.network !== 'ethereum' || toToken.network !== 'ethereum') {
-      throw new BridgeServiceError(
-        'Cross-chain bridging not yet supported',
-        BridgeErrorCode.NO_ROUTE_FOUND
-      );
+    // Allow cross-chain bridging for supported pairs (ETH-BTC atomic swaps)
+    const isCrossChain = fromToken.network !== toToken.network;
+    if (isCrossChain) {
+      // Check if this cross-chain pair is supported
+      if (!this.isPairSupported(fromToken, toToken)) {
+        throw new BridgeServiceError(
+          `Cross-chain pair ${fromToken.symbol}-${toToken.symbol} not supported`,
+          BridgeErrorCode.NO_ROUTE_FOUND
+        );
+      }
     }
   }
 
@@ -364,13 +379,21 @@ export class BridgeService {
 
   // Get supported token pairs
   getSupportedPairs(): Array<{ from: Token; to: Token }> {
-    // For now, return basic ETH pairs
-    // In production, this would be fetched from the API
+    // Cross-chain atomic swap pairs for Fusion+ Bitcoin extension
     return [
+      // Traditional Ethereum pairs
       { from: { symbol: 'ETH' } as Token, to: { symbol: 'WETH' } as Token },
       { from: { symbol: 'WETH' } as Token, to: { symbol: 'ETH' } as Token },
       { from: { symbol: 'ETH' } as Token, to: { symbol: 'WBTC' } as Token },
       { from: { symbol: 'WBTC' } as Token, to: { symbol: 'ETH' } as Token },
+      
+      // Cross-chain atomic swap pairs (bidirectional)
+      { from: { symbol: 'ETH' } as Token, to: { symbol: 'BTC' } as Token },
+      { from: { symbol: 'BTC' } as Token, to: { symbol: 'ETH' } as Token },
+      
+      // Additional supported cross-chain pairs
+      { from: { symbol: 'WETH' } as Token, to: { symbol: 'BTC' } as Token },
+      { from: { symbol: 'BTC' } as Token, to: { symbol: 'WETH' } as Token },
     ];
   }
 

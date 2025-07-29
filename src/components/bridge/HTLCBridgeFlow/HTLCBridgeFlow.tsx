@@ -79,10 +79,11 @@ export const HTLCBridgeFlow: React.FC<HTLCBridgeFlowProps> = ({ className }) => 
 
   // Initialize HTLC bridge service
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_BRIDGE_CONTRACT_ADDRESS) {
+    const contractAddress = process.env.NEXT_PUBLIC_FUSION_BRIDGE_CONTRACT_ADDRESS || process.env.NEXT_PUBLIC_BRIDGE_CONTRACT_ADDRESS;
+    if (contractAddress) {
       initializeHTLCBridge(
-        process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL || '',
-        process.env.NEXT_PUBLIC_BRIDGE_CONTRACT_ADDRESS,
+        process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL || process.env.NEXT_PUBLIC_ETH_RPC_URL || '',
+        contractAddress,
         process.env.NEXT_PUBLIC_WBTC_CONTRACT_ADDRESS || ''
       );
     }

@@ -1,0 +1,475 @@
+import * as bitcoin from 'bitcoinjs-lib';
+import * as ecc from 'tiny-secp256k1';
+import { BIP32Factory } from 'bip32';
+import * as bip39 from 'bip39';
+import { ECPairFactory } from 'ecpair';
+
+bitcoin.initEccLib(ecc);
+const bip32 = BIP32Factory(ecc);
+const ECPair = ECPairFactory(ecc);
+
+export interface BitcoinWalletProvider {
+  name: 'phantom' | 'xverse' | 'unisat' | 'leather';
+  connect: () => Promise<string>;
+  getAddress: () => Promise<string>;
+  signTransaction: (psbt: string) => Promise<string>;
+  signMessage: (message: string) => Promise<string>;
+  disconnect: () => Promise<void>;
+}
+
+export interface BitcoinWalletState {
+  connected: boolean;
+  provider: 'phantom' | 'xverse' | 'derived' | 'manual' | null;
+  address: string | null;
+  publicKey: string | null;
+  network: 'mainnet' | 'testnet';
+}
+
+type WalletStateListener = (state: BitcoinWalletState) => void;
+
+export class BitcoinWalletService {
+  private static instance: BitcoinWalletService;
+  private state: BitcoinWalletState = {
+    connected: false,
+    provider: null,
+    address: null,
+    publicKey: null,
+    network: 'testnet'
+  };
+  
+  private connectedProvider: BitcoinWalletProvider | null = null;
+  private derivedKeyPair: ReturnType<typeof ECPair.fromPrivateKey> | null = null;
+  private listeners: Set<WalletStateListener> = new Set();
+
+  static getInstance(): BitcoinWalletService {
+    if (!BitcoinWalletService.instance) {
+      BitcoinWalletService.instance = new BitcoinWalletService();
+    }
+    return BitcoinWalletService.instance;
+  }
+
+  /**
+   * Validate that wallet address matches expected network
+   * @throws Error if address doesn't match expected network
+   */
+  private validateNetworkAddress(address: string, expectedNetwork: 'mainnet' | 'testnet'): void {
+    const mainnetPrefixes = ['bc1', '1', '3'];
+    const testnetPrefixes = ['tb1', 'm', 'n', '2'];
+    
+    const isMainnetAddress = mainnetPrefixes.some(prefix => address.startsWith(prefix));
+    const isTestnetAddress = testnetPrefixes.some(prefix => address.startsWith(prefix));
+    
+    if (expectedNetwork === 'mainnet' && !isMainnetAddress) {
+      throw new Error(
+        `Network mismatch: Expected mainnet address (bc1/1/3...) but got ${address}. ` +
+        `Please switch your wallet to mainnet.`
+      );
+    }
+    
+    if (expectedNetwork === 'testnet' && !isTestnetAddress) {
+      throw new Error(
+        `Network mismatch: Expected testnet address (tb1/m/n/2...) but got ${address}. ` +
+        `Please switch your wallet to testnet.`
+      );
+    }
+    
+    // Additional validation using bitcoinjs-lib
+    try {
+      const btcNetwork = expectedNetwork === 'mainnet' 
+        ? bitcoin.networks.bitcoin 
+        : bitcoin.networks.testnet;
+      bitcoin.address.toOutputScript(address, btcNetwork);
+    } catch (error) {
+      throw new Error(`Invalid ${expectedNetwork} Bitcoin address: ${address}`);
+    }
+  }
+
+  /**
+   * Connect to a Bitcoin wallet provider
+   */
+  async connectWallet(provider: 'phantom' | 'xverse' | 'manual', network: 'mainnet' | 'testnet' = 'testnet'): Promise<string> {
+    this.state.network = network;
+    
+    switch (provider) {
+      case 'phantom':
+        return this.connectPhantom();
+      case 'xverse':
+        return this.connectXverse();
+      case 'manual':
+        // Manual mode - user will provide address separately
+        this.state.provider = 'manual';
+        this.state.connected = true;
+        return 'manual';
+      default:
+        throw new Error(`Unsupported wallet: ${provider}`);
+    }
+  }
+
+  /**
+   * Set manual Bitcoin address (for manual mode)
+   */
+  setManualAddress(address: string): void {
+    // Validate address format and network
+    this.validateNetworkAddress(address, this.state.network);
+    
+    this.state.address = address;
+    this.state.provider = 'manual';
+    this.state.connected = true;
+    this.notifyListeners();
+  }
+
+  /**
+   * Connect to Phantom wallet (Bitcoin support)
+   */
+  private async connectPhantom(): Promise<string> {
+    if (typeof window === 'undefined' || !(window as any).phantom?.bitcoin) {
+      throw new Error('Phantom wallet not found. Please install Phantom.');
+    }
+
+    try {
+      const phantom = (window as any).phantom.bitcoin;
+      
+      // Request accounts
+      const accounts = await phantom.requestAccounts();
+      
+      if (!accounts || accounts.length === 0) {
+        throw new Error('No Bitcoin accounts found in Phantom');
+      }
+
+      const address = accounts[0].address;
+      const publicKey = accounts[0].publicKey;
+
+      // CRITICAL: Validate network match
+      this.validateNetworkAddress(address, this.state.network);
+
+      // Create provider implementation
+      this.connectedProvider = {
+        name: 'phantom',
+        connect: async () => address,
+        getAddress: async () => address,
+        signTransaction: async (psbtBase64: string) => {
+          const signedPsbt = await phantom.signTransaction(psbtBase64);
+          return signedPsbt;
+        },
+        signMessage: async (message: string) => {
+          const signature = await phantom.signMessage(message);
+          return signature;
+        },
+        disconnect: async () => {
+          // Phantom doesn't have explicit disconnect
+          this.clearConnection();
+        }
+      };
+
+      // Update state
+      this.state = {
+        connected: true,
+        provider: 'phantom',
+        address,
+        publicKey: publicKey || null,
+        network: this.state.network
+      };
+      this.notifyListeners();
+
+      console.log(`Connected to Phantom Bitcoin (${this.state.network}):`, address);
+      return address;
+    } catch (error) {
+      console.error('Phantom connection error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Connect to Xverse wallet
+   */
+  private async connectXverse(): Promise<string> {
+    if (typeof window === 'undefined' || !(window as any).XverseProviders) {
+      throw new Error('Xverse wallet not found. Please install Xverse.');
+    }
+
+    try {
+      const xverse = (window as any).XverseProviders;
+      
+      // Connect with proper options
+      const response = await xverse.connect({
+        network: this.state.network,
+        purposes: ['payment', 'ordinals']
+      });
+      
+      if (!response?.addresses || response.addresses.length === 0) {
+        throw new Error('No addresses found in Xverse');
+      }
+
+      // Get payment address (not ordinals)
+      const paymentAddress = response.addresses.find((addr: any) => addr.purpose === 'payment');
+      if (!paymentAddress) {
+        throw new Error('No payment address found in Xverse');
+      }
+
+      const address = paymentAddress.address;
+      const publicKey = paymentAddress.publicKey;
+
+      // CRITICAL: Validate network match
+      this.validateNetworkAddress(address, this.state.network);
+
+      // Create provider implementation
+      this.connectedProvider = {
+        name: 'xverse',
+        connect: async () => address,
+        getAddress: async () => address,
+        signTransaction: async (psbtHex: string) => {
+          const signedTx = await xverse.signTransaction(psbtHex);
+          return signedTx;
+        },
+        signMessage: async (message: string) => {
+          const signature = await xverse.signMessage(message, address);
+          return signature;
+        },
+        disconnect: async () => {
+          await xverse.disconnect();
+          this.clearConnection();
+        }
+      };
+
+      // Update state
+      this.state = {
+        connected: true,
+        provider: 'xverse',
+        address,
+        publicKey: publicKey || null,
+        network: this.state.network
+      };
+      this.notifyListeners();
+
+      console.log(`Connected to Xverse (${this.state.network}):`, address);
+      return address;
+    } catch (error) {
+      console.error('Xverse connection error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Derive Bitcoin address from seed phrase (BIP39)
+   * Uses proper BIP39 seed derivation with security measures
+   */
+  async deriveFromSeedPhrase(mnemonic: string, network: 'mainnet' | 'testnet' = 'testnet'): Promise<string> {
+    let seed: Buffer | null = null;
+    let root: any = null;
+    
+    try {
+      // Validate mnemonic
+      if (!bip39.validateMnemonic(mnemonic)) {
+        throw new Error('Invalid mnemonic phrase');
+      }
+
+      // Generate seed from mnemonic (512-bit)
+      seed = await bip39.mnemonicToSeed(mnemonic);
+      
+      // Create HD wallet root
+      root = bip32.fromSeed(seed);
+      
+      // BIP84 path for native segwit (bc1/tb1 addresses)
+      const path = network === 'mainnet' 
+        ? "m/84'/0'/0'/0/0"  // Mainnet
+        : "m/84'/1'/0'/0/0"; // Testnet
+      
+      const child = root.derivePath(path);
+      const btcNetwork = network === 'mainnet' 
+        ? bitcoin.networks.bitcoin 
+        : bitcoin.networks.testnet;
+      
+      // Create key pair for signing
+      this.derivedKeyPair = ECPair.fromPrivateKey(child.privateKey!, { network: btcNetwork });
+      
+      // Generate native segwit address (bc1/tb1)
+      const { address } = bitcoin.payments.p2wpkh({
+        pubkey: child.publicKey,
+        network: btcNetwork
+      });
+      
+      if (!address) {
+        throw new Error('Failed to generate Bitcoin address');
+      }
+
+      // Validate generated address matches network (double-check)
+      this.validateNetworkAddress(address, network);
+
+      // Update state
+      this.state = {
+        connected: true,
+        provider: 'derived',
+        address,
+        publicKey: child.publicKey.toString('hex'),
+        network
+      };
+      this.notifyListeners();
+      
+      console.log(`Derived Bitcoin address (${network}):`, address);
+      return address;
+    } finally {
+      // Security: Clear sensitive data from memory
+      if (seed) {
+        seed.fill(0);
+      }
+      if (root && root.privateKey) {
+        root.privateKey.fill(0);
+      }
+      // Clear mnemonic from any internal buffers
+      mnemonic = '';
+    }
+  }
+
+  /**
+   * Get current Bitcoin address
+   */
+  getCurrentAddress(): string | null {
+    return this.state.address;
+  }
+
+  /**
+   * Get wallet connection state
+   */
+  getState(): BitcoinWalletState {
+    return { ...this.state };
+  }
+
+  /**
+   * Validate Bitcoin address format
+   */
+  validateAddress(address: string, network: 'mainnet' | 'testnet' = 'testnet'): boolean {
+    try {
+      this.validateNetworkAddress(address, network);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Sign a PSBT (for connected wallets or derived keys)
+   */
+  async signPSBT(psbtBase64: string): Promise<string> {
+    if (this.connectedProvider) {
+      return this.connectedProvider.signTransaction(psbtBase64);
+    }
+    
+    if (this.derivedKeyPair) {
+      // Sign with derived key
+      const psbt = bitcoin.Psbt.fromBase64(psbtBase64);
+      
+      // Sign all inputs
+      for (let i = 0; i < psbt.inputCount; i++) {
+        psbt.signInput(i, this.derivedKeyPair);
+      }
+      
+      psbt.finalizeAllInputs();
+      return psbt.toBase64();
+    }
+    
+    throw new Error('No wallet connected or keys available for signing');
+  }
+
+  /**
+   * Disconnect current wallet provider
+   */
+  async disconnect(): Promise<void> {
+    try {
+      if (this.connectedProvider?.disconnect) {
+        await this.connectedProvider.disconnect();
+      }
+    } catch (error) {
+      console.error('Error disconnecting wallet provider:', error);
+      throw new Error('Failed to disconnect wallet');
+    } finally {
+      this.clearConnection();
+    }
+  }
+
+  /**
+   * Clear connection and sensitive data
+   */
+  clearConnection(): void {
+    // Clear sensitive data
+    if (this.derivedKeyPair) {
+      // ECPair doesn't expose private key directly, but clear reference
+      this.derivedKeyPair = null;
+    }
+    
+    // Reset state
+    this.state = {
+      connected: false,
+      provider: null,
+      address: null,
+      publicKey: null,
+      network: 'testnet'
+    };
+    
+    this.connectedProvider = null;
+    this.notifyListeners();
+  }
+
+  /**
+   * Check if wallet is connected
+   */
+  isConnected(): boolean {
+    return this.state.connected && this.state.address !== null;
+  }
+
+  /**
+   * Get supported wallet providers
+   */
+  /**
+   * Subscribe to wallet state changes
+   */
+  subscribe(listener: WalletStateListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /**
+   * Notify all listeners of state changes
+   */
+  private notifyListeners(): void {
+    this.listeners.forEach(listener => {
+      try {
+        listener({ ...this.state });
+      } catch (error) {
+        console.error('Error in wallet state listener:', error);
+      }
+    });
+  }
+
+  getSupportedWallets(): Array<{
+    id: 'phantom' | 'xverse' | 'manual' | 'derived';
+    name: string;
+    available: boolean;
+  }> {
+    return [
+      {
+        id: 'phantom',
+        name: 'Phantom',
+        available: typeof window !== 'undefined' && !!(window as any).phantom?.bitcoin
+      },
+      {
+        id: 'xverse',
+        name: 'Xverse',
+        available: typeof window !== 'undefined' && !!(window as any).XverseProviders
+      },
+      {
+        id: 'manual',
+        name: 'Manual Input',
+        available: true
+      },
+      {
+        id: 'derived',
+        name: 'Derive from Seed',
+        available: true
+      }
+    ];
+  }
+}
+
+export const bitcoinWalletService = BitcoinWalletService.getInstance();

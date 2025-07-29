@@ -95,7 +95,8 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
     disconnect,
     status: walletStatus,
     isConnecting,
-    walletType
+    walletType,
+    isIntentionallyDisconnected
   } = useWalletStore();
 
   // Toast notifications
@@ -160,11 +161,18 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
     
     // Force check if wallet is actually connected
     const checkExistingConnection = async () => {
+      // Don't auto-connect if user intentionally disconnected
+      if (isIntentionallyDisconnected) {
+        console.log('⛔ Auto-connect blocked: User intentionally disconnected');
+        return;
+      }
+      
       if (typeof window !== 'undefined' && window.ethereum) {
         try {
           const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[];
           
           if (accounts && accounts.length > 0 && !isConnected) {
+            console.log('🔌 Auto-connecting to existing MetaMask connection');
             await connect('metamask');
           }
         } catch (error) {
@@ -174,7 +182,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
     };
     
     checkExistingConnection();
-  }, [isConnected, connect]);
+  }, [isConnected, connect, isIntentionallyDisconnected]);
 
   // Update modal state when showModal prop changes
   useEffect(() => {

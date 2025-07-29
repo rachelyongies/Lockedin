@@ -6,6 +6,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils/helpers';
 import { Header } from '../Header';
+import { useWalletStore } from '@/store/useWalletStore';
 
 // Page transition variants
 const pageVariants = {
@@ -144,6 +145,9 @@ export const PageWrapper = React.forwardRef<HTMLDivElement, PageWrapperProps>(
   ) => {
     const [mounted, setMounted] = useState(false);
     const [currentTitle, setCurrentTitle] = useState(title);
+    
+    // Wallet store for Header actions
+    const { connect, disconnect } = useWalletStore();
 
     // Handle SSR/hydration
     useEffect(() => {
@@ -234,7 +238,19 @@ export const PageWrapper = React.forwardRef<HTMLDivElement, PageWrapperProps>(
           )}
 
           {/* Header */}
-          <Header className="relative z-30" />
+          <Header 
+            className="relative z-30" 
+            walletActions={{
+              connect: async () => {
+                // For now, just log - the actual connection is handled by WalletConnector
+                console.log('Connect action triggered from Header');
+              },
+              disconnect: async () => {
+                console.log('🔥 Header disconnect button clicked - calling wallet store disconnect');
+                await disconnect();
+              }
+            }}
+          />
 
           {/* Main Content */}
           <motion.main

@@ -1,14 +1,29 @@
 'use client';
 
 import React from 'react';
+import dynamic from 'next/dynamic';
 import { PageWrapper } from '@/components/layout/PageWrapper';
-import { BridgeForm } from '@/components/bridge/BridgeForm';
 import { ToastContainer, useToast } from '@/components/ui/Toast';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useBridgeStore } from '@/store/useBridgeStore';
 import { Token } from '@/types/bridge';
 import { bridgeService } from '@/lib/services/bridge-service';
-import { WalletConnector } from '@/components/ui/WalletConnector/WalletConnector';
+import { MultiWalletManager } from '@/components/ui/MultiWalletManager';
+
+// Import BridgeFormWrapper dynamically to avoid SSR issues with Bitcoin wallet service
+const BridgeFormWrapper = dynamic(
+  () => import('@/components/bridge/BridgeFormWrapper').then(mod => ({ default: mod.BridgeFormWrapper })),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center p-8">
+        <div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+        <span className="ml-3 text-text-secondary">Loading bridge...</span>
+      </div>
+    )
+  }
+);
+
 
 export default function Home() {
   // Global state
@@ -16,13 +31,33 @@ export default function Home() {
     isConnected: isWalletConnected,
     isConnecting,
     address: walletAddress,
+    account,
     isCorrectNetwork,
     isSwitchingNetwork,
-    setConnected,
-    setConnecting,
     setNetwork,
     setSwitchingNetwork,
   } = useWalletStore();
+
+  // Track connected wallet addresses from MultiWalletManager
+  const [connectedWallets, setConnectedWallets] = React.useState<{
+    eth: string | null;
+    btc: string | null;
+  }>({
+    eth: null,
+    btc: null
+  });
+
+  // Track last toast messages to prevent duplicates
+  const lastToastRef = React.useRef<{
+    eth: string | null;
+    btc: string | null;
+  }>({
+    eth: null,
+    btc: null
+  });
+
+  // Debounce toast additions to prevent spam
+  const toastTimeouts = React.useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const {
     approvalNeeded,
@@ -144,12 +179,12 @@ export default function Home() {
 
         {/* Bridge Form */}
         <div className="flex justify-center">
-          <BridgeForm
+          <BridgeFormWrapper
             onBridge={handleBridge}
             onQuoteError={handleQuoteError}
-            isWalletConnected={isWalletConnected}
+            isWalletConnected={!!connectedWallets.eth}
             isCorrectNetwork={isCorrectNetwork && !isSwitchingNetwork}
-            walletAddress={walletAddress}
+            walletAddress={connectedWallets.eth || walletAddress || account?.address}
             onConnectWallet={handleConnectWallet}
             onSwitchNetwork={handleSwitchNetwork}
             approvalNeeded={approvalNeeded}
@@ -296,12 +331,59 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Status Bar */}
-        <div className="mt-8 text-center">
-          <WalletConnector 
-            variant="gradient"
-            size="lg"
-            className="mx-auto"
+        {/* Multi-Wallet Connection Section */}
+        <div className="mt-8">
+          <MultiWalletManager 
+            network="testnet"
+            onConnect={(wallet, address) => {
+              const walletName = wallet === 'eth' ? 'Ethereum' : 'Bitcoin';
+              
+              console.log('📡 Page onConnect called:', { wallet, address, walletName });
+              
+              // Only update state and show toast if this is a new connection
+              if (lastToastRef.current[wallet] !== address) {
+                // Update connected wallets state
+                setConnectedWallets(prev => ({
+                  ...prev,
+                  [wallet]: address
+                }));
+                
+                // Update last toast reference
+                lastToastRef.current[wallet] = address;
+                
+                // Use setTimeout to ensure toast is added after state updates
+                setTimeout(() => {
+                  addToast({ 
+                    type: 'success', 
+                    message: `${walletName} wallet connected: ${address.slice(0, 8)}...${address.slice(-8)}`
+                  });
+                }, 100);
+              }
+            }}
+            onDisconnect={(wallet) => {
+              const walletName = wallet === 'eth' ? 'Ethereum' : 'Bitcoin';
+              
+              // Only show toast if wallet was actually connected
+              if (connectedWallets[wallet]) {
+                // Update connected wallets state
+                setConnectedWallets(prev => ({
+                  ...prev,
+                  [wallet]: null
+                }));
+                
+                // Reset last toast reference
+                lastToastRef.current[wallet] = null;
+                
+                // Use setTimeout to ensure toast is added after state updates
+                setTimeout(() => {
+                  addToast({ 
+                    type: 'info', 
+                    message: `${walletName} wallet disconnected`
+                  });
+                }, 100);
+              }
+            }}
+            className="max-w-4xl mx-auto"
           />
         </div>
       </div>

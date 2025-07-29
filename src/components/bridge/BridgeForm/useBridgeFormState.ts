@@ -40,6 +40,7 @@ interface BridgeFormState {
 
 // Import bridge service
 import { bridgeService } from '@/lib/services/bridge-service';
+// Removed direct import to avoid SSR issues - will load dynamically when needed
 
 // Real quote fetching function using 1inch Fusion API
 async function fetchBridgeQuote(
@@ -48,7 +49,35 @@ async function fetchBridgeQuote(
   amount: string,
   walletAddress?: string
 ): Promise<BridgeQuote> {
-  if (!walletAddress) {
+  // Get appropriate wallet address based on token type
+  let effectiveWalletAddress = walletAddress;
+  
+  // If dealing with Bitcoin, get Bitcoin wallet address
+  if (fromToken.network === 'bitcoin' || toToken.network === 'bitcoin') {
+    // Dynamic import to avoid SSR issues
+    const { simpleBitcoinWallet } = await import('@/lib/services/phantom-btc-simple');
+    const btcAddress = simpleBitcoinWallet.getCurrentAddress();
+    if (!btcAddress) {
+      throw new Error('Bitcoin wallet not connected. Please connect a Bitcoin wallet.');
+    }
+    
+    // For cross-chain, we need both addresses
+    if (fromToken.network === 'bitcoin' && toToken.network === 'ethereum') {
+      // BTC -> ETH: Need both BTC source and ETH destination
+      if (!walletAddress) {
+        throw new Error('Ethereum wallet address required for BTC->ETH swap');
+      }
+      effectiveWalletAddress = walletAddress; // Use ETH address for quote
+    } else if (fromToken.network === 'ethereum' && toToken.network === 'bitcoin') {
+      // ETH -> BTC: Need both ETH source and BTC destination  
+      if (!walletAddress) {
+        throw new Error('Ethereum wallet address required for ETH->BTC swap');
+      }
+      effectiveWalletAddress = walletAddress; // Use ETH address for quote
+    }
+  }
+  
+  if (!effectiveWalletAddress) {
     throw new Error('Wallet address required for quote');
   }
 
@@ -58,7 +87,7 @@ async function fetchBridgeQuote(
   }
 
   // Get quote from 1inch Fusion
-  return await bridgeService.getQuote(fromToken, toToken, amount, walletAddress);
+  return await bridgeService.getQuote(fromToken, toToken, amount, effectiveWalletAddress);
 }
 
 export function useBridgeFormState({ 
@@ -85,8 +114,8 @@ export function useBridgeFormState({
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | undefined>();
   
-  // Debounced amount for quote fetching
-  const debouncedFromAmount = useDebounce(fromAmount, 500);
+  // Debounced amount for quote fetching (longer delay to let user finish typing)
+  const debouncedFromAmount = useDebounce(fromAmount, 1200);
   
   // Quote fetching ref to cancel outdated requests
   const quoteAbortController = useRef<AbortController | null>(null);
@@ -133,10 +162,19 @@ export function useBridgeFormState({
         if (signal.aborted) return;
         
         const errorMessage = error?.message || 'Failed to fetch quote';
-        setQuoteError(errorMessage);
+        
+        // Don't show quote errors for amounts that look incomplete (user still typing)
+        const isIncompleteAmount = debouncedFromAmount === '0' || 
+                                  debouncedFromAmount.endsWith('.') || 
+                                  debouncedFromAmount === '0.';
+        
+        if (!isIncompleteAmount) {
+          setQuoteError(errorMessage);
+          onQuoteError?.(errorMessage);
+        }
+        
         setQuote(null);
         setToAmount('');
-        onQuoteError?.(errorMessage);
       })
       .finally(() => {
         if (!signal.aborted) {
@@ -207,15 +245,34 @@ export function useBridgeFormState({
     setBridgeSuccess(false);
 
     try {
-      // Replace with your deployed contract address
-      const contractAddress = "0xYourDeployedContractAddressHere"; 
+      // Load contract address from deployment info or environment
+      let contractAddress: string;
+      try {
+        // Try to load from deployment file
+        const deploymentInfo = await import('@/../deployments/fusion-bridge-sepolia.json');
+        contractAddress = deploymentInfo.contractAddress;
+      } catch {
+        // Fallback to environment variable
+        contractAddress = process.env.NEXT_PUBLIC_HTLC_CONTRACT_ADDRESS || '';
+        if (!contractAddress) {
+          throw new Error('Contract address not found. Please set NEXT_PUBLIC_HTLC_CONTRACT_ADDRESS or ensure deployment file exists.');
+        }
+      }
+      
       const contractABI = [
         // Only include the initiate function ABI for now
         "function initiate(bytes32 id, address resolver, bytes32 hash, uint256 timelock) payable"
       ];
 
       const signer = await provider.getSigner();
+      const signerAddress = await signer.getAddress();
       const contract = new ethers.Contract(contractAddress, contractABI, signer);
+      
+      console.log('Signer Debug:', {
+        signerAddress,
+        contractAddress,
+        expectedAddress: 'Check if this matches your MetaMask address'
+      });
 
       // In a real application, the hash and id would be generated from a secret preimage
       // For now, we'll use a simple hash and a random ID
@@ -224,6 +281,14 @@ export function useBridgeFormState({
       const id = ethers.keccak256(ethers.toUtf8Bytes(Date.now().toString())); // Simple unique ID
 
       const amountInWei = ethers.parseEther(fromAmount); // Convert amount to Wei
+      
+      console.log('HTLC Transaction Debug:', {
+        fromAmount,
+        amountInWei: amountInWei.toString(),
+        amountInEth: ethers.formatEther(amountInWei),
+        resolver,
+        timelock
+      });
 
       const transaction = await contract.initiate(id, resolver, hash, timelock, {
         value: amountInWei,

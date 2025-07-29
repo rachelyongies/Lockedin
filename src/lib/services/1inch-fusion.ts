@@ -1,8 +1,7 @@
 import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode } from '@/types/bridge';
 
 const FUSION_API_CONFIG = {
-  baseUrl: process.env.NEXT_PUBLIC_1INCH_FUSION_API_URL || 'https://api.1inch.dev/fusion',
-  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY,
+  baseUrl: '/api/fusion', // Use Next.js API routes to avoid CORS
   timeout: 30000, // set min time out 
   retryAttempts: 3,
   retryDelay: 1000,
@@ -195,7 +194,6 @@ async function fetchWithRetry(
     const response = await fetch(url, {
       ...options,
       headers: {
-        'Authorization': `Bearer ${FUSION_API_CONFIG.apiKey}`,
         'Content-Type': 'application/json',
         ...options.headers,
       },
@@ -266,22 +264,21 @@ export class FusionAPIService {
     walletAddress: string
   ): Promise<BridgeQuote> {
     try {
-      const request: FusionQuoteRequest = {
-        fromTokenAddress: getTokenAddress(fromToken),
-        toTokenAddress: getTokenAddress(toToken),
-        amount: amount,
-        walletAddress: walletAddress,
-        source: 'chaincrossing-bridge',
-        enableEstimate: true,
-        complexityLevel: 'medium',
-        allowPartialFill: false,
-      };
+      // Convert amount to wei for proper API formatting
+      const amountInWei = fromToken.symbol === 'ETH' || fromToken.symbol === 'WETH' 
+        ? (parseFloat(amount) * Math.pow(10, fromToken.decimals || 18)).toString()
+        : (parseFloat(amount) * Math.pow(10, fromToken.decimals || 18)).toString();
+
+      const queryParams = new URLSearchParams({
+        src: getTokenAddress(fromToken),
+        dst: getTokenAddress(toToken),
+        amount: amountInWei,
+      });
 
       const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/quote`,
+        `${FUSION_API_CONFIG.baseUrl}/quote?${queryParams}`,
         {
-          method: 'POST',
-          body: JSON.stringify(request),
+          method: 'GET',
         }
       );
 
@@ -317,10 +314,15 @@ export class FusionAPIService {
     quoteId?: string
   ): Promise<FusionOrderResponse> {
     try {
+      // Convert amount to wei for proper API formatting
+      const amountInWei = fromToken.symbol === 'ETH' || fromToken.symbol === 'WETH' 
+        ? (parseFloat(amount) * Math.pow(10, fromToken.decimals || 18)).toString()
+        : (parseFloat(amount) * Math.pow(10, fromToken.decimals || 18)).toString();
+
       const request: FusionOrderRequest = {
         fromTokenAddress: getTokenAddress(fromToken),
         toTokenAddress: getTokenAddress(toToken),
-        amount: amount,
+        amount: amountInWei,
         walletAddress: walletAddress,
         source: 'chaincrossing-bridge',
         complexityLevel: 'medium',

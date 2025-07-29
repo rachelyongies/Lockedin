@@ -1,0 +1,24 @@
+// Dynamic loader for Bitcoin wallet service to handle WebAssembly async loading
+import type { BitcoinWalletService } from './bitcoin-wallet-service';
+
+let bitcoinWalletServiceInstance: BitcoinWalletService | null = null;
+
+export async function loadBitcoinWalletService(): Promise<BitcoinWalletService> {
+  // Ensure we're in a browser environment
+  if (typeof window === 'undefined') {
+    throw new Error('Bitcoin wallet service can only be loaded in browser environment');
+  }
+
+  if (bitcoinWalletServiceInstance) {
+    return bitcoinWalletServiceInstance;
+  }
+
+  // Dynamic import to create async split point for WebAssembly
+  const { bitcoinWalletService } = await import('./bitcoin-wallet-service');
+  bitcoinWalletServiceInstance = bitcoinWalletService;
+  
+  return bitcoinWalletService;
+}
+
+// Export types for TypeScript
+export type { BitcoinWalletState } from './bitcoin-wallet-service';

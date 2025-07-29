@@ -110,6 +110,9 @@ export interface WalletState {
   autoConnect: boolean
   preferredWallet: WalletType | null
   
+  // Disconnect tracking
+  isIntentionallyDisconnected: boolean
+  
   // UI state
   isConnecting: boolean
   isReconnecting: boolean
@@ -184,6 +187,14 @@ export const DEFAULT_NETWORKS: Record<number, NetworkInfo> = {
     rpcUrl: 'https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
     blockExplorerUrl: 'https://goerli.etherscan.io',
     isTestnet: true
+  },
+  11155111: {
+    chainId: 11155111,
+    name: 'Sepolia Testnet',
+    currency: 'ETH',
+    rpcUrl: 'https://rpc.sepolia.org',
+    blockExplorerUrl: 'https://sepolia.etherscan.io',
+    isTestnet: true
   }
 }
 
@@ -201,6 +212,7 @@ export const useWalletStore = create<WalletState>()(
       error: null,
       autoConnect: false,
       preferredWallet: null,
+      isIntentionallyDisconnected: false,
       isConnecting: false,
       isReconnecting: false,
       showWalletModal: false,
@@ -249,6 +261,9 @@ export const useWalletStore = create<WalletState>()(
           state.status = 'connecting'
           state.walletType = walletType
           state.error = null
+          // Clear intentional disconnect flag when user manually connects
+          state.isIntentionallyDisconnected = false
+          console.log('🟢 CONNECT: Set isIntentionallyDisconnected = false')
         })
 
         try {
@@ -337,8 +352,23 @@ export const useWalletStore = create<WalletState>()(
 
       disconnect: async () => {
         try {
-          // TODO: Implement actual wallet disconnection logic
+          const currentWalletType = get().walletType;
           
+          // Clear localStorage wallet preferences FIRST to prevent auto-reconnect on hydration
+          localStorage.removeItem('chaincrossing-wallet-store');
+          
+          // Clear any other wallet-related storage that might exist
+          localStorage.removeItem('wagmi.store');
+          localStorage.removeItem('walletconnect');
+          localStorage.removeItem('WEB3_CONNECT_CACHED_PROVIDER');
+          
+          // Clear any sessionStorage as well
+          sessionStorage.clear();
+          
+          // Reset auto-reconnect service to prevent reconnection attempts
+          walletAutoReconnect.reset();
+          
+          // Clear app state immediately to prevent any UI flickering
           set((state) => {
             state.status = 'disconnected'
             state.walletType = null
@@ -350,11 +380,71 @@ export const useWalletStore = create<WalletState>()(
             state.isReconnecting = false
             state.showWalletModal = false
             state.isConnected = false
+            // Clear auto-connect settings to prevent immediate reconnection
+            state.autoConnect = false
+            state.preferredWallet = null
+            // Mark as intentionally disconnected to prevent auto-reconnection
+            state.isIntentionallyDisconnected = true
+            console.log('🔴 DISCONNECT: Set isIntentionallyDisconnected = true')
           })
+          
+          // Actual wallet disconnection logic based on wallet type
+          if (currentWalletType === 'metamask' || currentWalletType === 'coinbase' || currentWalletType === 'injected') {
+            // For MetaMask and similar Ethereum wallets
+            if (typeof window.ethereum !== 'undefined') {
+              try {
+                // Clear any cached permissions and accounts
+                // Note: Most wallets don't support programmatic disconnect, so we focus on clearing our state
+                console.log('Clearing Ethereum wallet connection state');
+                
+                // Try to "forget" this website by requesting fresh permissions
+            // Note: This rarely works with MetaMask, but we try anyway
+                if (window.ethereum.request) {
+                  try {
+                    // Method 1: Request fresh permissions (clears cached permissions)
+                    await window.ethereum.request({
+                      method: 'wallet_requestPermissions',
+                      params: [{ eth_accounts: {} }],
+                    });
+                    console.log('Wallet permissions reset');
+                  } catch {
+                    // Method 2: Try to disconnect using non-standard methods
+                    try {
+                      // Some wallets support this
+                      await window.ethereum.request({
+                        method: 'wallet_revokePermissions',
+                        params: [{ eth_accounts: {} }],
+                      });
+                      console.log('Wallet permissions revoked');
+                    } catch {
+                      console.log('MetaMask disconnect limitation: wallet stays connected at browser level (this is normal)');
+                    }
+                  }
+                }
+              } catch (error) {
+                console.warn('Could not clear Ethereum wallet state:', error);
+              }
+            }
+          } else if (currentWalletType === 'phantom') {
+            // For Phantom wallet
+            if (window.solana?.disconnect) {
+              try {
+                await window.solana.disconnect();
+                console.log('Phantom wallet disconnected successfully');
+              } catch (error) {
+                console.warn('Could not disconnect Phantom wallet:', error);
+              }
+            }
+          }
+          
+          console.log('Wallet disconnected successfully');
 
         } catch (error: unknown) {
           console.error('Error disconnecting wallet:', error)
-          // Even if disconnection fails, reset the state
+          // Even if disconnection fails, reset the state and localStorage
+          localStorage.removeItem('chaincrossing-wallet-store');
+          walletAutoReconnect.reset();
+          
           set((state) => {
             state.status = 'disconnected'
             state.walletType = null
@@ -362,6 +452,9 @@ export const useWalletStore = create<WalletState>()(
             state.network = null
             state.provider = null
             state.isConnected = false
+            state.autoConnect = false
+            state.preferredWallet = null
+            state.isIntentionallyDisconnected = true
           })
         }
       },
@@ -546,7 +639,7 @@ export const useWalletStore = create<WalletState>()(
         })
       },
 
-      setNetwork: (chainId: number, isCorrect: boolean) => {
+      setNetwork: (chainId: number, _isCorrect: boolean) => {
         set((state) => {
           const networkInfo = DEFAULT_NETWORKS[chainId]
           if (networkInfo) {
@@ -581,8 +674,8 @@ export const useWalletStore = create<WalletState>()(
           state.isReconnecting = false
           state.showWalletModal = false
           
-          // Auto-reconnect if enabled and preferred wallet is set
-          if (state.autoConnect && state.preferredWallet) {
+          // Auto-reconnect if enabled and preferred wallet is set (but not if intentionally disconnected)
+          if (state.autoConnect && state.preferredWallet && !state.isIntentionallyDisconnected) {
             // Delay auto-reconnect to avoid hydration mismatch
             setTimeout(() => {
               walletAutoReconnect.attemptReconnect()
@@ -618,8 +711,12 @@ class WalletAutoReconnect {
       this.isReconnecting || 
       state.status === 'connected' || 
       !state.preferredWallet ||
-      this.reconnectAttempts >= this.maxReconnectAttempts
+      this.reconnectAttempts >= this.maxReconnectAttempts ||
+      state.isIntentionallyDisconnected  // Don't reconnect if user intentionally disconnected
     ) {
+      if (state.isIntentionallyDisconnected) {
+        console.log('🚫 AUTO-RECONNECT BLOCKED: User intentionally disconnected')
+      }
       return
     }
     
