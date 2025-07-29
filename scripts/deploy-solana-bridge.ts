@@ -1,4 +1,4 @@
-import { ethers } from "hardhat";
+const { ethers } = require("hardhat");
 
 async function main() {
   console.log("Deploying SolanaBridge contract...");
@@ -8,7 +8,7 @@ async function main() {
 
   // Mock token addresses for deployment
   // In production, these would be real token addresses
-  const mockWSOLToken = "AcXsCPgSPknuk8odssi1osVVT3NqAAQNctPfiWpu7uZN"; // Rachel SOL 
+  const mockWSOLToken = "0x905477D96023b2465DA8dfA0960669708AEFaeb2"; // EVM wallet address for WSOL token 
   const mockWETHToken = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"; // Real WETH address
 
   // Deploy the contract

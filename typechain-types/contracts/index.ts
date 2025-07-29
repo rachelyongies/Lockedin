@@ -2,10 +2,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export type { BitcoinBridge } from "./BitcoinBridge";
-<<<<<<< HEAD
+export type { Fusion1inchBitcoinBridge } from "./Fusion1inchBitcoinBridge";
 export type { SolanaBridge } from "./SolanaBridge";
 export type { StarknetBridge } from "./StarknetBridge";
 export type { StellarBridge } from "./StellarBridge";
-=======
-export type { Fusion1inchBitcoinBridge } from "./Fusion1inchBitcoinBridge";
->>>>>>> 6ff8a00f46845f1012ffa71f77df80cc198e90ae
