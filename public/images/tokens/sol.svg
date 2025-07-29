@@ -1,0 +1,10 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="16" fill="url(#sol-gradient)"/>
+  <path d="M8.5 20.5L12.5 16.5L8.5 12.5H23.5L19.5 16.5L23.5 20.5H8.5Z" fill="white"/>
+  <defs>
+    <linearGradient id="sol-gradient" x1="16" y1="0" x2="16" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stopColor="#9945FF"/>
+      <stop offset="1" stopColor="#14F195"/>
+    </linearGradient>
+  </defs>
+</svg> 

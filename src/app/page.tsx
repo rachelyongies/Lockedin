@@ -8,6 +8,9 @@ import { useWalletStore } from '@/store/useWalletStore';
 import { useBridgeStore } from '@/store/useBridgeStore';
 import { Token } from '@/types/bridge';
 import { bridgeService } from '@/lib/services/bridge-service';
+import { solanaBridgeService } from '@/lib/services/solana-bridge-service';
+import { starknetBridgeService } from '@/lib/services/starknet-bridge-service';
+import { stellarBridgeService } from '@/lib/services/stellar-bridge-service';
 import { WalletConnector } from '@/components/ui/WalletConnector/WalletConnector';
 
 export default function Home() {
@@ -81,18 +84,61 @@ export default function Home() {
     }
 
     try {
-      // Execute bridge using 1inch Fusion
-      const transaction = await bridgeService.executeBridge(
-        fromToken,
-        toToken,
-        amount,
-        walletAddress,
-        0.5, // 0.5% slippage
-        (status, data) => {
-          console.log('Bridge progress:', status, data);
-          // You can add progress notifications here
-        }
-      );
+      // Check bridge type based on token networks
+      const isSolanaBridge = fromToken.network === 'solana' || toToken.network === 'solana';
+      const isStarknetBridge = fromToken.network === 'starknet' || toToken.network === 'starknet';
+      const isStellarBridge = fromToken.network === 'stellar' || toToken.network === 'stellar';
+      
+      let transaction;
+      if (isSolanaBridge) {
+        // Execute Solana bridge
+        transaction = await solanaBridgeService.executeBridge(
+          fromToken,
+          toToken,
+          amount,
+          walletAddress,
+          undefined, // recipient address
+          (status, data) => {
+            console.log('Solana bridge progress:', status, data);
+          }
+        );
+      } else if (isStarknetBridge) {
+        // Execute Starknet bridge
+        transaction = await starknetBridgeService.executeBridge(
+          fromToken,
+          toToken,
+          amount,
+          walletAddress,
+          undefined, // recipient address
+          (status, data) => {
+            console.log('Starknet bridge progress:', status, data);
+          }
+        );
+      } else if (isStellarBridge) {
+        // Execute Stellar bridge
+        transaction = await stellarBridgeService.executeBridge(
+          fromToken,
+          toToken,
+          amount,
+          walletAddress,
+          undefined, // recipient address
+          (status, data) => {
+            console.log('Stellar bridge progress:', status, data);
+          }
+        );
+      } else {
+        // Execute regular bridge using 1inch Fusion
+        transaction = await bridgeService.executeBridge(
+          fromToken,
+          toToken,
+          amount,
+          walletAddress,
+          0.5, // 0.5% slippage
+          (status, data) => {
+            console.log('Bridge progress:', status, data);
+          }
+        );
+      }
 
       addToast({ 
         type: 'success', 

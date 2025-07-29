@@ -1,4 +1,5 @@
 import { Connection, PublicKey, clusterApiUrl } from '@solana/web3.js';
+import { SOLANA_TEST_CONFIG } from '@/config/solana-test';
 
 // Solana wallet service
 export class SolanaWalletService {
@@ -13,9 +14,18 @@ export class SolanaWalletService {
   } | null = null; // Phantom wallet
 
   constructor() {
+<<<<<<< HEAD
+    // Use devnet for testing with the provided test wallet
+    const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet';
+=======
     // Use mainnet-beta for production, devnet for testing
     const network = (process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet') as 'devnet' | 'testnet' | 'mainnet-beta';
+>>>>>>> 6ff8a00f46845f1012ffa71f77df80cc198e90ae
     this.connection = new Connection(clusterApiUrl(network));
+    
+    // Log connection info for debugging
+    console.log(`Solana wallet service initialized for ${network}`);
+    console.log(`Test wallet: ${SOLANA_TEST_CONFIG.testWalletAddress}`);
   }
 
   // Check if Phantom wallet is installed

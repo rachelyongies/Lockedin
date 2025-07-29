@@ -11,6 +11,7 @@ import { TransactionMonitor } from '../TransactionFlow/TransactionMonitor';
 import { cn } from '@/lib/utils/helpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Token } from '@/types/bridge';
+import { useWalletStore } from '@/store/useWalletStore';
 
 export interface BridgeFormProps {
   className?: string;
@@ -57,6 +58,8 @@ export function BridgeForm({
   onError,
   onSuccess,
 }: BridgeFormProps) {
+  // Get wallet state
+  const { isConnected, account, walletType } = useWalletStore();
   // Bridge form state
   const {
     fromToken,
@@ -243,6 +246,72 @@ export function BridgeForm({
                 min="3600"
               />
             </div>
+
+                    {/* Solana Bridge Info */}
+        {(fromToken?.network === 'solana' || toToken?.network === 'solana') && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8.5 20.5L12.5 16.5L8.5 12.5H23.5L19.5 16.5L23.5 20.5H8.5Z"/>
+                </svg>
+              </div>
+              <span className="font-semibold text-purple-800">Solana Bridge</span>
+            </div>
+            <p className="text-sm text-purple-700">
+              {walletType === 'phantom' ?
+                'Phantom wallet detected. Ready for Solana transactions.' :
+                'Connect Phantom wallet to bridge with Solana.'
+              }
+            </p>
+          </motion.div>
+        )}
+
+        {/* Starknet Bridge Info */}
+        {(fromToken?.network === 'starknet' || toToken?.network === 'starknet') && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200 rounded-lg"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 8L24 24M24 8L8 24" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <span className="font-semibold text-cyan-800">Starknet Bridge</span>
+            </div>
+            <p className="text-sm text-cyan-700">
+              Starknet L2 scaling solution. Fast and cost-effective transactions.
+            </p>
+          </motion.div>
+        )}
+
+        {/* Stellar Bridge Info */}
+        {(fromToken?.network === 'stellar' || toToken?.network === 'stellar') && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-lg"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-6 h-6 bg-gradient-to-r from-orange-500 to-red-500 rounded-full flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M16 6L20 12L16 18L12 12L16 6Z"/>
+                </svg>
+              </div>
+              <span className="font-semibold text-orange-800">Stellar Bridge</span>
+            </div>
+            <p className="text-sm text-orange-700">
+              Stellar network for fast cross-border payments and asset transfers.
+            </p>
+          </motion.div>
+        )}
 
             {/* Resolver Address Input */}
             <div className="space-y-2">
