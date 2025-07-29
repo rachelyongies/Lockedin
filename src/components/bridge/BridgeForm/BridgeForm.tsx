@@ -6,12 +6,15 @@ import { TokenCard } from './TokenCard';
 import { SwapButton } from './SwapButton';
 import { BridgeDetails } from '../BridgeDetails';
 import { ActionButton } from '../ActionButton';
+import { AISmartBridge } from '../AISmartBridge';
 import { useBridgeFormState } from './useBridgeFormState';
 import { TransactionMonitor } from '../TransactionFlow/TransactionMonitor';
 import { cn } from '@/lib/utils/helpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Token } from '@/types/bridge';
 import { useWalletStore } from '@/store/useWalletStore';
+import { RouteAnalysis } from '@/lib/services/ai-smart-routing';
+import { BridgeService } from '@/lib/services/bridge-service';
 
 export interface BridgeFormProps {
   className?: string;
@@ -91,6 +94,10 @@ export function BridgeForm({
 
   // UI state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  
+  // AI Smart Bridge state
+  const [showAIBridge, setShowAIBridge] = useState(false);
+  const [isAIBridgeEnabled, setIsAIBridgeEnabled] = useState(true); // Feature flag
 
   // Handle token selection
   const handleFromTokenSelect = (token: Token | null) => {
@@ -116,6 +123,44 @@ export function BridgeForm({
       setShowResetConfirm(true);
       // Auto-hide confirmation after 3 seconds
       setTimeout(() => setShowResetConfirm(false), 3000);
+    }
+  };
+
+  // AI Smart Bridge handlers
+  const handleAIBridgeOpen = () => {
+    if (!fromToken || !toToken || !isValidAmount) return;
+    setShowAIBridge(true);
+  };
+
+  const handleAIBridgeClose = () => {
+    setShowAIBridge(false);
+  };
+
+  const handleAIBridgeExecute = async (selectedRoute?: RouteAnalysis) => {
+    try {
+      setShowAIBridge(false);
+      
+      if (!fromToken || !toToken || !fromAmount) return;
+      
+      const bridgeService = BridgeService.getInstance();
+      
+      // Execute with AI optimization
+      await bridgeService.executeAIOptimizedBridge(
+        fromToken,
+        toToken,
+        fromAmount,
+        walletAddress || account?.address || '',
+        selectedRoute,
+        (status, data) => {
+          // Progress updates will be handled by TransactionMonitor
+          console.log('AI Bridge Progress:', status, data);
+        }
+      );
+      
+      onSuccess?.('🚀 AI-optimized bridge executed successfully!');
+    } catch (error) {
+      console.error('AI Bridge execution failed:', error);
+      onError?.('AI bridge execution failed. Please try again.');
     }
   };
 
@@ -346,7 +391,46 @@ export function BridgeForm({
               )}
             </AnimatePresence>
 
-            {/* Action Button */}
+            {/* AI Smart Bridge Button */}
+            {isAIBridgeEnabled && fromToken && toToken && isValidAmount && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-3"
+              >
+                <motion.button
+                  onClick={handleAIBridgeOpen}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="w-full py-4 px-6 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold rounded-xl transition-all duration-200 flex items-center justify-center space-x-3 shadow-lg hover:shadow-xl relative overflow-hidden group"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                  <div className="relative flex items-center space-x-3">
+                    <div className="relative">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                      </svg>
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                        className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full opacity-75"
+                      />
+                    </div>
+                    <span className="text-lg">🚀 AI Smart Bridge</span>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  </div>
+                </motion.button>
+                
+                <div className="text-center">
+                  <span className="text-xs text-gray-400">or use</span>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Standard Action Button */}
             <ActionButton
               isWalletConnected={isWalletConnected}
               isCorrectNetwork={isCorrectNetwork}
@@ -399,6 +483,17 @@ export function BridgeForm({
         </div>
       </motion.div>
 
+      {/* AI Smart Bridge Modal */}
+      {fromToken && toToken && fromAmount && (
+        <AISmartBridge
+          fromToken={fromToken}
+          toToken={toToken}
+          amount={fromAmount}
+          onExecute={handleAIBridgeExecute}
+          onClose={handleAIBridgeClose}
+          isVisible={showAIBridge}
+        />
+      )}
     </div>
   );
 }

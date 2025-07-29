@@ -1,24 +1,6 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
-<<<<<<< HEAD
-const config: HardhatUserConfig = {
-  solidity: "0.8.20",
-  networks: {
-    hardhat: {
-      chainId: 31337
-    },
-    localhost: {
-      url: "http://127.0.0.1:8545"
-    }
-  },
-  paths: {
-    sources: "./contracts",
-    tests: "./test",
-    cache: "./cache",
-    artifacts: "./artifacts"
-  }
-=======
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
@@ -47,6 +29,14 @@ module.exports = {
       url: "http://127.0.0.1:8545",
       chainId: 31337,
     },
+    hardhat: {
+      chainId: 31337
+    }
   },
->>>>>>> 6ff8a00f46845f1012ffa71f77df80cc198e90ae
+  paths: {
+    sources: "./contracts",
+    tests: "./test",
+    cache: "./cache",
+    artifacts: "./artifacts"
+  }
 };

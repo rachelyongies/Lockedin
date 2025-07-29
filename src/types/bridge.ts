@@ -246,7 +246,7 @@ export interface BridgeRoute {
 
 // Transaction Status
 export type TransactionStatus = 
-  | 'pending'
+  'pending'
   | 'confirming'
   | 'confirmed'
   | 'completed'
@@ -277,11 +277,9 @@ export interface BridgeTransaction {
   txIdentifier: {
     ethereum?: string; // tx hash
     bitcoin?: string;  // tx id
-<<<<<<< HEAD
     solana?: string;   // tx signature
     starknet?: string; // tx hash
     stellar?: string;  // tx hash
-=======
     htlc?: {
       id: string;
       preimage?: string; // Optional - only set when needed
@@ -290,7 +288,6 @@ export interface BridgeTransaction {
       redeemed?: boolean;
       refunded?: boolean;
     };
->>>>>>> 6ff8a00f46845f1012ffa71f77df80cc198e90ae
   };
   
   // Confirmation tracking

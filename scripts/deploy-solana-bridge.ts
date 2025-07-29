@@ -1,10 +1,10 @@
-import { ethers } from "hardhat";
+import hre from "hardhat";
 
 async function main() {
   console.log("Deploying SolanaBridge contract...");
 
   // Get the contract factory
-  const SolanaBridge = await ethers.getContractFactory("SolanaBridge");
+  const SolanaBridge = await hre.ethers.getContractFactory("SolanaBridge");
 
   // Mock token addresses for deployment
   // In production, these would be real token addresses
@@ -26,11 +26,11 @@ async function main() {
   console.log("- WSOL Token:", mockWSOLToken);
   console.log("- WETH Token:", mockWETHToken);
   console.log("- Owner:", await solanaBridge.owner());
-  console.log("- Bridge Fee:", ethers.formatEther(await solanaBridge.bridgeFee()), "ETH");
+  console.log("- Bridge Fee:", hre.ethers.formatEther(await solanaBridge.bridgeFee()), "ETH");
 
   // Verify the deployment
   console.log("\nVerifying deployment...");
-  const deployedCode = await ethers.provider.getCode(address);
+  const deployedCode = await hre.ethers.provider.getCode(address);
   if (deployedCode === "0x") {
     throw new Error("Contract deployment failed - no code at address");
   }

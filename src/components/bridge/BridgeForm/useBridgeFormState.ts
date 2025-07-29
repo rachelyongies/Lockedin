@@ -245,7 +245,9 @@ export function useBridgeFormState({
 
       // In a real application, the hash and id would be generated from a secret preimage
       // For now, we'll use a simple hash and a random ID
-      const preimage = ethers.randomBytes(32);
+      const bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      const preimage = bytes;
       const hash = ethers.sha256(preimage);
       const id = ethers.keccak256(ethers.toUtf8Bytes(Date.now().toString())); // Simple unique ID
 

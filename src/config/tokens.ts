@@ -373,9 +373,11 @@ export function getTokenKey(token: Token): string {
     return `${token.symbol}_starknet_${token.chainId}`;
   } else if (token.network === 'stellar') {
     return `${token.symbol}_stellar_${token.chainId}`;
-  } else {
-    return `${token.symbol}_${token.network}_${token.chainId}`;
   }
+  
+  // This should never be reached due to exhaustive type checking
+  const _exhaustiveCheck: never = token;
+  return _exhaustiveCheck;
 }
 
 // Token lookup by symbol and chain - properly handles duplicates

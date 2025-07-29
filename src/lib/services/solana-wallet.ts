@@ -14,13 +14,8 @@ export class SolanaWalletService {
   } | null = null; // Phantom wallet
 
   constructor() {
-<<<<<<< HEAD
-    // Use devnet for testing with the provided test wallet
-    const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet';
-=======
     // Use mainnet-beta for production, devnet for testing
     const network = (process.env.NEXT_PUBLIC_SOLANA_NETWORK || 'devnet') as 'devnet' | 'testnet' | 'mainnet-beta';
->>>>>>> 6ff8a00f46845f1012ffa71f77df80cc198e90ae
     this.connection = new Connection(clusterApiUrl(network));
     
     // Log connection info for debugging

@@ -55,7 +55,8 @@ export class HTLCBridgeService {
   // Generate HTLC parameters with absolute timestamp for cross-chain coordination
   private generateHTLCParams(): { id: string; hash: string; preimage: string; timelock: number } {
     // Generate random preimage (secret)
-    const preimage = ethers.randomBytes(32);
+    const preimage = new Uint8Array(32);
+    crypto.getRandomValues(preimage);
     const hash = ethers.sha256(preimage);
     const id = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
       ['bytes32', 'uint256'],

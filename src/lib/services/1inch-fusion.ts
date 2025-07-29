@@ -2,7 +2,7 @@ import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode } f
 
 const FUSION_API_CONFIG = {
   baseUrl: process.env.NEXT_PUBLIC_1INCH_FUSION_API_URL || 'https://api.1inch.dev/fusion',
-  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY,
+  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || 'demo_api_key',
   timeout: 30000, // set min time out 
   retryAttempts: 3,
   retryDelay: 1000,
@@ -244,7 +244,7 @@ function getTokenAddress(token: Token): string {
   }
   
   const key = `${token.symbol}_${token.network === 'ethereum' ? (token.chainId === 1 ? '' : 'GOERLI') : ''}`;
-  return TOKEN_ADDRESS_MAP[key] || token.address;
+  return TOKEN_ADDRESS_MAP[key] || ('address' in token ? token.address || '' : '');
 }
 
 // Main Fusion API Service

@@ -1,4 +1,4 @@
-import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode } from '@/types/bridge';
+import { Token, BridgeQuote, BridgeTransaction } from '@/types/bridge';
 import { ethers } from 'ethers';
 import { parseUnits, formatUnits } from 'ethers';
 
@@ -89,47 +89,26 @@ export class StellarBridgeService {
 
       // Calculate amounts
       const fromAmount = parseUnits(amount, fromToken.decimals);
-      const toAmount = fromAmount.mul(Math.floor(exchangeRate * 10000)).div(10000); // Apply exchange rate
+      const toAmount = (fromAmount * BigInt(Math.floor(exchangeRate * 10000))) / 10000n; // Apply exchange rate
       const feeAmount = parseUnits(totalFee.toString(), fromToken.decimals);
 
       return {
+        id: `stellar-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         fromToken,
         toToken,
-        fromAmount: {
-          value: fromAmount.toString(),
-          formatted: amount,
-          decimals: fromToken.decimals,
-        },
-        toAmount: {
-          value: toAmount.toString(),
-          formatted: formatUnits(toAmount, toToken.decimals),
-          decimals: toToken.decimals,
-        },
-        exchangeRate,
-        bridgeFee: {
-          value: parseUnits(bridgeFee.toString(), fromToken.decimals).toString(),
-          formatted: bridgeFee.toString(),
-          decimals: fromToken.decimals,
-        },
-        networkFee: {
-          value: parseUnits(networkFee.toString(), fromToken.decimals).toString(),
-          formatted: networkFee.toString(),
-          decimals: fromToken.decimals,
-        },
-        totalFee: {
-          value: feeAmount.toString(),
-          formatted: totalFee.toString(),
-          decimals: fromToken.decimals,
-        },
+        fromAmount: amount,
+        toAmount: formatUnits(toAmount, toToken.decimals),
+        exchangeRate: exchangeRate.toString(),
+        networkFee: networkFee.toString(),
+        protocolFee: bridgeFee.toString(),
+        totalFee: totalFee.toString(),
         estimatedTime: '3-5 minutes',
-        slippage: 0.5, // 0.5% default slippage
-        validUntil: Date.now() + 5 * 60 * 1000, // 5 minutes
+        minimumReceived: formatUnits(toAmount, toToken.decimals),
+        priceImpact: '0.05',
+        expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
       };
     } catch (error) {
-      throw new BridgeError(
-        BridgeErrorCode.QUOTE_FAILED,
-        error instanceof Error ? error.message : 'Failed to get quote'
-      );
+      throw new Error(error instanceof Error ? error.message : 'Failed to get quote');
     }
   }
 
@@ -140,7 +119,7 @@ export class StellarBridgeService {
     amount: string,
     walletAddress: string,
     recipientAddress?: string,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     try {
       onProgress?.('Initializing Stellar bridge...');
@@ -154,7 +133,9 @@ export class StellarBridgeService {
       const htlcId = ethers.keccak256(ethers.toUtf8Bytes(`${walletAddress}-${Date.now()}-${Math.random()}`));
       
       // Generate preimage and hash
-      const preimage = ethers.randomBytes(32);
+      const bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      const preimage = bytes;
       const hash = ethers.keccak256(preimage);
 
       onProgress?.('HTLC parameters generated', { htlcId, hash });
@@ -181,10 +162,7 @@ export class StellarBridgeService {
       return transaction;
 
     } catch (error) {
-      throw new BridgeError(
-        BridgeErrorCode.EXECUTION_FAILED,
-        error instanceof Error ? error.message : 'Bridge execution failed'
-      );
+      throw new Error(error instanceof Error ? error.message : 'Bridge execution failed');
     }
   }
 
@@ -198,7 +176,7 @@ export class StellarBridgeService {
     htlcId: string,
     hash: string,
     quote: BridgeQuote,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     onProgress?.('Initiating Ethereum to Stellar bridge...');
 
@@ -217,21 +195,70 @@ export class StellarBridgeService {
 
     return {
       id: transactionId,
-      fromToken,
-      toToken,
-      fromAmount: quote.fromAmount,
-      toAmount: quote.toAmount,
+      from: fromToken,
+      to: toToken,
+      fromAmount: {
+        raw: quote.fromAmount,
+        bn: parseUnits(quote.fromAmount, fromToken.decimals),
+        decimals: fromToken.decimals,
+        formatted: quote.fromAmount
+      },
+      toAmount: {
+        raw: quote.toAmount,
+        bn: parseUnits(quote.toAmount, toToken.decimals),
+        decimals: toToken.decimals,
+        formatted: quote.toAmount
+      },
+      fromAddress: walletAddress,
+      toAddress: recipientAddress || walletAddress,
       status: 'pending',
-      timestamp: Date.now(),
+      timestamps: {
+        created: Date.now(),
+        updated: Date.now()
+      },
       txIdentifier: {
         ethereum: transactionId,
         stellar: ethers.keccak256(ethers.toUtf8Bytes(`stellar-${transactionId}`)),
+        htlc: {
+          id: htlcId,
+          hash: hash,
+          preimage: undefined
+        }
       },
-      fees: quote.totalFee,
-      estimatedTime: quote.estimatedTime,
-      htlcId,
-      hash,
-      preimage: undefined, // Will be revealed during redemption
+      fees: {
+        network: {
+          amount: {
+            raw: quote.networkFee,
+            bn: parseUnits(quote.networkFee, fromToken.decimals),
+            decimals: fromToken.decimals,
+            formatted: quote.networkFee
+          },
+          amountUSD: parseFloat(quote.networkFee) * 0.1 // Mock XLM price
+        },
+        protocol: {
+          amount: {
+            raw: quote.protocolFee,
+            bn: parseUnits(quote.protocolFee, fromToken.decimals),
+            decimals: fromToken.decimals,
+            formatted: quote.protocolFee
+          },
+          amountUSD: parseFloat(quote.protocolFee) * 0.1,
+          percent: 0.1
+        },
+        total: {
+          amount: {
+            raw: quote.totalFee,
+            bn: parseUnits(quote.totalFee, fromToken.decimals),
+            decimals: fromToken.decimals,
+            formatted: quote.totalFee
+          },
+          amountUSD: parseFloat(quote.totalFee) * 0.1
+        }
+      },
+      confirmations: 0,
+      requiredConfirmations: 6,
+      isConfirmed: false,
+      retryCount: 0
     };
   }
 
@@ -245,7 +272,7 @@ export class StellarBridgeService {
     htlcId: string,
     hash: string,
     quote: BridgeQuote,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     onProgress?.('Initiating Stellar to Ethereum bridge...');
 
@@ -264,28 +291,77 @@ export class StellarBridgeService {
 
     return {
       id: transactionId,
-      fromToken,
-      toToken,
-      fromAmount: quote.fromAmount,
-      toAmount: quote.toAmount,
+      from: fromToken,
+      to: toToken,
+      fromAmount: {
+        raw: quote.fromAmount,
+        bn: parseUnits(quote.fromAmount, fromToken.decimals),
+        decimals: fromToken.decimals,
+        formatted: quote.fromAmount
+      },
+      toAmount: {
+        raw: quote.toAmount,
+        bn: parseUnits(quote.toAmount, toToken.decimals),
+        decimals: toToken.decimals,
+        formatted: quote.toAmount
+      },
+      fromAddress: walletAddress,
+      toAddress: recipientAddress || walletAddress,
       status: 'pending',
-      timestamp: Date.now(),
+      timestamps: {
+        created: Date.now(),
+        updated: Date.now()
+      },
       txIdentifier: {
         stellar: transactionId,
         ethereum: ethers.keccak256(ethers.toUtf8Bytes(`ethereum-${transactionId}`)),
+        htlc: {
+          id: htlcId,
+          hash: hash,
+          preimage: undefined
+        }
       },
-      fees: quote.totalFee,
-      estimatedTime: quote.estimatedTime,
-      htlcId,
-      hash,
-      preimage: undefined, // Will be revealed during redemption
+      fees: {
+        network: {
+          amount: {
+            raw: quote.networkFee,
+            bn: parseUnits(quote.networkFee, fromToken.decimals),
+            decimals: fromToken.decimals,
+            formatted: quote.networkFee
+          },
+          amountUSD: parseFloat(quote.networkFee) * 0.1 // Mock XLM price
+        },
+        protocol: {
+          amount: {
+            raw: quote.protocolFee,
+            bn: parseUnits(quote.protocolFee, fromToken.decimals),
+            decimals: fromToken.decimals,
+            formatted: quote.protocolFee
+          },
+          amountUSD: parseFloat(quote.protocolFee) * 0.1,
+          percent: 0.1
+        },
+        total: {
+          amount: {
+            raw: quote.totalFee,
+            bn: parseUnits(quote.totalFee, fromToken.decimals),
+            decimals: fromToken.decimals,
+            formatted: quote.totalFee
+          },
+          amountUSD: parseFloat(quote.totalFee) * 0.1
+        }
+      },
+      confirmations: 0,
+      requiredConfirmations: 6,
+      isConfirmed: false,
+      retryCount: 0
     };
   }
 
   // Get transaction status
   async getTransactionStatus(transactionId: string): Promise<{
     status: 'pending' | 'completed' | 'failed' | 'refunded';
-    details?: any;
+    details?: unknown;
   }> {
     // Simulate status check
     await new Promise(resolve => setTimeout(resolve, 1000));
