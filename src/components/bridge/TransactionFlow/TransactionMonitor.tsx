@@ -18,7 +18,18 @@ const BITCOIN_BRIDGE_CONTRACT_ADDRESS = "0xYourDeployedContractAddressHere";
 export function TransactionMonitor({ htlcId }: TransactionMonitorProps) {
   const { provider } = useWalletStore();
   const [status, setStatus] = useState<'pending' | 'redeemed' | 'refunded' | 'idle'>('idle');
-  const [transactionDetails, setTransactionDetails] = useState<any>(null);
+  const [transactionDetails, setTransactionDetails] = useState<{
+    id?: string;
+    initiator: string;
+    resolver: string;
+    amount: string;
+    secretHash: string;
+    timelock: number;
+    executed: boolean;
+    refunded: boolean;
+    type?: string;
+    preimage?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!htlcId || !provider) {
@@ -37,6 +48,10 @@ export function TransactionMonitor({ htlcId }: TransactionMonitorProps) {
           initiator,
           resolver,
           amount: ethers.formatEther(amount),
+          secretHash: '', // Will be populated when HTLC details are fetched
+          timelock: 0, // Will be populated when HTLC details are fetched
+          executed: false,
+          refunded: false,
           type: 'Initiated',
         });
         console.log('Initiated Event:', { id, initiator, resolver, amount: ethers.formatEther(amount) });
@@ -46,7 +61,7 @@ export function TransactionMonitor({ htlcId }: TransactionMonitorProps) {
     const handleRedeemed = (id: string, preimage: string) => {
       if (id === htlcId) {
         setStatus('redeemed');
-        setTransactionDetails((prev: any) => ({ ...prev, type: 'Redeemed', preimage }));
+        setTransactionDetails((prev) => prev ? { ...prev, type: 'Redeemed', preimage } : null);
         console.log('Redeemed Event:', { id, preimage });
       }
     };
@@ -54,7 +69,7 @@ export function TransactionMonitor({ htlcId }: TransactionMonitorProps) {
     const handleRefunded = (id: string) => {
       if (id === htlcId) {
         setStatus('refunded');
-        setTransactionDetails((prev: any) => ({ ...prev, type: 'Refunded' }));
+        setTransactionDetails((prev) => prev ? { ...prev, type: 'Refunded' } : null);
         console.log('Refunded Event:', { id });
       }
     };
@@ -79,12 +94,12 @@ export function TransactionMonitor({ htlcId }: TransactionMonitorProps) {
       <h3 className="text-lg font-semibold mb-2">Transaction Status: {status.toUpperCase()}</h3>
       {transactionDetails && (
         <div className="text-sm space-y-1">
-          <p><strong>ID:</strong> {transactionDetails.id.substring(0, 10)}...</p>
+          <p><strong>ID:</strong> {transactionDetails.id?.substring(0, 10)}...</p>
           <p><strong>Initiator:</strong> {transactionDetails.initiator.substring(0, 10)}...</p>
           <p><strong>Resolver:</strong> {transactionDetails.resolver.substring(0, 10)}...</p>
           <p><strong>Amount:</strong> {transactionDetails.amount} ETH</p>
           {transactionDetails.type === 'Redeemed' && (
-            <p><strong>Preimage:</strong> {transactionDetails.preimage.substring(0, 10)}...</p>
+            <p><strong>Preimage:</strong> {transactionDetails.preimage?.substring(0, 10)}...</p>
           )}
         </div>
       )}

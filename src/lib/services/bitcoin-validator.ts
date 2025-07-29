@@ -1,11 +1,15 @@
 import { ethers } from 'ethers';
-import { BitcoinBridge__factory } from '../contracts/typechain-types';
+import { Fusion1inchBitcoinBridge__factory, type Fusion1inchBitcoinBridge } from '@/types/contracts';
 
 // Bitcoin validator service for monitoring and validating bridge operations
 export class BitcoinValidatorService {
   private ethereumProvider: ethers.Provider;
-  private bitcoinProvider: any; // Bitcoin RPC client
-  private bridgeContract: any;
+  private bitcoinProvider: {
+    getBlockHeight: () => Promise<number>;
+    getTransaction: (txHash: string) => Promise<{ hash: string; confirmations: number; blockheight: number; amount: number; address: string }>;
+    getBlock: (height: number) => Promise<{ height: number; hash: string; transactions: unknown[] }>;
+  }; // Bitcoin RPC client
+  private bridgeContract: Fusion1inchBitcoinBridge;
   private validatorWallet: ethers.Wallet;
   private isRunning = false;
 
@@ -17,7 +21,7 @@ export class BitcoinValidatorService {
   ) {
     this.ethereumProvider = new ethers.JsonRpcProvider(ethereumRpcUrl);
     this.bitcoinProvider = this.createBitcoinProvider(bitcoinRpcUrl);
-    this.bridgeContract = BitcoinBridge__factory.connect(
+    this.bridgeContract = Fusion1inchBitcoinBridge__factory.connect(
       bridgeContractAddress,
       this.ethereumProvider
     );
@@ -40,7 +44,7 @@ export class BitcoinValidatorService {
       getBlock: async (height: number) => ({
         height,
         hash: 'mock-block-hash',
-        transactions: []
+        transactions: [] as string[] // Empty array of transaction hashes
       })
     };
   }
@@ -100,7 +104,8 @@ export class BitcoinValidatorService {
       if (confirmations >= 6) { // Minimum confirmations
         // Process transactions in this block
         for (const txHash of block.transactions) {
-          await this.processBitcoinTransaction(txHash, blockHeight);
+          // Cast to string since we know Bitcoin tx hashes are strings
+          await this.processBitcoinTransaction(txHash as string, blockHeight);
         }
       }
     } catch (error) {
@@ -123,14 +128,14 @@ export class BitcoinValidatorService {
   }
 
   // Check if a transaction is related to the bridge
-  private async isBridgeTransaction(tx: any): Promise<boolean> {
+  private async isBridgeTransaction(tx: { address?: string; amount: number }): Promise<boolean> {
     // This would check if the transaction is sending BTC to a bridge address
     // For now, we'll use a simple check
-    return tx.address && tx.amount > 0;
+    return Boolean(tx.address && tx.amount > 0);
   }
 
   // Validate and unlock WBTC on Ethereum
-  private async validateAndUnlock(tx: any, blockHeight: number) {
+  private async validateAndUnlock(tx: { hash: string; confirmations: number; blockheight: number; amount: number; address: string }, blockHeight: number) {
     try {
       // Get the user address from the transaction
       const userAddress = await this.getUserAddressFromBitcoinTx(tx);
@@ -154,21 +159,45 @@ export class BitcoinValidatorService {
       const signature = await this.validatorWallet.signMessage(ethers.getBytes(messageHash));
       
       // Call the bridge contract to unlock WBTC
-      const bridgeContractWithSigner = this.bridgeContract.connect(this.validatorWallet);
-      
-      const txResponse = await bridgeContractWithSigner.unlockBitcoin(
-        userAddress,
-        wbtcAmount,
-        tx.hash,
-        blockHeight,
-        signature
+      const bridgeContractWithSigner = Fusion1inchBitcoinBridge__factory.connect(
+        await this.bridgeContract.getAddress(),
+        this.validatorWallet
       );
       
-      console.log(`Unlock transaction submitted: ${txResponse.hash}`);
+      // Real implementation: Find the HTLC associated with this Bitcoin transaction
+      // and redeem it with the secret revealed in the Bitcoin transaction
       
-      // Wait for confirmation
-      const receipt = await txResponse.wait();
-      console.log(`Unlock transaction confirmed: ${receipt.hash}`);
+      // Extract the secret/preimage from the Bitcoin transaction (in a real implementation)
+      // For now, we'll demonstrate the proper contract interaction
+      const htlcId = ethers.keccak256(ethers.toUtf8Bytes(`${tx.hash}-${userAddress}`));
+      
+      try {
+        // Check if this HTLC exists and is active  
+        const htlc = await bridgeContractWithSigner.getHTLC(htlcId);
+        
+        if (htlc.executed || htlc.refunded) {
+          console.log('HTLC already processed:', htlcId);
+          return;
+        }
+        
+        // In a real implementation, extract the preimage from Bitcoin transaction witness data
+        const preimage = ethers.keccak256(ethers.toUtf8Bytes('demo-secret-' + tx.hash));
+        
+        // Redeem the HTLC using our actual contract method
+        const txResponse = await bridgeContractWithSigner.redeemHTLC(htlcId, preimage);
+        
+        console.log(`HTLC redemption transaction submitted: ${txResponse.hash}`);
+        
+        // Wait for confirmation
+        const receipt = await txResponse.wait();
+        console.log(`HTLC redemption confirmed: ${receipt?.hash}`);
+        
+        return receipt;
+        
+      } catch (error) {
+        console.error('Error redeeming HTLC:', error);
+        // If HTLC doesn't exist, this might be a different type of transaction
+      }
       
     } catch (error) {
       console.error('Error validating and unlocking:', error);
@@ -176,7 +205,7 @@ export class BitcoinValidatorService {
   }
 
   // Extract user address from Bitcoin transaction
-  private async getUserAddressFromBitcoinTx(tx: any): Promise<string | null> {
+  private async getUserAddressFromBitcoinTx(_tx: { hash: string; confirmations: number; blockheight: number; amount: number; address: string }): Promise<string | null> {
     // This would parse the Bitcoin transaction to extract the user's Ethereum address
     // For now, we'll use a mock implementation
     return '0x742d35Cc6634C0532925a3b8D45fb9af0332da';
@@ -240,25 +269,51 @@ export class BitcoinValidatorService {
     }
   }
 
-  // Validate a specific unlock request
-  async validateUnlockRequest(unlockId: number, signature: string) {
+  // Validate a specific HTLC by checking its status and conditions
+  async validateHTLCRequest(htlcId: string): Promise<{ isValid: boolean; reason?: string }> {
     try {
-      const bridgeContractWithSigner = this.bridgeContract.connect(this.validatorWallet);
-      
-      const txResponse = await bridgeContractWithSigner.addValidation(
-        unlockId,
-        signature
+      const bridgeContractWithSigner = Fusion1inchBitcoinBridge__factory.connect(
+        await this.bridgeContract.getAddress(),
+        this.validatorWallet
       );
       
-      console.log(`Validation transaction submitted: ${txResponse.hash}`);
+      // Get HTLC details
+      const htlc = await bridgeContractWithSigner.getHTLC(htlcId);
       
-      const receipt = await txResponse.wait();
-      console.log(`Validation transaction confirmed: ${receipt.hash}`);
+      // Check if HTLC is active and conditions are met
+      const isActive = await bridgeContractWithSigner.isHTLCActive(htlcId);
+      const currentTime = Math.floor(Date.now() / 1000);
       
-      return receipt;
+      // Validation logic
+      if (htlc.executed) {
+        return { isValid: false, reason: 'HTLC already executed' };
+      }
+      
+      if (htlc.refunded) {
+        return { isValid: false, reason: 'HTLC already refunded' };
+      }
+      
+      if (!isActive) {
+        return { isValid: false, reason: 'HTLC is not active' };
+      }
+      
+      if (Number(htlc.timelock) <= currentTime) {
+        return { isValid: false, reason: 'HTLC has expired' };
+      }
+      
+      console.log('HTLC validation successful:', {
+        id: htlcId,
+        initiator: htlc.initiator,
+        resolver: htlc.resolver,
+        amount: htlc.amount.toString(),
+        timelock: new Date(Number(htlc.timelock) * 1000).toISOString()
+      });
+      
+      return { isValid: true };
+      
     } catch (error) {
-      console.error('Error validating unlock request:', error);
-      throw error;
+      console.error('Error validating HTLC request:', error);
+      return { isValid: false, reason: 'Validation error: ' + String(error) };
     }
   }
 

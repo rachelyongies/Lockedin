@@ -104,6 +104,7 @@ export interface WalletState {
   account: AccountInfo | null
   network: NetworkInfo | null
   error: WalletError | null
+  provider: ethers.BrowserProvider | null
   
   // Settings
   autoConnect: boolean
@@ -205,10 +206,8 @@ export const useWalletStore = create<WalletState>()(
       showWalletModal: false,
       provider: null,
 
-      // Legacy compatibility computed properties
-      get isConnected() {
-        return get().status === 'connected' && !!get().account
-      },
+      // Legacy compatibility - now a regular state property updated manually
+      isConnected: false,
 
       get address() {
         return get().account?.address
@@ -255,7 +254,7 @@ export const useWalletStore = create<WalletState>()(
         try {
           let provider: ethers.Provider | null = null;
           let address: string;
-          let network: any;
+          let network: ethers.Network | null = null;
 
           switch (walletType) {
             case 'metamask':
@@ -265,7 +264,7 @@ export const useWalletStore = create<WalletState>()(
                 throw new Error('No Ethereum wallet detected. Please install MetaMask or similar.')
               }
               provider = new ethers.BrowserProvider(window.ethereum)
-              const signer = await provider.getSigner()
+              const signer = await (provider as ethers.BrowserProvider).getSigner()
               address = await signer.getAddress()
               network = await provider.getNetwork()
               break;
@@ -277,11 +276,8 @@ export const useWalletStore = create<WalletState>()(
               // Connect to Phantom wallet
               const phantomConnection = await solanaWalletService.connectToPhantom();
               address = phantomConnection.address;
-              network = {
-                chainId: 101, // Solana mainnet
-                name: 'Solana',
-                endpoint: phantomConnection.network
-              };
+              // For Solana, network is not applicable as it's not an Ethereum network
+              network = null;
               break;
 
             case 'walletconnect':
@@ -300,12 +296,12 @@ export const useWalletStore = create<WalletState>()(
           }
 
           const networkInfo: NetworkInfo = {
-            chainId: Number(network.chainId),
-            name: network.name,
-            currency: 'ETH', // This might need to be dynamic based on chain
+            chainId: walletType === 'phantom' ? 101 : Number(network?.chainId || 0),
+            name: walletType === 'phantom' ? 'Solana' : (network?.name || 'Unknown'),
+            currency: walletType === 'phantom' ? 'SOL' : 'ETH',
             rpcUrl: '', // Not directly available from provider
             blockExplorerUrl: '', // Not directly available from provider
-            isTestnet: network.chainId !== 1n // Assuming mainnet is 1
+            isTestnet: walletType === 'phantom' ? false : ((network?.chainId || 0n) !== 1n)
           }
 
           set((state) => {
@@ -314,7 +310,8 @@ export const useWalletStore = create<WalletState>()(
             state.network = networkInfo
             state.isConnecting = false
             state.showWalletModal = false
-            state.provider = provider
+            state.provider = provider as ethers.BrowserProvider
+            state.isConnected = true
             if (state.autoConnect) {
               state.preferredWallet = walletType
             }
@@ -348,9 +345,11 @@ export const useWalletStore = create<WalletState>()(
             state.account = null
             state.network = null
             state.error = null
+            state.provider = null
             state.isConnecting = false
             state.isReconnecting = false
             state.showWalletModal = false
+            state.isConnected = false
           })
 
         } catch (error: unknown) {
@@ -361,6 +360,8 @@ export const useWalletStore = create<WalletState>()(
             state.walletType = null
             state.account = null
             state.network = null
+            state.provider = null
+            state.isConnected = false
           })
         }
       },
@@ -526,9 +527,11 @@ export const useWalletStore = create<WalletState>()(
               balances: {},
               lastBalanceUpdate: Date.now()
             }
+            state.isConnected = true
           } else {
             state.status = 'disconnected'
             state.account = null
+            state.isConnected = false
           }
           state.isConnecting = false
         })
@@ -572,10 +575,7 @@ export const useWalletStore = create<WalletState>()(
       // Hydration handling
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // Reset connection state on hydration
-          state.status = 'disconnected'
-          state.account = null
-          state.network = null
+          // Only reset loading states on hydration, keep connection if it exists
           state.error = null
           state.isConnecting = false
           state.isReconnecting = false
@@ -630,6 +630,8 @@ class WalletAutoReconnect {
       await state.connect(state.preferredWallet)
       this.reconnectAttempts = 0 // Reset on success
       console.log('Auto-reconnect successful')
+      // Ensure isConnected is synced
+      useWalletStore.setState({ isConnected: true })
     } catch (error) {
       this.reconnectAttempts++
       console.warn(`Reconnection attempt ${this.reconnectAttempts} failed:`, error)
@@ -766,6 +768,7 @@ export const formatWalletAddress = (address: string, length = 6): string => {
 export const getWalletDisplayName = (walletType: WalletType): string => {
   const names: Record<WalletType, string> = {
     metamask: 'MetaMask',
+    phantom: 'Phantom',
     walletconnect: 'WalletConnect',
     coinbase: 'Coinbase Wallet',
     injected: 'Injected Wallet',
@@ -781,6 +784,7 @@ export const getWalletDisplayName = (walletType: WalletType): string => {
 export function getWalletIcon(walletType: WalletType): string {
   const iconMap: Record<WalletType, string> = {
     metamask: '🦊',
+    phantom: '👻',
     walletconnect: '🔗',
     coinbase: '🔵',
     injected: '💼',

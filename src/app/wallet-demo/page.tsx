@@ -162,7 +162,7 @@ export default function WalletDemoPage() {
                           <p className="text-gray-600">{item.description}</p>
                           <div className="pt-4">
                             <WalletConnector 
-                              variant={item.variant as any}
+                              variant={item.variant as "primary" | "secondary" | "gradient"}
                               size="md"
                               className="mx-auto"
                             />
