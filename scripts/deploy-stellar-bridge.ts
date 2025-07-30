@@ -1,4 +1,8 @@
+
 import hre from "hardhat";
+
+const { ethers } = require("hardhat");
+
 
 async function main() {
   console.log("Deploying StellarBridge contract...");
@@ -9,7 +13,7 @@ async function main() {
   // Mock token addresses for local deployment
   // In production, these would be real token addresses
   const mockWETHToken = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"; // WETH on mainnet
-  const mockWXLMToken = "0xE6C5B7f4651bf5fb4e8e8f3baa9c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1a4c8b1"; // Wrapped Stellar Lumens (WXLM) token address
+  const mockWXLMToken = "0x905477D96023b2465DA8dfA0960669708AEFaeb2"; // Your Sepolia testnet WXLM token address
 
   console.log("Deploying with parameters:");
   console.log("- WETH Token:", mockWETHToken);

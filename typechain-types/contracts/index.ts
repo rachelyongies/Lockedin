@@ -6,3 +6,9 @@ export type { SolanaBridge } from "./SolanaBridge";
 export type { StarknetBridge } from "./StarknetBridge";
 export type { StellarBridge } from "./StellarBridge";
 export type { Fusion1inchBitcoinBridge } from "./Fusion1inchBitcoinBridge";
+
+export type { Fusion1inchBitcoinBridge } from "./Fusion1inchBitcoinBridge";
+export type { SolanaBridge } from "./SolanaBridge";
+export type { StarknetBridge } from "./StarknetBridge";
+export type { StellarBridge } from "./StellarBridge";
+

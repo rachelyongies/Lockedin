@@ -6,3 +6,8 @@ export { SolanaBridge__factory } from "./SolanaBridge__factory";
 export { StarknetBridge__factory } from "./StarknetBridge__factory";
 export { StellarBridge__factory } from "./StellarBridge__factory";
 export { Fusion1inchBitcoinBridge__factory } from "./Fusion1inchBitcoinBridge__factory";
+export { Fusion1inchBitcoinBridge__factory } from "./Fusion1inchBitcoinBridge__factory";
+export { SolanaBridge__factory } from "./SolanaBridge__factory";
+export { StarknetBridge__factory } from "./StarknetBridge__factory";
+export { StellarBridge__factory } from "./StellarBridge__factory";
+
