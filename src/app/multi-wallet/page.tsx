@@ -12,7 +12,7 @@ import { multiWalletManager, PRODUCTION_WALLETS } from '@/lib/wallets/multi-wall
 import { NetworkManager } from '@/config/networks';
 import { useToast } from '@/components/ui/Toast';
 import { useNetworkStore } from '@/store/useNetworkStore';
-import { ALL_TOKENS, getToken, ETHEREUM_TOKENS, SOLANA_TOKENS, STARKNET_TOKENS, STELLAR_TOKENS, BITCOIN_TOKENS } from '@/config/tokens';
+import { ALL_TOKENS, ETHEREUM_TOKENS, SOLANA_TOKENS, STARKNET_TOKENS, STELLAR_TOKENS, BITCOIN_TOKENS } from '@/config/tokens';
 
 interface ConnectedWallet {
   name: string;
@@ -46,10 +46,8 @@ export default function MultiWalletPage() {
   const [connectedWallets, setConnectedWallets] = useState<ConnectedWallet[]>([]);
   const [availableWallets, setAvailableWallets] = useState<string[]>([]);
   const [isAutoConnecting, setIsAutoConnecting] = useState(false);
-  const [selectedAsset, setSelectedAsset] = useState<string>('ETH');
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [selectedWalletToConnect, setSelectedWalletToConnect] = useState<string>('');
-  const [walletBalances, setWalletBalances] = useState<Map<string, WalletBalance[]>>(new Map());
   const [summary, setSummary] = useState<WalletSummary>({
     totalWallets: 0,
     totalBalance: 0,
@@ -58,7 +56,7 @@ export default function MultiWalletPage() {
     networks: []
   });
   const { addToast } = useToast();
-  const { ethereum, bitcoin, isNetworkReady } = useNetworkStore();
+  const { isNetworkReady } = useNetworkStore();
 
   // Auto-detect available wallets on mount
   useEffect(() => {
@@ -75,7 +73,6 @@ export default function MultiWalletPage() {
   useEffect(() => {
     const refreshWallets = async () => {
       await updateWalletStates();
-      updateBalances();
     };
 
     refreshWallets();
@@ -203,7 +200,6 @@ export default function MultiWalletPage() {
         if (accounts && accounts.length > 0) {
           // MetaMask is already connected
           const chainId = await window.ethereum.request({ method: 'eth_chainId' }) as string;
-          const network = NetworkManager.getNetworkById(parseInt(chainId, 16));
 
           // Add to multi-wallet manager
           const result = await multiWalletManager.connectWallet('MetaMask', parseInt(chainId, 16));
@@ -217,9 +213,9 @@ export default function MultiWalletPage() {
       }
 
       // Check for existing Phantom connection
-      if (typeof window !== 'undefined' && (window as any).solana?.isPhantom) {
-        const solanaProvider = (window as any).solana;
-        if (solanaProvider.isConnected) {
+      if (typeof window !== 'undefined' && (window as unknown as { solana?: { isPhantom?: boolean; isConnected?: boolean } }).solana?.isPhantom) {
+        const solanaProvider = (window as unknown as { solana?: { isPhantom?: boolean; isConnected?: boolean } }).solana;
+        if (solanaProvider?.isConnected) {
           // Phantom is already connected
           const result = await multiWalletManager.connectWallet('Phantom', 101); // Default to mainnet
           if (result.success) {
@@ -293,31 +289,7 @@ export default function MultiWalletPage() {
     }
   };
 
-  // Update balances for all connected wallets
-  const updateBalances = async () => {
-    const newBalances = new Map<string, WalletBalance[]>();
 
-    for (const wallet of connectedWallets) {
-      try {
-        // This would integrate with your balance fetching logic
-        // For now, we'll simulate balance updates
-        const balances: WalletBalance[] = [
-          {
-            token: 'ETH',
-            balance: wallet.balance || '0',
-            usdValue: parseFloat(wallet.balance || '0') * 2000, // Mock ETH price
-            symbol: 'ETH'
-          }
-        ];
-
-        newBalances.set(wallet.name, balances);
-      } catch (error) {
-        console.warn(`Failed to update balances for ${wallet.name}:`, error);
-      }
-    }
-
-    setWalletBalances(newBalances);
-  };
 
 
 
@@ -338,9 +310,9 @@ export default function MultiWalletPage() {
       }
 
       // Also try to disconnect from Phantom
-      if (walletName === 'Phantom' && typeof window !== 'undefined' && (window as any).solana?.isPhantom) {
+      if (walletName === 'Phantom' && typeof window !== 'undefined' && (window as unknown as { solana?: { isPhantom?: boolean; disconnect?: () => Promise<void> } }).solana?.isPhantom) {
         try {
-          await (window as any).solana.disconnect();
+          await (window as unknown as { solana?: { disconnect?: () => Promise<void> } }).solana?.disconnect?.();
         } catch (phantomError) {
           console.warn('Phantom disconnect error:', phantomError);
         }
@@ -496,13 +468,13 @@ export default function MultiWalletPage() {
       if (wallet.type === 'evm') {
         // For EVM wallets, fetch ERC20 token balance
         if (tokenSymbol === 'ETH' || tokenSymbol === 'WETH') {
-          // Native ETH balance
-          const provider = multiWalletManager.getWalletProvider(walletName);
-          if (provider && (provider as any).request) {
-            const balanceHex = await (provider as any).request({
-              method: 'eth_getBalance',
-              params: [wallet.address, 'latest']
-            }) as string;
+                  // Native ETH balance
+        const provider = multiWalletManager.getWalletProvider(walletName);
+        if (provider && (provider as unknown as { request?: (params: { method: string; params: string[] }) => Promise<string> }).request) {
+          const balanceHex = await (provider as unknown as { request: (params: { method: string; params: string[] }) => Promise<string> }).request({
+            method: 'eth_getBalance',
+            params: [wallet.address, 'latest']
+          });
             balance = (parseInt(balanceHex, 16) / Math.pow(10, 18)).toString();
             console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (raw hex: ${balanceHex})`);
           }
@@ -515,10 +487,10 @@ export default function MultiWalletPage() {
       } else if (wallet.type === 'solana') {
         // For Solana wallets, fetch SPL token balance
         const provider = multiWalletManager.getWalletProvider(walletName);
-        if (provider && (provider as any).getBalance) {
+        if (provider && (provider as unknown as { getBalance?: () => Promise<{ value: number }> }).getBalance) {
           if (tokenSymbol === 'SOL' || tokenSymbol === 'WSOL') {
             // Native SOL balance
-            const balanceData = await (provider as any).getBalance();
+            const balanceData = await (provider as unknown as { getBalance: () => Promise<{ value: number }> }).getBalance();
             balance = (balanceData.value / Math.pow(10, 9)).toString();
             console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (raw lamports: ${balanceData.value})`);
           } else {
@@ -548,7 +520,7 @@ export default function MultiWalletPage() {
   const getAvailableTokensForNetwork = (chainId: number, networkType?: string, walletType?: string) => {
     // console.log(`🔍 Getting tokens for chainId: ${chainId}, networkType: ${networkType}, walletType: ${walletType}`);
 
-    let tokens: any[] = [];
+    let tokens: Array<{ symbol: string; name: string; logoUrl?: string }> = [];
 
     // Map chainId to network type for token lookup
     if (networkType === 'mainnet' || chainId === 1) {
@@ -617,170 +589,7 @@ export default function MultiWalletPage() {
     return iconMap[walletName] || 'default.svg';
   };
 
-  // Test wallet detection manually
-  const testWalletDetection = () => {
-    // console.log('🔍 Testing wallet detection...');
-    // console.log('Window object state:', {
-    //   hasEthereum: typeof window !== 'undefined' && !!window.ethereum,
-    //   hasSolana: typeof window !== 'undefined' && !!(window as any).solana,
-    //   ethereumProviders: typeof window !== 'undefined' && window.ethereum ? (window.ethereum as any)?.providers?.length || 0 : 0
-    // });
 
-    // Test individual detection methods for Rabby
-    // if (typeof window !== 'undefined' && window.ethereum) {
-    //   console.log('🔍 Rabby detection breakdown:');
-    //   console.log('- window.ethereum.isRabby:', (window.ethereum as any)?.isRabby);
-    //   console.log('- window.ethereum.providers:', (window.ethereum as any)?.providers?.map((p: any) => ({ isRabby: p.isRabby, name: p.name })));
-    //   console.log('- window.rabby:', !!(window as any).rabby);
-    // }
-
-    // PRODUCTION_WALLETS.forEach(wallet => {
-    //   try {
-    //     const isInstalled = wallet.isInstalled();
-    //     console.log(`${wallet.name}: ${isInstalled ? '✅ Detected' : '❌ Not detected'}`);
-    //   } catch (error) {
-    //     console.error(`Error testing ${wallet.name}:`, error);
-    //   }
-    // });
-  };
-
-  // Test balance fetching for connected wallets
-  const testBalanceFetching = async () => {
-    // console.log('💰 Testing balance fetching for connected wallets...');
-
-    // for (const wallet of connectedWallets) {
-    //   try {
-    //     console.log(`\n🔍 Testing ${wallet.name}:`);
-    //     console.log('- Address:', wallet.address);
-    //     console.log('- Type:', wallet.type);
-    //     console.log('- Current balance:', wallet.balance);
-
-    //     const provider = multiWalletManager.getWalletProvider(wallet.name);
-    //     console.log('- Provider:', provider ? 'Available' : 'Not available');
-
-    //     if (provider && wallet.type === 'evm') {
-    //       try {
-    //         const accounts = await (provider as any).request({ method: 'eth_accounts' });
-    //         console.log('- Accounts:', accounts);
-
-    //         if (accounts && accounts.length > 0) {
-    //           const balanceHex = await (provider as any).request({ 
-    //             method: 'eth_getBalance', 
-    //             params: [accounts[0], 'latest'] 
-    //           });
-    //           const balance = (parseInt(balanceHex, 16) / Math.pow(10, 18)).toString();
-    //           console.log('- Balance hex:', balanceHex);
-    //           console.log('- Balance ETH:', balance);
-    //         }
-    //       } catch (error) {
-    //         console.error(`- Error fetching balance for ${wallet.name}:`, error);
-    //       }
-    //     } else if (provider && wallet.type === 'solana') {
-    //       try {
-    //         console.log('- Solana provider methods:', Object.keys(provider));
-    //         console.log('- Provider object:', provider);
-
-    //         let balanceData = null;
-    //         let balance = '0';
-
-    //         // Method 1: Try getBalance() directly
-    //         if ((provider as any).getBalance) {
-    //           console.log('- Trying provider.getBalance()...');
-    //           try {
-    //             balanceData = await (provider as any).getBalance();
-    //             console.log('- getBalance() result:', balanceData);
-    //           } catch (error) {
-    //             console.log('- getBalance() failed:', error);
-    //           }
-    //         }
-
-    //         // Method 2: Try connection.getBalance()
-    //         if (!balanceData && (provider as any).connection?.getBalance) {
-    //           console.log('- Trying provider.connection.getBalance()...');
-    //           try {
-    //             const publicKey = (provider as any).publicKey;
-    //             if (publicKey) {
-    //               balanceData = await (provider as any).connection.getBalance(publicKey);
-    //               console.log('- connection.getBalance() result:', balanceData);
-    //               console.log('- connection.getBalance() failed:', error);
-    //             }
-    //           } catch (error) {
-    //             console.log('- connection.getBalance() failed:', error);
-    //           }
-    //         }
-
-    //         // Method 3: Try request method (like EVM)
-    //         if (!balanceData && (provider as any).request) {
-    //           console.log('- Trying provider.request()...');
-    //           try {
-    //             balanceData = await (provider as any).request({ method: 'getBalance' });
-    //             console.log('- request() result:', balanceData);
-    //           } catch (error) {
-    //             console.log('- request() failed:', error);
-    //           }
-    //         }
-
-    //         // Method 4: Try direct property access
-    //         if (!balanceData && (provider as any).balance) {
-    //           console.log('- Trying provider.balance...');
-    //           balanceData = (provider as any).balance;
-    //           console.log('- provider.balance result:', balanceData);
-    //         }
-
-    //         console.log('- Final balance data:', balanceData);
-
-    //         if (balanceData) {
-    //           let lamports = 0;
-
-    //           // Handle different balance data formats
-    //           if (typeof balanceData === 'number') {
-    //             lamports = balanceData;
-    //           } else if (balanceData && typeof balanceData.value === 'number') {
-    //             lamports = balanceData.value;
-    //           } else if (balanceData && typeof balanceData.lamports === 'number') {
-    //             lamports = balanceData.lamports;
-    //           } else if (balanceData && typeof balanceData.balance === 'number') {
-    //             lamports = balanceData.balance;
-    //           }
-
-    //           if (lamports > 0) {
-    //             balance = (lamports / Math.pow(10, 9)).toString();
-    //             console.log('- Balance lamports:', lamports);
-    //             console.log('- Balance SOL:', balance);
-
-    //             // Update the wallet balance immediately
-    //             setConnectedWallets(prev => prev.map(w => 
-    //               w.name === wallet.name 
-    //                 ? { ...w, balance, selectedAsset: 'SOL' }
-    //                 : w
-    //             ));
-
-    //             console.log(`✅ Updated ${wallet.name} balance to ${balance} SOL`);
-    //           } else {
-    //             console.warn('- Invalid balance data format:', balanceData);
-    //           }
-    //         } else {
-    //           console.warn('- No balance data found');
-    //         }
-
-    //         if ((provider as any).isConnected) {
-    //           console.log('- Is connected:', (provider as any).isConnected);
-    //         }
-
-    //         // Try alternative methods
-    //         if ((provider as any).connection) {
-    //           console.log('- Has connection object:', (provider as any).connection);
-    //         }
-    //       } catch (error) {
-    //         console.error(`- Error fetching Solana balance for ${wallet.name}:`, error);
-    //         console.error('- Full error:', error);
-    //       }
-    //     }
-    //   } catch (error) {
-    //     console.error(`Error testing ${wallet.name}:`, error);
-    //   }
-    // }
-  };
 
   return (
     <>
@@ -795,9 +604,9 @@ export default function MultiWalletPage() {
             <div className="font-semibold mb-2">How to Use:</div>
             <div className="space-y-1 text-xs">
               <div>1. Install wallets (MetaMask, Phantom, etc.)</div>
-              <div>2. Click "Auto-Connect All" to connect</div>
+              <div>2. Click &quot;Auto-Connect All&quot; to connect</div>
               <div>3. Monitor balances in real-time</div>
-              <div>4. Use "Refresh & Re-detect" if needed</div>
+              <div>4. Use &quot;Refresh &amp; Re-detect&quot; if needed</div>
             </div>
           </div>
           {/* Arrow */}
@@ -1238,7 +1047,6 @@ export default function MultiWalletPage() {
 
                 <div className="flex flex-wrap justify-center gap-3">
                   {availableWallets.map((walletName) => {
-                    const wallet = PRODUCTION_WALLETS.find(w => w.name === walletName);
                     const isConnected = connectedWallets.some(w => w.name === walletName);
 
                     return (
