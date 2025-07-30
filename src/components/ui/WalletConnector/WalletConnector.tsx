@@ -302,7 +302,7 @@ export const WalletConnector: React.FC<WalletConnectorProps> = ({
             {/* MetaMask Icon for MetaMask wallet */}
             {walletType === 'metamask' ? (
               <img 
-                src="/MetaMask.svg" 
+                src="/images/wallets/metamask.svg" 
                 alt="MetaMask" 
                 className="w-5 h-5"
               />

@@ -1,0 +1,234 @@
+// 🤖 Agent Framework Types and Interfaces
+// Production-ready multi-agent system for DeFi routing optimization
+
+export interface AgentMessage {
+  id: string;
+  from: string;
+  to: string;
+  type: MessageType;
+  payload: any;
+  timestamp: number;
+  priority: MessagePriority;
+}
+
+export enum MessageType {
+  // Data sharing
+  MARKET_DATA = 'MARKET_DATA',
+  ROUTE_PROPOSAL = 'ROUTE_PROPOSAL',
+  RISK_ASSESSMENT = 'RISK_ASSESSMENT',
+  
+  // Coordination
+  REQUEST_ANALYSIS = 'REQUEST_ANALYSIS',
+  CONSENSUS_REQUEST = 'CONSENSUS_REQUEST',
+  DECISION_MADE = 'DECISION_MADE',
+  
+  // Execution
+  EXECUTE_ROUTE = 'EXECUTE_ROUTE',
+  EXECUTION_RESULT = 'EXECUTION_RESULT',
+  
+  // Monitoring
+  PERFORMANCE_REPORT = 'PERFORMANCE_REPORT',
+  ERROR_REPORT = 'ERROR_REPORT'
+}
+
+export enum MessagePriority {
+  LOW = 0,
+  MEDIUM = 1,
+  HIGH = 2,
+  CRITICAL = 3
+}
+
+export enum AgentStatus {
+  INITIALIZING = 'INITIALIZING',
+  ACTIVE = 'ACTIVE',
+  BUSY = 'BUSY',
+  ERROR = 'ERROR',
+  OFFLINE = 'OFFLINE'
+}
+
+export interface AgentConfig {
+  id: string;
+  name: string;
+  version: string;
+  capabilities: string[];
+  dependencies: string[];
+  maxConcurrentTasks: number;
+  timeout: number;
+}
+
+export interface AgentMetrics {
+  tasksCompleted: number;
+  tasksInProgress: number;
+  averageResponseTime: number;
+  successRate: number;
+  lastActivity: number;
+  errors: AgentError[];
+}
+
+export interface AgentError {
+  timestamp: number;
+  error: string;
+  context: any;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+}
+
+// Market Data Types
+export interface MarketConditions {
+  timestamp: number;
+  networkCongestion: {
+    ethereum: number; // 0-1 scale
+    polygon: number;
+    bsc: number;
+    arbitrum: number;
+    bitcoin: number;     // ✅ Add this
+    stellar: number;
+    solana: number;
+    starknet: number; 
+
+  };
+  gasPrices: {
+    ethereum: { fast: number; standard: number; safe: number };
+    polygon: { fast: number; standard: number; safe: number };
+  };
+  volatility: {
+    overall: number; // 0-1 scale
+    tokenSpecific: Record<string, number>;
+  };
+  liquidity: {
+    overall: number; // 0-1 scale
+    perDEX: Record<string, number>;
+  };
+  timeOfDay: number; // 0-23
+  dayOfWeek: number; // 0-6
+}
+
+export interface RouteProposal {
+  id: string;
+  fromToken: string;
+  toToken: string;
+  amount: string;
+  path: RouteStep[];
+  estimatedGas: string;
+  estimatedTime: number; // seconds
+  estimatedOutput: string;
+  priceImpact: string;
+  confidence: number; // 0-1 score
+  risks: string[];
+  advantages: string[];
+  proposedBy: string; // agent ID
+}
+
+export interface RouteStep {
+  protocol: string;
+  fromToken: string;
+  toToken: string;
+  amount: string;
+  estimatedOutput: string;
+  fee: string;
+}
+
+export interface RiskAssessment {
+  routeId: string;
+  overallRisk: number; // 0-1 scale (0 = low risk)
+  factors: {
+    protocolRisk: number;
+    liquidityRisk: number;
+    slippageRisk: number;
+    mevRisk: number;
+    bridgeRisk?: number; // for cross-chain routes
+  };
+  recommendations: string[];
+  blockers: string[]; // critical issues that prevent execution
+  assessedBy: string; // agent ID
+}
+
+export interface ExecutionStrategy {
+  routeId: string;
+  timing: {
+    optimal: boolean;
+    delayRecommended: number; // seconds to wait
+    reason: string;
+  };
+  mevProtection: {
+    enabled: boolean;
+    strategy: 'private-mempool' | 'commit-reveal' | 'sandwich-protection';
+    estimatedProtection: number; // 0-1 effectiveness
+  };
+  gasStrategy: {
+    gasPrice: string;
+    gasLimit: string;
+    priorityFee?: string;
+  };
+  contingencyPlans: string[];
+  strategyBy: string; // agent ID
+}
+
+export interface PerformanceData {
+  routeId: string;
+  executionTime: number;
+  actualGasCost: string;
+  actualOutput: string;
+  slippage: string;
+  success: boolean;
+  errors?: string[];
+  savedCosts?: string;
+  timestamp: number;
+}
+
+// Decision Making Types
+export interface DecisionCriteria {
+  cost: number;        // 0-1 weight
+  time: number;        // 0-1 weight  
+  security: number;    // 0-1 weight
+  reliability: number; // 0-1 weight
+  slippage: number;    // 0-1 weight
+}
+
+export interface DecisionScore {
+  routeId: string;
+  totalScore: number;
+  breakdown: {
+    cost: number;
+    time: number;
+    security: number;
+    reliability: number;
+    slippage: number;
+  };
+  reasoning: string[];
+}
+
+export interface ConsensusRequest {
+  requestId: string;
+  routes: RouteProposal[];
+  assessments: RiskAssessment[];
+  strategies: ExecutionStrategy[];
+  criteria: DecisionCriteria;
+  deadline: number; // timestamp
+}
+
+export interface ConsensusResponse {
+  requestId: string;
+  agentId: string;
+  recommendedRoute: string;
+  score: DecisionScore;
+  confidence: number;
+  reasoning: string[];
+}
+
+// Agent Communication Events
+export interface AgentEventHandlers {
+  onMessage: (message: AgentMessage) => Promise<void>;
+  onTaskAssigned: (task: any) => Promise<void>;
+  onError: (error: AgentError) => Promise<void>;
+  onStatusChange: (status: AgentStatus) => Promise<void>;
+}
+
+export interface AgentCapabilities {
+  canAnalyzeMarket: boolean;
+  canDiscoverRoutes: boolean;
+  canAssessRisk: boolean;
+  canExecuteTransactions: boolean;
+  canMonitorPerformance: boolean;
+  supportedNetworks: string[];
+  supportedProtocols: string[];
+}
