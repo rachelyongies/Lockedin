@@ -1,10 +1,14 @@
+
+import hre from "hardhat";
+
 const { ethers } = require("hardhat");
+
 
 async function main() {
   console.log("Deploying StellarBridge contract...");
 
   // Get the contract factory
-  const StellarBridge = await ethers.getContractFactory("StellarBridge");
+  const StellarBridge = await hre.ethers.getContractFactory("StellarBridge");
 
   // Mock token addresses for local deployment
   // In production, these would be real token addresses
@@ -26,21 +30,21 @@ async function main() {
 
   console.log("✅ StellarBridge deployed successfully!");
   console.log("Contract address:", address);
-  console.log("Network:", (await ethers.provider.getNetwork()).name);
-  console.log("Deployer:", (await ethers.getSigners())[0].address);
+  console.log("Network:", (await hre.ethers.provider.getNetwork()).name);
+  console.log("Deployer:", (await hre.ethers.getSigners())[0].address);
 
   // Log contract details
   console.log("\n📋 Contract Details:");
-  console.log("- Bridge Fee:", ethers.formatEther(await stellarBridge.bridgeFee()), "ETH");
-  console.log("- Min Bridge Amount:", ethers.formatEther(await stellarBridge.MIN_BRIDGE_AMOUNT()), "ETH");
-  console.log("- Max Bridge Amount:", ethers.formatEther(await stellarBridge.MAX_BRIDGE_AMOUNT()), "ETH");
+  console.log("- Bridge Fee:", hre.ethers.formatEther(await stellarBridge.bridgeFee()), "ETH");
+  console.log("- Min Bridge Amount:", hre.ethers.formatEther(await stellarBridge.MIN_BRIDGE_AMOUNT()), "ETH");
+  console.log("- Max Bridge Amount:", hre.ethers.formatEther(await stellarBridge.MAX_BRIDGE_AMOUNT()), "ETH");
   console.log("- WETH Token:", await stellarBridge.wethToken());
   console.log("- WXLM Token:", await stellarBridge.wxlmToken());
   console.log("- Stellar Network:", await stellarBridge.stellarNetwork());
 
   // Verify deployment
   console.log("\n🔍 Verifying deployment...");
-  const code = await ethers.provider.getCode(address);
+  const code = await hre.ethers.provider.getCode(address);
   if (code === "0x") {
     console.log("❌ Contract deployment verification failed - no code at address");
   } else {

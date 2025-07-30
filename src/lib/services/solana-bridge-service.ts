@@ -38,11 +38,15 @@ class SolanaBridgeServiceError extends Error {
 
 // HTLC Helper Functions
 function generateHTLCId(): string {
-  return ethers.randomBytes(32).toString('hex');
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function generatePreimage(): string {
-  return ethers.randomBytes(32).toString('hex');
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function hashPreimage(preimage: string): string {
@@ -117,7 +121,7 @@ export class SolanaBridgeService {
     amount: string,
     walletAddress: string,
     recipientAddress?: string,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     try {
       // Validate inputs
@@ -165,7 +169,7 @@ export class SolanaBridgeService {
     htlcId: string,
     hash: string,
     timelock: number,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     const fromAmount = parseFloat(amount);
     const exchangeRate = await this.getExchangeRate(fromToken, toToken);
@@ -217,7 +221,7 @@ export class SolanaBridgeService {
     htlcId: string,
     hash: string,
     timelock: number,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     onProgress?.('Initiating Ethereum to Solana bridge...');
 
@@ -306,7 +310,7 @@ export class SolanaBridgeService {
     htlcId: string,
     hash: string,
     timelock: number,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): Promise<BridgeTransaction> {
     onProgress?.('Initiating Solana to Ethereum bridge...');
 
@@ -396,7 +400,7 @@ export class SolanaBridgeService {
   // Monitor transaction status
   private monitorTransaction(
     transaction: BridgeTransaction,
-    onProgress?: (status: string, data?: any) => void
+    onProgress?: (status: string, data?: unknown) => void
   ): void {
     const pollInterval = 5000; // 5 seconds
     let attempts = 0;
@@ -484,7 +488,9 @@ export class SolanaBridgeService {
   ): Promise<string> {
     // In production, this would interact with the actual contract
     await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
-    return `0x${ethers.randomBytes(32).toString('hex')}`;
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    return `0x${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`;
   }
 
   // Simulate Solana transaction
@@ -496,7 +502,9 @@ export class SolanaBridgeService {
   ): Promise<string> {
     // In production, this would interact with the actual Solana program
     await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate delay
-    return ethers.randomBytes(64).toString('base64');
+    const bytes = new Uint8Array(64);
+    crypto.getRandomValues(bytes);
+    return btoa(String.fromCharCode(...bytes));
   }
 
   // Store preimage (in production, this would be handled securely)
@@ -575,7 +583,7 @@ export class SolanaBridgeService {
   }
 
   // Error handling
-  private handleError(error: any, defaultMessage: string): SolanaBridgeServiceError {
+  private handleError(error: unknown, defaultMessage: string): SolanaBridgeServiceError {
     if (error instanceof SolanaBridgeServiceError) {
       return error;
     }

@@ -17,19 +17,29 @@ export default function SolanaTestPage() {
   // Toast notifications
   const { addToast } = useToast();
   
+  // Test result interface
+  interface TestResult {
+    id: number;
+    test: string;
+    status: 'success' | 'error';
+    message: string;
+    data?: unknown;
+    timestamp: number;
+  }
+
   // Test state
-  const [testResults, setTestResults] = useState<any[]>([]);
+  const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [isTesting, setIsTesting] = useState(false);
 
   // Add test result
-  const addTestResult = (test: string, status: 'success' | 'error', message: string, data?: any) => {
+  const addTestResult = (test: string, status: 'success' | 'error', message: string, data?: unknown) => {
     setTestResults(prev => [...prev, {
       id: Date.now(),
       test,
       status,
       message,
       data,
-      timestamp: new Date().toISOString()
+      timestamp: Date.now()
     }]);
   };
 
@@ -219,7 +229,7 @@ export default function SolanaTestPage() {
                 
                 <div className="space-y-3 max-h-96 overflow-y-auto">
                   {testResults.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">No test results yet. Click "Run All Tests" to start.</p>
+                    <p className="text-gray-500 text-center py-8">No test results yet. Click &quot;Run All Tests&quot; to start.</p>
                   ) : (
                     testResults.map((result) => (
                       <div
@@ -237,9 +247,9 @@ export default function SolanaTestPage() {
                           <span className="font-semibold text-sm">{result.test}</span>
                         </div>
                         <p className="text-sm text-gray-700">{result.message}</p>
-                        {result.data && (
+                        {result.data !== undefined && (
                           <pre className="text-xs text-gray-600 mt-2 bg-gray-100 p-2 rounded overflow-x-auto">
-                            {JSON.stringify(result.data, null, 2)}
+                            {String(JSON.stringify(result.data, null, 2))}
                           </pre>
                         )}
                         <p className="text-xs text-gray-500 mt-1">
@@ -280,7 +290,7 @@ export default function SolanaTestPage() {
         </div>
       </div>
       
-      <ToastContainer />
+      <ToastContainer toasts={[]} onRemoveToast={() => {}} />
     </PageWrapper>
   );
 }
