@@ -1,9 +1,14 @@
-const { ethers, run, network } = require("hardhat");
-const fs = require("fs");
-const path = require("path");
+import { ethers, run, network } from "hardhat";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 // Load environment variables from .env.local
-require("dotenv").config({ path: path.join(__dirname, "../.env.local") });
+import dotenv from "dotenv";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: path.join(__dirname, "../.env.local") });
 
 async function main() {
   console.time("⏱ Deployment time");
