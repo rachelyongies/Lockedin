@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils/helpers';
 import { Button } from '@/components/ui/Button';
 import { QuickTooltip } from '@/components/ui/Tooltip';
 import { WalletConnector } from '@/components/ui/WalletConnector/WalletConnector';
+import { useNetworkStore } from '@/store/useNetworkStore';
 
 // Environment-based feature flags
 const FEATURES = {
@@ -454,20 +455,27 @@ interface NetworkStatusProps {
 
 const NetworkStatus = React.forwardRef<HTMLDivElement, NetworkStatusProps>(
   ({ networkState, environment, networks }, ref) => {
-    // Default state for SSR safety
-    const defaultNetworks: NetworkState = {
-      ethereum: { name: networks.ethereum.name, status: 'disconnected' },
-      bitcoin: { name: networks.bitcoin.name, status: 'disconnected' },
+    // Use the network store for real-time status
+    const { ethereum, bitcoin, environment: storeEnvironment } = useNetworkStore();
+    
+    // Use store data if available, otherwise fall back to props
+    const networkStatus = {
+      ethereum: {
+        name: ethereum.name,
+        status: ethereum.status
+      },
+      bitcoin: {
+        name: bitcoin.name,
+        status: bitcoin.status
+      }
     };
-
-    const networkStatus = networkState || defaultNetworks;
 
     return (
       <div ref={ref} className="hidden sm:flex items-center gap-2">
         <NetworkIndicator 
           network="ETH" 
           status={networkStatus.ethereum.status}
-          environment={environment}
+          environment={storeEnvironment}
           icon={
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/>
@@ -477,7 +485,7 @@ const NetworkStatus = React.forwardRef<HTMLDivElement, NetworkStatusProps>(
         <NetworkIndicator 
           network="BTC" 
           status={networkStatus.bitcoin.status}
-          environment={environment}
+          environment={storeEnvironment}
           icon={
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M23.638 14.904c-1.602 6.43-8.113 10.34-14.542 8.736C2.67 22.05-1.244 15.525.362 9.105 1.962 2.67 8.475-1.243 14.9.358c6.43 1.605 10.342 8.115 8.738 14.546z"/>
@@ -494,12 +502,20 @@ NetworkStatus.displayName = 'NetworkStatus';
 // Mobile Network Status Component
 const MobileNetworkStatus = React.forwardRef<HTMLDivElement, NetworkStatusProps>(
   ({ networkState, environment, networks }, ref) => {
-    const defaultNetworks: NetworkState = {
-      ethereum: { name: networks.ethereum.name, status: 'disconnected' },
-      bitcoin: { name: networks.bitcoin.name, status: 'disconnected' },
+    // Use the network store for real-time status
+    const { ethereum, bitcoin, environment: storeEnvironment } = useNetworkStore();
+    
+    // Use store data if available, otherwise fall back to props
+    const networkStatus = {
+      ethereum: {
+        name: ethereum.name,
+        status: ethereum.status
+      },
+      bitcoin: {
+        name: bitcoin.name,
+        status: bitcoin.status
+      }
     };
-
-    const networkStatus = networkState || defaultNetworks;
 
     return (
       <div ref={ref} className="flex items-center justify-between pt-3 border-t border-border-color/30">
@@ -508,13 +524,13 @@ const MobileNetworkStatus = React.forwardRef<HTMLDivElement, NetworkStatusProps>
           <NetworkIndicator 
             network="ETH" 
             status={networkStatus.ethereum.status}
-            environment={environment}
+            environment={storeEnvironment}
             compact
           />
           <NetworkIndicator 
             network="BTC" 
             status={networkStatus.bitcoin.status}
-            environment={environment}
+            environment={storeEnvironment}
             compact
           />
         </div>
@@ -663,39 +679,96 @@ const NetworkIndicator = React.forwardRef<HTMLDivElement, NetworkIndicatorProps>
       connected: { 
         color: environment === 'testnet' ? 'text-warning' : 'text-success', 
         bg: environment === 'testnet' ? 'bg-warning/20' : 'bg-success/20', 
-        dot: environment === 'testnet' ? 'bg-warning' : 'bg-success' 
+        dot: environment === 'testnet' ? 'bg-warning' : 'bg-success',
+        border: environment === 'testnet' ? 'border-warning/50' : 'border-success/50',
+        glow: environment === 'testnet' ? 'shadow-warning/20' : 'shadow-success/20'
       },
-      connecting: { color: 'text-warning', bg: 'bg-warning/20', dot: 'bg-warning' },
-      disconnected: { color: 'text-text-tertiary', bg: 'bg-background-tertiary', dot: 'bg-text-tertiary' },
-      error: { color: 'text-error', bg: 'bg-error/20', dot: 'bg-error' },
+      connecting: { 
+        color: 'text-warning', 
+        bg: 'bg-warning/20', 
+        dot: 'bg-warning',
+        border: 'border-warning/50',
+        glow: 'shadow-warning/20'
+      },
+      disconnected: { 
+        color: 'text-text-tertiary', 
+        bg: 'bg-background-tertiary', 
+        dot: 'bg-text-tertiary',
+        border: 'border-border-color/50',
+        glow: ''
+      },
+      error: { 
+        color: 'text-error', 
+        bg: 'bg-error/20', 
+        dot: 'bg-error',
+        border: 'border-error/50',
+        glow: 'shadow-error/20'
+      },
     };
 
     const config = statusConfig[status];
+    
+    // Enhanced tooltip text for bridging context
+    const getTooltipText = () => {
+      const networkName = network === 'ETH' ? 'Ethereum' : 'Bitcoin';
+      const envText = environment === 'testnet' ? 'Testnet' : 'Mainnet';
+      
+      switch (status) {
+        case 'connected':
+          return `✅ ${networkName} ${envText} - Ready for bridging`;
+        case 'connecting':
+          return `🔄 ${networkName} ${envText} - Connecting...`;
+        case 'disconnected':
+          return `❌ ${networkName} ${envText} - Not available for bridging`;
+        case 'error':
+          return `⚠️ ${networkName} ${envText} - Connection error`;
+        default:
+          return `${networkName} ${envText}: ${status}`;
+      }
+    };
 
     return (
-      <QuickTooltip text={`${network} network: ${status} (${environment})`}>
+      <QuickTooltip text={getTooltipText()}>
         <motion.div
           ref={ref}
           className={cn(
-            'flex items-center gap-2 rounded-md border border-border-color/50',
+            'flex items-center gap-2 rounded-md border transition-all duration-300',
             config.bg,
-            compact ? 'px-1.5 py-0.5' : 'px-2 py-1'
+            config.border,
+            config.glow && status === 'connected' ? `shadow-lg ${config.glow}` : '',
+            compact ? 'px-1.5 py-0.5' : 'px-2 py-1',
+            status === 'connected' ? 'animate-pulse' : ''
           )}
-          whileHover={{ scale: 1.05 }}
+          whileHover={{ 
+            scale: 1.05,
+            boxShadow: status === 'connected' ? '0 0 20px rgba(34, 197, 94, 0.3)' : undefined
+          }}
           transition={{ duration: 0.2 }}
           role="status"
           aria-label={`${network} network status: ${status} on ${environment}`}
           {...props}
         >
           {icon && (
-            <div className={cn('flex-shrink-0', config.color)}>
+            <motion.div 
+              className={cn('flex-shrink-0', config.color)}
+              animate={status === 'connected' ? { 
+                scale: [1, 1.1, 1],
+                transition: { duration: 2, repeat: Infinity }
+              } : {}}
+            >
               {icon}
-            </div>
+            </motion.div>
           )}
           <span className={cn('text-xs font-medium', config.color)}>
             {network}
           </span>
-          <div className={cn('w-1.5 h-1.5 rounded-full', config.dot)} />
+          <motion.div 
+            className={cn('w-1.5 h-1.5 rounded-full', config.dot)}
+            animate={status === 'connected' ? { 
+              opacity: [1, 0.5, 1],
+              transition: { duration: 1.5, repeat: Infinity }
+            } : {}}
+          />
         </motion.div>
       </QuickTooltip>
     );
