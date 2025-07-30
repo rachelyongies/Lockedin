@@ -18,26 +18,24 @@ export const PRODUCTION_WALLETS: WalletConfig[] = [
     name: 'MetaMask',
     type: 'evm',
     chainIds: [1, 11155111, 137, 56], // Mainnet, Sepolia, Polygon, BSC
-    icon: '/images/wallets/metamask.svg',
+    icon: '/images/Metamask.svg',
     downloadUrl: 'https://metamask.io/download/',
     isInstalled: () => {
       if (typeof window === 'undefined') return false;
       
       // Check if MetaMask is available in window.ethereum
-      if (window.ethereum?.isMetaMask && !(window.ethereum as any)?.isPhantom) {
+      if (window.ethereum?.isMetaMask) {
         return true;
       }
       
       // Check in providers array if multiple wallets are installed
       if ((window.ethereum as any)?.providers) {
-        const metamaskProvider = (window.ethereum as any).providers.find((p: any) => 
-          p.isMetaMask && !p.isPhantom
-        );
+        const metamaskProvider = (window.ethereum as any).providers.find((p: any) => p.isMetaMask);
         if (metamaskProvider) return true;
       }
       
       // Additional check: look for MetaMask directly in window object
-      if ((window as any).ethereum?.isMetaMask && !(window as any).ethereum?.isPhantom) {
+      if ((window as any).ethereum?.isMetaMask) {
         return true;
       }
       
@@ -48,8 +46,48 @@ export const PRODUCTION_WALLETS: WalletConfig[] = [
     name: 'WalletConnect',
     type: 'evm', 
     chainIds: [1, 11155111, 137, 56, 42161, 10], // Multi-chain
-    icon: '/images/wallets/walletconnect.svg',
-    isInstalled: () => true // Always available
+    icon: '/images/wallets/wallet-connect.png',
+    downloadUrl: 'https://walletconnect.com/',
+    isInstalled: () => {
+//wallet connect is not grouped tgt with phantom or rabs or mm. 
+      if (typeof window === 'undefined') return false;
+
+      return false; // Don't auto-detect WalletConnect
+    }
+  },
+  {
+    name: 'Rabby',
+    type: 'evm',
+    chainIds: [1, 11155111, 137, 56, 42161, 10], // Multi-chain
+    icon: '/images/wallets/rabby.png',
+    downloadUrl: 'https://rabby.io/',
+    isInstalled: () => {
+      if (typeof window === 'undefined') return false;
+      
+      // Check if Rabby is available in window.ethereum
+      if ((window.ethereum as any)?.isRabby) {
+        return true;
+      }
+      
+      // Check in providers array if multiple wallets are installed
+      if ((window.ethereum as any)?.providers) {
+        return (window.ethereum as any).providers.some((p: any) => p.isRabby);
+      }
+      
+      // Additional check: look for Rabby directly in window object
+      if ((window as any).rabby) {
+        return true;
+      }
+      
+      // Check if any provider has Rabby properties
+      if ((window.ethereum as any)?.providers) {
+        return (window.ethereum as any).providers.some((p: any) => 
+          p.isRabby || p.name === 'Rabby' || p.constructor.name === 'RabbyProvider'
+        );
+      }
+      
+      return false;
+    }
   },
   {
     name: 'Coinbase Wallet',
@@ -87,7 +125,7 @@ export const PRODUCTION_WALLETS: WalletConfig[] = [
     name: 'Phantom',
     type: 'solana',
     chainIds: [101, 102, 103], // Mainnet, Testnet, Devnet
-    icon: '/images/wallets/phantom.svg',
+    icon: '/images/wallets/phantom.png',
     downloadUrl: 'https://phantom.app/',
     isInstalled: () => {
       if (typeof window === 'undefined') return false;
@@ -97,9 +135,18 @@ export const PRODUCTION_WALLETS: WalletConfig[] = [
         return true;
       }
       
-      // Phantom might also inject into window.ethereum, but we prefer window.solana
-      // Only check window.ethereum as fallback if window.solana is not available
-      if (!(window as any).solana && (window.ethereum as any)?.isPhantom) {
+      // Check for Phantom in window.ethereum (some browsers inject here)
+      if ((window.ethereum as any)?.isPhantom) {
+        return true;
+      }
+      
+      // Check for Phantom in providers array
+      if ((window.ethereum as any)?.providers) {
+        return (window.ethereum as any).providers.some((p: any) => p.isPhantom);
+      }
+      
+      // Additional check: look for Phantom directly in window object
+      if ((window as any).phantom?.solana?.isPhantom) {
         return true;
       }
       
@@ -243,56 +290,31 @@ export class MultiWalletManager {
     provider?: unknown;
     error?: string;
   }> {
-    if (walletName === 'MetaMask') {
-      console.log('🦊 Connecting to MetaMask...');
-      // More robust MetaMask detection with Phantom conflict handling
-      let provider = null;
-      
-      if (window.ethereum) {
-        console.log('window.ethereum found:', {
-          isMetaMask: window.ethereum.isMetaMask,
-          isPhantom: (window.ethereum as any)?.isPhantom,
-          hasProviders: !!(window.ethereum as any)?.providers,
-          providersCount: (window.ethereum as any)?.providers?.length || 0
-        });
+          if (walletName === 'MetaMask') {
+        console.log('🦊 Connecting to MetaMask...');
+        let provider = null;
         
-        // Priority 1: Check if MetaMask is the primary provider (and not Phantom)
-        if (window.ethereum.isMetaMask && !(window.ethereum as any)?.isPhantom) {
-          console.log('✅ MetaMask is the primary provider (no Phantom conflict)');
+        if (window.ethereum) {
+          console.log('window.ethereum found:', {
+            isMetaMask: window.ethereum.isMetaMask,
+            isPhantom: (window.ethereum as any)?.isPhantom,
+            isRabby: (window.ethereum as any)?.isRabby,
+            hasProviders: !!(window.ethereum as any)?.providers,
+            providersCount: (window.ethereum as any)?.providers?.length || 0
+          });
+          
+          // SIMPLIFIED: Just use window.ethereum directly - let the wallet handle the prompt
           provider = window.ethereum;
-        } 
-        // Priority 2: Check if we have multiple providers and find MetaMask
-        else if ((window.ethereum as any)?.providers) {
-          console.log('🔍 Searching for MetaMask in providers array...');
-          provider = (window.ethereum as any).providers.find((p: any) => 
-            p.isMetaMask && !p.isPhantom
-          );
-          if (provider) {
-            console.log('✅ Found MetaMask in providers array (filtered out Phantom)');
-          } else {
-            console.log('❌ MetaMask not found in providers array or blocked by Phantom');
-          }
+          console.log('✅ Using window.ethereum provider directly');
         }
-        // Priority 3: If window.ethereum is Phantom-overridden, look for the original MetaMask
-        else if ((window.ethereum as any)?.isPhantom) {
-          console.log('⚠️ window.ethereum is overridden by Phantom, looking for original MetaMask...');
-          // Sometimes MetaMask is still accessible through different paths
-          if ((window as any).ethereum?.isMetaMask) {
-            provider = (window as any).ethereum;
-            console.log('✅ Found MetaMask through alternative path');
-          }
+        
+        if (!provider) {
+          console.error('❌ No Ethereum provider available');
+          return {
+            success: false,
+            error: 'No Ethereum wallet found. Please install MetaMask, Rabby, or another Ethereum wallet.'
+          };
         }
-      } else {
-        console.log('❌ window.ethereum not available');
-      }
-      
-      if (!provider) {
-        console.error('❌ MetaMask provider not found or blocked by Phantom');
-        return {
-          success: false,
-          error: 'MetaMask not found or blocked by Phantom wallet. Try disabling Phantom temporarily or use a different browser profile.'
-        };
-      }
       
       console.log('✅ MetaMask provider found, proceeding with connection...');
       
@@ -340,6 +362,103 @@ export class MultiWalletManager {
         return {
           success: false,
           error: error instanceof Error ? error.message : 'MetaMask connection failed'
+        };
+      }
+    }
+    
+    if (walletName === 'Rabby') {
+      console.log('🐰 Connecting to Rabby...');
+      let provider = null;
+      
+      if (window.ethereum) {
+        console.log('Rabby detection:', {
+          isRabby: (window.ethereum as any)?.isRabby,
+          hasProviders: !!(window.ethereum as any)?.providers,
+          providersCount: (window.ethereum as any)?.providers?.length || 0,
+          windowRabby: !!(window as any).rabby
+        });
+        
+        // Method 1: Check if window.ethereum is Rabby
+        if ((window.ethereum as any)?.isRabby) {
+          provider = window.ethereum;
+          console.log('✅ Found Rabby in window.ethereum');
+        }
+        // Method 2: Check providers array
+        else if ((window.ethereum as any)?.providers) {
+          const rabbyProvider = (window.ethereum as any).providers.find((p: any) => p.isRabby);
+          if (rabbyProvider) {
+            provider = rabbyProvider;
+            console.log('✅ Found Rabby in providers array');
+          }
+        }
+        // Method 3: Check window.rabby directly
+        else if ((window as any).rabby) {
+          provider = (window as any).rabby;
+          console.log('✅ Found Rabby in window.rabby');
+        }
+      }
+      
+      if (!provider) {
+        console.error('❌ Rabby provider not found');
+        return {
+          success: false,
+          error: 'Rabby wallet not found. Make sure Rabby is installed and enabled.'
+        };
+      }
+      
+      console.log('✅ Rabby provider found, proceeding with connection...');
+      
+      try {
+        console.log('🔗 Requesting accounts from Rabby...');
+        const accounts = await provider.request({ 
+          method: 'eth_requestAccounts' 
+        }) as string[];
+        
+        console.log('✅ Rabby accounts received:', accounts.length > 0 ? `${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}` : 'none');
+        
+        // Get current chain ID
+        const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
+        const currentChainId = parseInt(chainIdHex, 16);
+        console.log('✅ Rabby current chain ID:', currentChainId);
+        
+        // Switch to correct network if needed
+        if (currentChainId !== chainId) {
+          await this.switchEVMNetwork(chainId, provider);
+        }
+        
+        const walletData = {
+          type: 'evm',
+          address: accounts[0],
+          provider: provider,
+          chainId: currentChainId || chainId
+        };
+        
+        this.connectedWallets.set(walletName, walletData);
+        
+        // Update wallet state
+        this.updateWalletState(walletName, {
+          isConnected: true,
+          status: 'ready',
+          name: walletName,
+          chainId: currentChainId || chainId,
+          address: accounts[0],
+          provider: provider,
+          lastUpdated: Date.now()
+        });
+        
+        // Set up event handlers
+        this.setupEventHandlers(walletName, provider);
+
+        return {
+          success: true,
+          address: accounts[0],
+          provider: provider
+        };
+      } catch (error) {
+        console.error('Rabby connection failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Rabby connection failed'
         };
       }
     }
@@ -461,6 +580,9 @@ export class MultiWalletManager {
     if (walletName === 'Phantom') {
       console.log('👻 Connecting to Phantom wallet...');
       
+      // Wait a bit for extensions to settle
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const windowSolana = (window as unknown as {solana?: {isPhantom?: boolean; connect?: () => Promise<{publicKey: {toString: () => string}}>}}).solana;
       
       console.log('Phantom detection:', {
@@ -469,8 +591,9 @@ export class MultiWalletManager {
         'window.ethereum.isPhantom': (window.ethereum as any)?.isPhantom
       });
       
-      if (!windowSolana?.isPhantom) {
-        console.error('❌ Phantom not found in window.solana or not marked as Phantom');
+      // SIMPLIFIED: Just check if solana is available
+      if (!windowSolana) {
+        console.error('❌ Phantom not found in window.solana');
         return {
           success: false,
           error: 'Phantom wallet not found. Make sure Phantom is installed and enabled.'
@@ -479,12 +602,20 @@ export class MultiWalletManager {
       
       try {
         console.log('🔗 Requesting connection from Phantom via window.solana...');
+        
+        // First, try to connect without network switching
         const response = await windowSolana.connect!();
-        
-        // Switch to correct Solana network
-        await this.switchSolanaNetwork(chainId);
-        
         const address = response.publicKey.toString();
+        
+        console.log('✅ Phantom connected successfully, address:', address);
+        
+        // Only try to switch network after successful connection
+        try {
+          await this.switchSolanaNetwork(chainId);
+        } catch (networkError) {
+          console.warn('⚠️ Network switching failed, but connection is still valid:', networkError);
+        }
+        
         const walletData = {
           type: 'solana',
           address,
@@ -515,9 +646,22 @@ export class MultiWalletManager {
         };
       } catch (error) {
         console.error('Phantom connection failed:', error);
+        
+        // More specific error handling
+        let errorMessage = 'Phantom connection failed';
+        if (error instanceof Error) {
+          if (error.message.includes('User rejected')) {
+            errorMessage = 'Connection rejected by user';
+          } else if (error.message.includes('0e')) {
+            errorMessage = 'Phantom extension error - please try again';
+          } else {
+            errorMessage = error.message;
+          }
+        }
+        
         return { 
           success: false, 
-          error: error instanceof Error ? error.message : 'Phantom connection rejected by user'
+          error: errorMessage
         };
       }
     }
@@ -742,6 +886,15 @@ export class MultiWalletManager {
     });
   }
 
+  // 🔧 Get Wallet Provider
+  getWalletProvider(walletName: string): unknown | null {
+    const wallet = this.connectedWallets.get(walletName);
+    if (wallet) {
+      return (wallet as {provider: unknown}).provider;
+    }
+    return null;
+  }
+
   // 🚪 Disconnect Wallet (Enhanced)
   async disconnectWallet(walletName: string): Promise<boolean> {
     const wallet = this.connectedWallets.get(walletName);
@@ -798,6 +951,10 @@ export class MultiWalletManager {
     // Solana wallets typically don't need network switching
     // They connect to the network based on the RPC endpoint
     console.log(`Connecting to Solana network: ${networkUrls[chainId] || 'devnet'}`);
+    
+    // For now, we'll skip actual network switching to avoid potential errors
+    // Phantom handles network selection internally
+    return Promise.resolve();
   }
 
   // 🚀 Multi-Wallet Transaction Support
@@ -963,30 +1120,169 @@ export class MultiWalletManager {
     }
   }
   
-  // 🔄 Check Connection Status for All Wallets
+  // 🔄 Check Connection Status and Fetch Balances for All Wallets
   async refreshAllWalletStates(): Promise<void> {
     const promises = Array.from(this.connectedWallets.keys()).map(async (walletName) => {
       try {
         const wallet = this.connectedWallets.get(walletName) as {type: string; provider: unknown};
+        const state = this.walletStates.get(walletName);
+        
+        if (!state) return;
+        
+        // Skip WalletConnect if it's not properly initialized
+        if (walletName === 'WalletConnect') {
+          if (!wallet || !wallet.provider) {
+            console.log(`🔌 WalletConnect not connected, removing from connected wallets...`);
+            this.connectedWallets.delete(walletName);
+            this.walletStates.delete(walletName);
+            return;
+          }
+        }
         
         // Check if wallet is still connected
         let isStillConnected = false;
+        let balance = '0';
         
         if (wallet.type === 'evm') {
-          const provider = wallet.provider as {request?: (params: {method: string}) => Promise<string[]>};
-          if (provider.request) {
-            const accounts = await provider.request({ method: 'eth_accounts' });
-            isStillConnected = accounts.length > 0;
+          const provider = wallet.provider as {request?: (params: {method: string; params?: any[]}) => Promise<any>};
+          
+          // Special handling for WalletConnect which might have null provider
+          if (walletName === 'WalletConnect') {
+            if (!provider || !provider.request) {
+              console.log(`🔌 WalletConnect provider is null, disconnecting...`);
+              await this.disconnectWallet(walletName);
+              return;
+            }
+          }
+          
+          if (provider && provider.request) {
+            try {
+              const accounts = await provider.request({ method: 'eth_accounts' }) as string[];
+              isStillConnected = accounts.length > 0;
+              
+              // Fetch balance for EVM wallets - be more aggressive
+              if (isStillConnected && accounts.length > 0) {
+                try {
+                  const balanceHex = await provider.request({ 
+                    method: 'eth_getBalance', 
+                    params: [accounts[0], 'latest'] 
+                  }) as string;
+                  balance = (parseInt(balanceHex, 16) / Math.pow(10, 18)).toString();
+                  console.log(`💰 ${walletName} balance: ${balance} ETH (raw hex: ${balanceHex})`);
+                } catch (balanceError) {
+                  console.warn(`Failed to fetch balance for ${walletName}:`, balanceError);
+                  // Try alternative balance fetching
+                  try {
+                    const balanceHex = await provider.request({ 
+                      method: 'eth_getBalance', 
+                      params: [accounts[0]] 
+                    }) as string;
+                                      balance = (parseInt(balanceHex, 16) / Math.pow(10, 18)).toString();
+                  console.log(`💰 ${walletName} balance (retry): ${balance} ETH (raw hex: ${balanceHex})`);
+                  } catch (retryError) {
+                    console.warn(`Retry failed for ${walletName}:`, retryError);
+                    balance = '0';
+                  }
+                }
+              }
+            } catch (error) {
+              console.warn(`Failed to check accounts for ${walletName}:`, error);
+              isStillConnected = false;
+            }
+          } else {
+            console.warn(`Provider or provider.request is null for ${walletName}`);
+            isStillConnected = false;
           }
         } else if (wallet.type === 'solana') {
-          const provider = wallet.provider as {isConnected?: boolean};
-          isStillConnected = provider.isConnected || false;
+          const provider = wallet.provider as any;
+          
+          console.log(`🔍 Solana wallet ${walletName} debug:`, {
+            provider: !!provider,
+            isConnected: provider?.isConnected,
+            hasGetBalance: !!provider?.getBalance,
+            providerKeys: provider ? Object.keys(provider) : []
+          });
+          
+          isStillConnected = provider?.isConnected || false;
+          
+          // Fetch balance for Solana wallets - try multiple methods
+          if (isStillConnected) {
+            try {
+              console.log(`🔍 Attempting to fetch balance for ${walletName}...`);
+              
+              let balanceData = null;
+              
+              // Method 1: Try getBalance() directly
+              if (provider?.getBalance) {
+                console.log(`🔍 Trying provider.getBalance()...`);
+                balanceData = await provider.getBalance();
+              }
+              // Method 2: Try connection.getBalance()
+              else if (provider?.connection?.getBalance) {
+                console.log(`🔍 Trying provider.connection.getBalance()...`);
+                const publicKey = provider.publicKey;
+                if (publicKey) {
+                  balanceData = await provider.connection.getBalance(publicKey);
+                }
+              }
+              // Method 3: Try request method (like EVM)
+              else if (provider?.request) {
+                console.log(`🔍 Trying provider.request()...`);
+                try {
+                  balanceData = await provider.request({ method: 'getBalance' });
+                } catch (reqError) {
+                  console.log(`Request method failed:`, reqError);
+                }
+              }
+              // Method 4: Try direct property access
+              else if (provider?.balance) {
+                console.log(`🔍 Trying provider.balance...`);
+                balanceData = provider.balance;
+              }
+              
+              console.log(`🔍 Raw balance data for ${walletName}:`, balanceData);
+              
+              if (balanceData) {
+                let lamports = 0;
+                
+                // Handle different balance data formats
+                if (typeof balanceData === 'number') {
+                  lamports = balanceData;
+                } else if (balanceData && typeof balanceData.value === 'number') {
+                  lamports = balanceData.value;
+                } else if (balanceData && typeof balanceData.lamports === 'number') {
+                  lamports = balanceData.lamports;
+                } else if (balanceData && typeof balanceData.balance === 'number') {
+                  lamports = balanceData.balance;
+                }
+                
+                if (lamports > 0) {
+                  balance = (lamports / Math.pow(10, 9)).toString(); // Convert lamports to SOL
+                  console.log(`💰 ${walletName} balance: ${balance} SOL (raw lamports: ${lamports})`);
+                } else {
+                  console.warn(`Invalid balance data format for ${walletName}:`, balanceData);
+                  balance = '0';
+                }
+              } else {
+                console.warn(`No balance data found for ${walletName}`);
+                balance = '0';
+              }
+            } catch (balanceError) {
+              console.warn(`Failed to fetch Solana balance for ${walletName}:`, balanceError);
+              console.error(`Full error details:`, balanceError);
+              balance = '0';
+            }
+          } else {
+            console.warn(`Cannot fetch balance for ${walletName}: isConnected=${isStillConnected}`);
+          }
         }
         
         if (!isStillConnected) {
+          console.log(`🔌 ${walletName} is no longer connected, disconnecting...`);
           await this.disconnectWallet(walletName);
         } else {
           this.updateWalletState(walletName, {
+            balance,
             lastUpdated: Date.now()
           });
         }

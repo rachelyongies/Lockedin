@@ -6,6 +6,7 @@ import { BridgeForm } from '@/components/bridge/BridgeForm';
 import { ToastContainer, useToast } from '@/components/ui/Toast';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useBridgeStore } from '@/store/useBridgeStore';
+import { useNetworkStore } from '@/store/useNetworkStore';
 import { Token } from '@/types/bridge';
 import { bridgeService } from '@/lib/services/bridge-service';
 import { solanaBridgeService } from '@/lib/services/solana-bridge-service';
@@ -13,6 +14,7 @@ import { starknetBridgeService } from '@/lib/services/starknet-bridge-service';
 import { stellarBridgeService } from '@/lib/services/stellar-bridge-service';
 import { WalletConnector } from '@/components/ui/WalletConnector/WalletConnector';
 import { MultiWalletStatus } from '@/components/bridge/MultiWalletStatus';
+import { motion } from 'framer-motion';
 
 export default function Home() {
   // Global state
@@ -34,6 +36,13 @@ export default function Home() {
     setApprovalSuccess,
     setApprovalError,
   } = useBridgeStore();
+
+  const {
+    ethereum,
+    bitcoin,
+    areNetworksReady,
+    isNetworkReady,
+  } = useNetworkStore();
 
   // Toast notifications
   const { toasts, addToast, removeToast } = useToast();
@@ -190,6 +199,31 @@ export default function Home() {
         {/* Multi-Wallet Status */}
         <div className="mb-8 max-w-4xl mx-auto">
           <MultiWalletStatus />
+        </div>
+
+        {/* Network Status Indicator */}
+        <div className="mb-8 max-w-4xl mx-auto">
+          <motion.div
+            className="flex items-center justify-center p-3 rounded-lg"
+            style={{
+              background: 'rgba(16, 18, 22, 0.8)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(8px)'
+            }}
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: ethereum.isReadyForBridging ? '#48bb78' : '#ed8936' }}></div>
+              <span className="text-sm text-gray-300">Ethereum Network Ready</span>
+            </div>
+            <div className="mx-2 w-px h-4 bg-gray-700"></div>
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: bitcoin.isReadyForBridging ? '#48bb78' : '#ed8936' }}></div>
+              <span className="text-sm text-gray-300">Bitcoin Network Ready</span>
+            </div>
+          </motion.div>
         </div>
 
         {/* Multi-Wallet Quick Info */}
