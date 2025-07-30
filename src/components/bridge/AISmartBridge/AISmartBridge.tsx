@@ -25,6 +25,7 @@ interface AISmartBridgeProps {
   fromToken: Token;
   toToken: Token;
   amount: string;
+  walletAddress?: string;
   onExecute: (routeAnalysis?: RouteAnalysis) => Promise<void>;
   onClose: () => void;
   isVisible: boolean;
@@ -34,6 +35,7 @@ export function AISmartBridge({
   fromToken,
   toToken,
   amount,
+  walletAddress,
   onExecute,
   onClose,
   isVisible

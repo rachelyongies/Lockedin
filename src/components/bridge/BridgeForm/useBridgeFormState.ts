@@ -233,8 +233,8 @@ export function useBridgeFormState({
     setBridgeSuccess(false);
 
     try {
-      // Replace with your deployed contract address
-      const contractAddress = "0xYourDeployedContractAddressHere"; 
+      // ✅ REAL DEPLOYED CONTRACT - Sepolia Testnet
+      const contractAddress = "0x342EB13550e171606BEdcE6492E549Fc19678435"; 
       const contractABI = [
         // Only include the initiate function ABI for now
         "function initiate(bytes32 id, address resolver, bytes32 hash, uint256 timelock) payable"

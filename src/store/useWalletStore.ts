@@ -546,7 +546,7 @@ export const useWalletStore = create<WalletState>()(
         })
       },
 
-      setNetwork: (chainId: number, isCorrect: boolean) => {
+      setNetwork: (chainId: number, _isCorrect: boolean) => {
         set((state) => {
           const networkInfo = DEFAULT_NETWORKS[chainId]
           if (networkInfo) {
