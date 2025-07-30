@@ -156,7 +156,7 @@ export class FusionAwarePathfinder {
       const edges = graph.edges.get(current.node) || [];
       
       // 🔍 Pre-filter edges with Fusion feasibility check
-      const feasibleEdges = await this.filterFusionFeasibleEdges(edges, params);
+      const feasibleEdges = await this.filterFusionFeasibleEdges(edges, params, graph);
       fusionQueries += feasibleEdges.fusionQueries;
       
       for (const edge of feasibleEdges.edges) {
@@ -187,7 +187,7 @@ export class FusionAwarePathfinder {
     
     // Add Fusion query stats
     for (const route of routes) {
-      (route as any).fusionQueries = fusionQueries;
+      (route as RouteProposal & { fusionQueries: number }).fusionQueries = fusionQueries;
     }
     
     return routes;
@@ -196,7 +196,8 @@ export class FusionAwarePathfinder {
   // 🔍 Pre-Quote Filtering for Feasibility
   private async filterFusionFeasibleEdges(
     edges: PoolEdge[],
-    params: RouteSearchParams
+    params: RouteSearchParams,
+    graph: RoutingGraph
   ): Promise<{edges: PoolEdge[], fusionQueries: number}> {
     const feasibleEdges: PoolEdge[] = [];
     let fusionQueries = 0;
@@ -622,7 +623,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
     }
   }
 
-  async handleTask(task: any, signal: AbortSignal): Promise<any> {
+  async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
     const { type, data } = task;
     
     switch (type) {
@@ -698,7 +699,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
         pathsEvaluated: routes.length,
         timeSpent: Date.now() - startTime,
         cacheHits: 0,
-        fusionQueries: (routes[0] as any)?.fusionQueries || 0,
+        fusionQueries: (routes[0] as RouteProposal & { fusionQueries?: number })?.fusionQueries || 0,
         parallelBatches: this.searchMetrics.parallelBatches,
         optimalityGap: this.calculateOptimalityGap(routes)
       },
@@ -786,9 +787,10 @@ export class RouteDiscoveryAgent extends BaseAgent {
     edge: PoolEdge
   ): Promise<(amountIn: number, liquidity: number) => number> {
     
-    // For Fusion-compatible edges, try to use real quotes for slippage calculation
+    // For Fusion-compatible edges, pre-cache some quotes for better estimation
     if (edge.fusionCompatible && type !== 'fusion_real') {
-      return await this.createFusionRealSlippageCalculator(edge);
+      const cachedSlippageData = await this.preCacheFusionSlippage(edge);
+      return this.createCachedFusionSlippageCalculator(edge, cachedSlippageData);
     }
 
     // Traditional slippage calculators
@@ -821,7 +823,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
         
       case 'balancer':
         return (amountIn: number, liquidity: number) => {
-          const weight = params.weights?.[0] || 0.5;
+          const weight = (params as Record<string, unknown> & { weights?: number[] }).weights?.[0] || 0.5;
           const utilization = amountIn / (liquidity || 1);
           return Math.min(utilization / weight, 0.15);
         };
@@ -831,29 +833,49 @@ export class RouteDiscoveryAgent extends BaseAgent {
     }
   }
 
-  // Real-time slippage calculation using Fusion quotes
-  private async createFusionRealSlippageCalculator(edge: PoolEdge): Promise<(amountIn: number, liquidity: number) => number> {
-    return async (amountIn: number, liquidity: number) => {
-      try {
-        const fusionParams: FusionQuoteParams = {
-          src: edge.fromToken,
-          dst: edge.toToken,
-          amount: amountIn.toString(),
-          from: '0x0000000000000000000000000000000000000000'
-        };
+  // Pre-cache Fusion slippage data for synchronous calculation
+  private async preCacheFusionSlippage(edge: PoolEdge): Promise<{baseSlippage: number, liquidityDepth: number}> {
+    try {
+      // Test with a standard amount to get baseline slippage
+      const testAmount = '1000000'; // 1M wei as test
+      const fusionParams: FusionQuoteParams = {
+        src: edge.fromToken,
+        dst: edge.toToken,
+        amount: testAmount,
+        from: '0x0000000000000000000000000000000000000000'
+      };
 
-        const quote = await this.dataService.getFusionQuote(fusionParams, 1);
-        const amountOut = parseFloat(quote.toAmount);
-        
-        // Calculate actual slippage from Fusion quote
-        const slippage = amountIn > 0 ? Math.max(0, (amountIn - amountOut) / amountIn) : 0;
-        return Math.min(slippage, 0.5); // Cap at 50%
-        
-      } catch (error) {
-        // Fallback to traditional calculation
-        const utilization = amountIn / (liquidity || 1);
-        return Math.min(utilization * 0.01, 0.1);
-      }
+      const quote = await this.dataService.getFusionQuote(fusionParams, 1);
+      const amountOut = parseFloat(quote.toAmount);
+      const amountIn = parseFloat(testAmount);
+      
+      // Calculate baseline slippage
+      const baseSlippage = amountIn > 0 ? Math.max(0, (amountIn - amountOut) / amountIn) : 0.005;
+      
+      return {
+        baseSlippage: Math.min(baseSlippage, 0.5),
+        liquidityDepth: amountIn / Math.max(baseSlippage, 0.001) // Estimate liquidity depth
+      };
+      
+    } catch (error) {
+      // Return fallback values
+      return {
+        baseSlippage: 0.01,
+        liquidityDepth: 100000
+      };
+    }
+  }
+
+  // Create cached slippage calculator using pre-fetched data
+  private createCachedFusionSlippageCalculator(
+    edge: PoolEdge, 
+    cachedData: {baseSlippage: number, liquidityDepth: number}
+  ): (amountIn: number, liquidity: number) => number {
+    return (amountIn: number, liquidity: number) => {
+      // Use cached data to estimate slippage based on amount
+      const utilization = amountIn / Math.max(cachedData.liquidityDepth, liquidity || 1);
+      const scaledSlippage = cachedData.baseSlippage * (1 + utilization * 2); // Scale based on utilization
+      return Math.min(scaledSlippage, 0.5); // Cap at 50%
     };
   }
 
@@ -1198,7 +1220,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
     this.routingGraph.edges.get(fromToken)!.push(edge);
   }
 
-  private createSlippageModel(protocol: string, pool: any): SlippageModel {
+  private createSlippageModel(protocol: string, pool: Record<string, unknown>): SlippageModel {
     let type: SlippageModel['type'];
     let params: Record<string, number> = {};
 
@@ -1237,7 +1259,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
     return stablecoins.includes(symbol.toUpperCase());
   }
 
-  private calculateTokenRisk(tokenInfo: any): number {
+  private calculateTokenRisk(tokenInfo: { marketCap?: number; price?: number }): number {
     let risk = 0.5;
     if (tokenInfo.marketCap < 1000000) risk += 0.3;
     if (!tokenInfo.price) risk += 0.2;
@@ -1259,7 +1281,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
     return gasEstimates[protocol] || 150000;
   }
 
-  private calculateMEVRisk(protocol: string, pool: any): number {
+  private calculateMEVRisk(protocol: string, pool: { liquidityUSD?: number }): number {
     const baseRisk: Record<string, number> = {
       'uniswap-v2': 0.6,
       'uniswap-v3': 0.7,
@@ -1274,7 +1296,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
     return Math.min(risk, 1.0);
   }
 
-  private async getProtocolPools(protocol: string, chainId: number): Promise<any[]> {
+  private async getProtocolPools(protocol: string, chainId: number): Promise<Array<Record<string, unknown>>> {
     // Mock implementation - would fetch from protocol APIs
     return [
       {

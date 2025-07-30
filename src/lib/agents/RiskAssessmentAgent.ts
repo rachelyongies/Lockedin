@@ -226,7 +226,7 @@ export class RiskAssessmentAgent extends BaseAgent {
     }
   }
 
-  async handleTask(task: any, signal: AbortSignal): Promise<any> {
+  async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
     const { type, data } = task;
     
     switch (type) {
@@ -261,7 +261,7 @@ export class RiskAssessmentAgent extends BaseAgent {
     const cacheKey = `${route.id}-${riskTolerance}-${marketConditions.timestamp}`;
     const cached = this.assessmentCache.get(cacheKey);
     
-    if (cached && Date.now() - (cached as any).timestamp < 60000) { // 1 minute cache
+    if (cached && Date.now() - (cached as { timestamp: number }).timestamp < 60000) { // 1 minute cache
       return this.convertToRiskAssessment(cached, route.id);
     }
 
@@ -1075,7 +1075,7 @@ export class RiskAssessmentAgent extends BaseAgent {
     };
   }
 
-  private async assessLiquidityRisk(step: any): Promise<number> {
+  private async assessLiquidityRisk(step: { protocol: string; fromToken: string; toToken: string }): Promise<number> {
     // Analyze liquidity for this specific step
     return 0.3;
   }
@@ -1175,7 +1175,7 @@ export class RiskAssessmentAgent extends BaseAgent {
     return Math.min(confidence, 1);
   }
 
-  private identifyTokenRiskFlags(riskFactors: TokenRiskProfile['riskFactors'], tokenInfo: any): string[] {
+  private identifyTokenRiskFlags(riskFactors: TokenRiskProfile['riskFactors'], tokenInfo: { symbol?: string; decimals?: number; marketCap?: number }): string[] {
     const flags: string[] = [];
     
     if (riskFactors.rugPullRisk > 0.7) flags.push('high-rug-risk');

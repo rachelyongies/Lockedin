@@ -41,7 +41,7 @@ export enum ThreatCategory {
 
 export interface ThreatEvidence {
   type: string;
-  value: any;
+  value: unknown;
   timestamp: number;
   agentId?: string;
 }
@@ -57,7 +57,7 @@ export interface SecurityEvent {
   eventId: string;
   agentId: string;
   eventType: 'error' | 'status_change' | 'anomaly' | 'threshold_breach';
-  data: any;
+  data: unknown;
   timestamp: number;
 }
 
@@ -73,7 +73,7 @@ export interface ThreatPattern {
 export interface ThreatIndicator {
   metric: string;
   operator: 'gt' | 'lt' | 'eq' | 'contains' | 'matches';
-  value: any;
+  value: unknown;
   weight: number;
 }
 
@@ -98,8 +98,8 @@ export class SecurityAgent extends BaseAgent {
   private eventCorrelationWindow: number;
   
   // Monitoring state
-  private agentMetricsBaseline: Map<string, any> = new Map();
-  private networkBaseline: any = {};
+  private agentMetricsBaseline: Map<string, Record<string, unknown>> = new Map();
+  private networkBaseline: Record<string, unknown> = {};
   private lastThreatScan: number = 0;
 
   constructor(config: Partial<SecurityConfig> = {}) {
@@ -177,7 +177,7 @@ export class SecurityAgent extends BaseAgent {
   }
 
   // Handle security-related tasks
-  async handleTask(task: any, signal: AbortSignal): Promise<any> {
+  async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
     const { type, data } = task;
     
     switch (type) {
@@ -193,7 +193,7 @@ export class SecurityAgent extends BaseAgent {
   }
 
   // Receive security events from other agents
-  async receiveSecurityEvent(agentId: string, event: any): Promise<void> {
+  async receiveSecurityEvent(agentId: string, event: unknown): Promise<void> {
     const securityEvent: SecurityEvent = {
       eventId: this.generateEventId(),
       agentId,
@@ -209,7 +209,7 @@ export class SecurityAgent extends BaseAgent {
   }
 
   // Error analysis with security context
-  protected async analyzeError(error: Error, context: any): Promise<{
+  protected async analyzeError(error: Error, context: Record<string, unknown>): Promise<{
     severity: 'low' | 'medium' | 'high' | 'critical';
     category: string;
     recommendations: string[];
@@ -229,7 +229,7 @@ export class SecurityAgent extends BaseAgent {
   }
 
   // Security-specific error analysis
-  private performSecurityAnalysis(error: Error, context: any): {
+  private performSecurityAnalysis(error: Error, context: Record<string, unknown>): {
     severity: 'low' | 'medium' | 'high' | 'critical';
     category: string;
     recommendations: string[];
@@ -294,7 +294,7 @@ export class SecurityAgent extends BaseAgent {
       const networkPattern = this.analyzeNetworkPattern(agentId, timing);
       if (networkPattern.isAnomalous) {
         return {
-          severity: networkPattern.severity as any,
+          severity: networkPattern.severity as 'low' | 'medium' | 'high' | 'critical',
           category: 'network_anomaly',
           recommendations: [
             'Check network connectivity',
@@ -438,8 +438,8 @@ export class SecurityAgent extends BaseAgent {
   }
 
   // Detect anomalies for specific agent
-  private detectAnomalies(agentId: string, events: SecurityEvent[]): any[] {
-    const anomalies: any[] = [];
+  private detectAnomalies(agentId: string, events: SecurityEvent[]): Array<Record<string, unknown>> {
+    const anomalies: Array<Record<string, unknown>> = [];
     const baseline = this.agentMetricsBaseline.get(agentId);
     
     if (!baseline) return anomalies;
@@ -564,7 +564,7 @@ export class SecurityAgent extends BaseAgent {
     return recentEvents;
   }
 
-  private classifyEvent(event: any): 'error' | 'status_change' | 'anomaly' | 'threshold_breach' {
+  private classifyEvent(event: unknown): 'error' | 'status_change' | 'anomaly' | 'threshold_breach' {
     if (event.error || event.severity) return 'error';
     if (event.status) return 'status_change';
     if (event.threshold) return 'threshold_breach';
@@ -598,7 +598,7 @@ export class SecurityAgent extends BaseAgent {
     };
   }
 
-  private analyzeNetworkPattern(agentId: string, timing: any): {
+  private analyzeNetworkPattern(agentId: string, timing: unknown): {
     isAnomalous: boolean;
     severity: string;
     affectsMultipleAgents: boolean;
@@ -616,7 +616,7 @@ export class SecurityAgent extends BaseAgent {
     };
   }
 
-  private extractMetricValues(metric: string, events: SecurityEvent[]): any[] {
+  private extractMetricValues(metric: string, events: SecurityEvent[]): unknown[] {
     return events.map(e => {
       const path = metric.split('.');
       let value = e.data;
@@ -700,7 +700,7 @@ export class SecurityAgent extends BaseAgent {
     
     return Object.keys(severityLevels).find(
       key => severityLevels[key as keyof typeof severityLevels] === maxLevel
-    ) as any;
+    ) as 'low' | 'medium' | 'high' | 'critical';
   }
 
   private isUnusualSequence(sequence: string, commonSequences: string[]): boolean {
@@ -857,7 +857,7 @@ export class SecurityAgent extends BaseAgent {
   }
 
   // Public API for external threat reporting
-  async reportExternalThreat(threat: any): Promise<void> {
+  async reportExternalThreat(threat: Record<string, unknown>): Promise<void> {
     const securityThreat: SecurityThreat = {
       id: this.generateThreatId(),
       timestamp: Date.now(),
@@ -942,7 +942,7 @@ export class SecurityAgent extends BaseAgent {
     }
   }
 
-  private async analyzeThreat(data: any): Promise<any> {
+  private async analyzeThreat(data: unknown): Promise<Record<string, unknown>> {
     // Detailed threat analysis logic
     return {
       threatLevel: 'medium',
@@ -951,7 +951,7 @@ export class SecurityAgent extends BaseAgent {
     };
   }
 
-  private async performSecurityAudit(data: any): Promise<any> {
+  private async performSecurityAudit(data: unknown): Promise<Record<string, unknown>> {
     const status = this.getSecurityStatus();
     
     return {
@@ -964,7 +964,7 @@ export class SecurityAgent extends BaseAgent {
     };
   }
 
-  private async respondToIncident(data: any): Promise<any> {
+  private async respondToIncident(data: unknown): Promise<Record<string, unknown>> {
     // Incident response logic
     return {
       incidentId: this.generateThreatId(),
@@ -973,7 +973,7 @@ export class SecurityAgent extends BaseAgent {
     };
   }
 
-  private async raiseNovelThreat(agentId: string, anomalies: any[]): Promise<void> {
+  private async raiseNovelThreat(agentId: string, anomalies: Array<Record<string, unknown>>): Promise<void> {
     const threat: SecurityThreat = {
       id: this.generateThreatId(),
       timestamp: Date.now(),
@@ -1008,7 +1008,7 @@ export class SecurityAgent extends BaseAgent {
     );
   }
 
-  private calculateAnomalySeverity(anomalies: any[]): 'low' | 'medium' | 'high' | 'critical' {
+  private calculateAnomalySeverity(anomalies: Array<Record<string, unknown>>): 'low' | 'medium' | 'high' | 'critical' {
     const highSeverityCount = anomalies.filter(a => a.severity === 'high').length;
     const mediumSeverityCount = anomalies.filter(a => a.severity === 'medium').length;
     

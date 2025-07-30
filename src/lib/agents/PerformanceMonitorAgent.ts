@@ -10,7 +10,9 @@ import {
   MarketConditions,
   MessageType,
   MessagePriority,
-  PerformanceData
+  PerformanceData,
+  AgentConfig,
+  AgentCapabilities
 } from './types';
 
 interface ExecutionMetrics {
@@ -143,7 +145,7 @@ interface PerformanceInsight {
   impact: 'high' | 'medium' | 'low';
   confidence: number;
   recommendation: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 export class PerformanceMonitorAgent extends BaseAgent {
@@ -159,8 +161,8 @@ export class PerformanceMonitorAgent extends BaseAgent {
   private insightGenerator: InsightGenerator;
   private alertManager: AlertManager;
   
-  // Configuration
-  private config = {
+  // Performance-specific configuration
+  private performanceConfig = {
     maxMetricsRetention: 7 * 24 * 60 * 60 * 1000, // 7 days
     alertThresholds: {
       successRate: 0.95,
@@ -175,7 +177,27 @@ export class PerformanceMonitorAgent extends BaseAgent {
   };
 
   constructor() {
-    super('PerformanceMonitorAgent');
+    const config: AgentConfig = {
+      id: 'performance-monitor',
+      name: 'PerformanceMonitorAgent',
+      version: '1.0.0',
+      capabilities: ['performance-monitoring', 'analytics', 'alerting'],
+      dependencies: [],
+      maxConcurrentTasks: 5,
+      timeout: 30000
+    };
+    
+    const capabilities: AgentCapabilities = {
+      canAnalyzeMarket: false,
+      canDiscoverRoutes: false,
+      canAssessRisk: false,
+      canExecuteTransactions: false,
+      canMonitorPerformance: true,
+      supportedNetworks: ['ethereum', 'polygon', 'bsc', 'arbitrum'],
+      supportedProtocols: ['all']
+    };
+    
+    super(config, capabilities);
     
     this.systemPerformance = {
       totalExecutions: 0,
@@ -199,10 +221,100 @@ export class PerformanceMonitorAgent extends BaseAgent {
     this.startMonitoring();
   }
 
+  // Abstract method implementations
+  async initialize(): Promise<void> {
+    console.log('🚀 PerformanceMonitorAgent initialized');
+  }
+
+  async processMessage(message: AgentMessage, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return;
+    
+    switch (message.type) {
+      case MessageType.PERFORMANCE_REPORT:
+        await this.handlePerformanceReport(message.payload);
+        break;
+      case MessageType.ERROR_REPORT:
+        await this.handleErrorReport(message.payload);
+        break;
+      default:
+        console.log(`PerformanceMonitorAgent: Unhandled message type ${message.type}`);
+    }
+  }
+
+  async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
+    if (signal.aborted) return null;
+    
+    switch (task.type) {
+      case 'generate-report':
+        return await this.generatePerformanceReport();
+      case 'analyze-trends':
+        return await this.analyzeTrends(task.params);
+      default:
+        throw new Error(`Unknown task type: ${task.type}`);
+    }
+  }
+
+  // Add missing analyzeTrends method
+  private async analyzeTrends(params?: unknown): Promise<Record<string, unknown>> {
+    // Basic trend analysis implementation
+    const recentMetrics = Array.from(this.executionMetrics.values())
+      .filter(m => Date.now() - m.timestamp < 24 * 60 * 60 * 1000) // Last 24 hours
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    if (recentMetrics.length === 0) {
+      return {
+        trends: {},
+        message: 'Insufficient data for trend analysis'
+      };
+    }
+
+    // Calculate basic trends
+    const successRateTrend = this.calculateTrend(recentMetrics.map(m => m.success ? 1 : 0));
+    const costTrend = this.calculateTrend(recentMetrics.map(m => m.actualCost));
+    const slippageTrend = this.calculateTrend(recentMetrics.map(m => m.actualSlippage));
+
+    return {
+      trends: {
+        successRate: successRateTrend,
+        cost: costTrend,
+        slippage: slippageTrend
+      },
+      period: '24h',
+      dataPoints: recentMetrics.length
+    };
+  }
+
+  private calculateTrend(values: number[]): { direction: 'up' | 'down' | 'stable', change: number } {
+    if (values.length < 2) return { direction: 'stable', change: 0 };
+    
+    const first = values[0];
+    const last = values[values.length - 1];
+    const change = ((last - first) / first) * 100;
+    
+    return {
+      direction: Math.abs(change) < 5 ? 'stable' : change > 0 ? 'up' : 'down',
+      change: Math.round(change * 100) / 100
+    };
+  }
+
+  async cleanup(): Promise<void> {
+    console.log('🧹 PerformanceMonitorAgent cleanup');
+  }
+
+  private async handlePerformanceReport(payload: unknown): Promise<void> {
+    // Handle performance report from other agents
+    console.log('📊 Received performance report:', payload);
+  }
+
+  private async handleErrorReport(payload: unknown): Promise<void> {
+    // Handle error report from other agents
+    console.log('❌ Received error report:', payload);
+  }
+
   private startMonitoring(): void {
     // Set up periodic analysis
-    setInterval(() => this.updateInsights(), this.config.insightUpdateInterval);
-    setInterval(() => this.checkAlerts(), this.config.alertCheckInterval);
+    setInterval(() => this.updateInsights(), this.performanceConfig.insightUpdateInterval);
+    setInterval(() => this.checkAlerts(), this.performanceConfig.alertCheckInterval);
     setInterval(() => this.cleanOldData(), 60 * 60 * 1000); // Every hour
     
     console.log('📈 Performance monitoring started');
@@ -237,10 +349,10 @@ export class PerformanceMonitorAgent extends BaseAgent {
       success: actualResults.success,
       
       // Cost metrics
-      expectedCost: parseFloat(strategy.gasStrategy.estimatedCost),
+      expectedCost: parseFloat(strategy.gasStrategy.gasPrice) * parseFloat(strategy.gasStrategy.gasLimit),
       actualCost: actualResults.actualCost,
-      costDelta: Math.abs(actualResults.actualCost - parseFloat(strategy.gasStrategy.estimatedCost)),
-      gasSaved: Math.max(0, parseFloat(strategy.gasStrategy.estimatedCost) - actualResults.actualCost),
+      costDelta: Math.abs(actualResults.actualCost - (parseFloat(strategy.gasStrategy.gasPrice) * parseFloat(strategy.gasStrategy.gasLimit))),
+      gasSaved: Math.max(0, (parseFloat(strategy.gasStrategy.gasPrice) * parseFloat(strategy.gasStrategy.gasLimit)) - actualResults.actualCost),
       
       // Slippage metrics
       expectedSlippage: parseFloat(route.priceImpact),
@@ -266,7 +378,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
       // Market conditions
       marketVolatility: marketConditions.volatility.overall,
       gasPrice: parseFloat(strategy.gasStrategy.gasPrice),
-      networkCongestion: marketConditions.networkCongestion || 0.5
+      networkCongestion: marketConditions.networkCongestion.ethereum || 0.5
     };
 
     this.executionMetrics.set(executionId, metrics);
@@ -338,7 +450,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
     perf.totalExecutions++;
     
     // Exponential moving averages
-    const alpha = 1 / Math.min(perf.totalExecutions, this.config.performanceWindowSize);
+    const alpha = 1 / Math.min(perf.totalExecutions, this.performanceConfig.performanceWindowSize);
     
     perf.overallSuccessRate = alpha * (metrics.success ? 1 : 0) + (1 - alpha) * perf.overallSuccessRate;
     perf.averageCostSavings = alpha * metrics.gasSaved + (1 - alpha) * perf.averageCostSavings;
@@ -510,7 +622,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
     const newAlerts: PerformanceAlert[] = [];
     
     // System-level alerts
-    if (this.systemPerformance.overallSuccessRate < this.config.alertThresholds.successRate) {
+    if (this.systemPerformance.overallSuccessRate < this.performanceConfig.alertThresholds.successRate) {
       newAlerts.push({
         id: `system-success-${Date.now()}`,
         timestamp: Date.now(),
@@ -539,7 +651,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
   private async checkAgentAlerts(agentId: string, performance: AgentPerformance): Promise<void> {
     const alerts: PerformanceAlert[] = [];
     
-    if (performance.successRate < this.config.alertThresholds.successRate) {
+    if (performance.successRate < this.performanceConfig.alertThresholds.successRate) {
       alerts.push({
         id: `agent-success-${agentId}-${Date.now()}`,
         timestamp: Date.now(),
@@ -554,7 +666,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
       });
     }
     
-    if (performance.errorRate > this.config.alertThresholds.errorRate) {
+    if (performance.errorRate > this.performanceConfig.alertThresholds.errorRate) {
       alerts.push({
         id: `agent-error-${agentId}-${Date.now()}`,
         timestamp: Date.now(),
@@ -569,7 +681,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
       });
     }
     
-    if (performance.averageResponseTime > this.config.alertThresholds.responseTime) {
+    if (performance.averageResponseTime > this.performanceConfig.alertThresholds.responseTime) {
       alerts.push({
         id: `agent-latency-${agentId}-${Date.now()}`,
         timestamp: Date.now(),
@@ -591,7 +703,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
     const insights: PerformanceInsight[] = [];
     
     // High cost deviation
-    if (metrics.costDelta > metrics.expectedCost * this.config.alertThresholds.costDeviation) {
+    if (metrics.costDelta > metrics.expectedCost * this.performanceConfig.alertThresholds.costDeviation) {
       insights.push({
         type: 'anomaly',
         title: 'Significant Cost Deviation Detected',
@@ -604,7 +716,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
     }
     
     // High slippage deviation
-    if (metrics.slippageDelta > metrics.expectedSlippage * this.config.alertThresholds.slippageDeviation) {
+    if (metrics.slippageDelta > metrics.expectedSlippage * this.performanceConfig.alertThresholds.slippageDeviation) {
       insights.push({
         type: 'anomaly',
         title: 'Significant Slippage Deviation Detected',
@@ -633,7 +745,7 @@ export class PerformanceMonitorAgent extends BaseAgent {
   }
 
   private cleanOldData(): void {
-    const cutoff = Date.now() - this.config.maxMetricsRetention;
+    const cutoff = Date.now() - this.performanceConfig.maxMetricsRetention;
     
     // Clean old execution metrics
     for (const [id, metrics] of this.executionMetrics) {
@@ -670,8 +782,8 @@ export class PerformanceMonitorAgent extends BaseAgent {
   }
 
   async generatePerformanceReport(): Promise<{
-    summary: Record<string, any>;
-    trends: Record<string, any>;
+    summary: Record<string, unknown>;
+    trends: Record<string, unknown>;
     insights: PerformanceInsight[];
     recommendations: string[];
   }> {

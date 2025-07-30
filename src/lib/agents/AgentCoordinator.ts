@@ -85,9 +85,9 @@ export class AgentCoordinator extends EventEmitter {
   private messageRouters = new Map<MessageType, MessageRouterStrategy>();
   private consensusInProgress = new Map<string, ConsensusRequest>();
   private config: CoordinatorConfig;
-  private isRunning = false;
-  private healthCheckInterval?: NodeJS.Timer;
-  private telemetryInterval?: NodeJS.Timer;
+  private _isRunning = false;
+  private healthCheckInterval?: NodeJS.Timeout;
+  private telemetryInterval?: NodeJS.Timeout;
   private telemetry: SystemTelemetry;
   private startTime: Date;
   private securityAgent?: SecurityAgent;
@@ -97,7 +97,7 @@ export class AgentCoordinator extends EventEmitter {
   
   // Pending response handlers for inter-agent communication
   private responseHandlers = new Map<string, {
-    resolve: (value: any) => void;
+    resolve: (value: unknown) => void;
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
   }>();
@@ -326,7 +326,7 @@ export class AgentCoordinator extends EventEmitter {
     });
 
     // Listen for agent errors
-    agent.on('error', (error: any) => {
+    agent.on('error', (error: Error) => {
       console.error(`❌ Agent ${agentId} error:`, error);
       this.recordAgentFailure(agentId);
       this.emit('agentError', { agentId, error });
@@ -338,7 +338,7 @@ export class AgentCoordinator extends EventEmitter {
     });
 
     // Listen for health check results
-    agent.on('healthCheck', (healthReport: any) => {
+    agent.on('healthCheck', (healthReport: Record<string, unknown>) => {
       if (!healthReport.healthy) {
         console.warn(`⚠️ Agent ${agentId} health issues:`, healthReport.issues);
       }
@@ -771,7 +771,7 @@ export class AgentCoordinator extends EventEmitter {
 
   // System lifecycle management
   async start(): Promise<void> {
-    if (this.isRunning) {
+    if (this._isRunning) {
       throw new Error('Coordinator already running');
     }
 
@@ -793,7 +793,7 @@ export class AgentCoordinator extends EventEmitter {
       }
     }
 
-    this.isRunning = true;
+    this._isRunning = true;
     this.startHealthMonitoring();
     this.startTelemetryReporting();
 
@@ -801,7 +801,7 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   async stop(): Promise<void> {
-    if (!this.isRunning) return;
+    if (!this._isRunning) return;
 
     console.log('🛑 Stopping Agent Coordinator...');
 
@@ -831,7 +831,7 @@ export class AgentCoordinator extends EventEmitter {
       }
     }
 
-    this.isRunning = false;
+    this._isRunning = false;
     console.log('✅ Agent Coordinator stopped');
   }
 
@@ -947,7 +947,7 @@ export class AgentCoordinator extends EventEmitter {
     }, this.config.telemetry.reportingInterval);
   }
 
-  private generateTelemetryReport(): any {
+  private generateTelemetryReport(): Record<string, unknown> {
     const uptime = Date.now() - this.startTime.getTime();
 
     return {
@@ -962,8 +962,8 @@ export class AgentCoordinator extends EventEmitter {
     };
   }
 
-  private getAgentStatistics(): any {
-    const stats: any[] = [];
+  private getAgentStatistics(): Record<string, unknown>[] {
+    const stats: Record<string, unknown>[] = [];
 
     for (const [agentId, registry] of this.agents) {
       const metrics = registry.agent.getMetrics();
@@ -983,8 +983,8 @@ export class AgentCoordinator extends EventEmitter {
     return stats;
   }
 
-  private summarizeTelemetry(report: any): string {
-    const activeAgents = report.agentStats.filter((a: any) => a.status === 'ACTIVE').length;
+  private summarizeTelemetry(report: Record<string, unknown>): string {
+    const activeAgents = (report.agentStats as Record<string, unknown>[]).filter((a: Record<string, unknown>) => a.status === 'ACTIVE').length;
     return `${activeAgents}/${this.agents.size} agents active, ${report.messagesProcessed} messages processed`;
   }
 
@@ -1039,7 +1039,7 @@ export class AgentCoordinator extends EventEmitter {
     }
   }
 
-  private async sendResponse(originalMessage: AgentMessage, data: any): Promise<void> {
+  private async sendResponse(originalMessage: AgentMessage, data: unknown): Promise<void> {
     const response: AgentMessage = {
       id: this.generateRequestId(),
       from: 'coordinator',
@@ -1125,12 +1125,12 @@ export class AgentCoordinator extends EventEmitter {
     return registry ? registry.agent.getMetrics() : null;
   }
 
-  getTelemetryReport(): any {
+  getTelemetryReport(): Record<string, unknown> {
     return this.generateTelemetryReport();
   }
 
   isRunning(): boolean {
-    return this.isRunning;
+    return this._isRunning;
   }
 
   // Utility methods

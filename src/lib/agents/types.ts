@@ -6,7 +6,7 @@ export interface AgentMessage {
   from: string;
   to: string;
   type: MessageType;
-  payload: any;
+  payload: unknown;
   timestamp: number;
   priority: MessagePriority;
 }
@@ -68,7 +68,7 @@ export interface AgentMetrics {
 export interface AgentError {
   timestamp: number;
   error: string;
-  context: any;
+  context: Record<string, unknown>;
   severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
@@ -100,12 +100,14 @@ export interface MarketConditions {
   };
   timeOfDay: number; // 0-23
   dayOfWeek: number; // 0-6
+  prices?: Record<string, number>; // Token prices
 }
 
 export interface RouteProposal {
   id: string;
   fromToken: string;
   toToken: string;
+  tokenOut?: string; // Alternative name for toToken
   amount: string;
   path: RouteStep[];
   estimatedGas: string;
@@ -154,13 +156,33 @@ export interface ExecutionStrategy {
     strategy: 'private-mempool' | 'commit-reveal' | 'sandwich-protection';
     estimatedProtection: number; // 0-1 effectiveness
   };
-  gasStrategy: {
-    gasPrice: string;
-    gasLimit: string;
-    priorityFee?: string;
-  };
+  gasStrategy: GasStrategy;
   contingencyPlans: string[];
   strategyBy: string; // agent ID
+  confidence?: number; // Add confidence score
+  estimatedImprovements?: {
+    costSavings: number;
+    timeReduction: number;
+    riskReduction: number;
+  };
+  executionWindows?: Array<{
+    start: number;
+    end: number;
+    confidence: number;
+  }>;
+  orderSplitting?: {
+    enabled: boolean;
+    numberOfParts: number;
+    timeBetweenParts: number;
+    randomization: boolean;
+    sizeDistribution: number[];
+    estimatedImprovements?: {
+      costSavings: number;
+      riskReduction: number;
+      mevReduction: number;
+    };
+  };
+  reasoning?: string[];
 }
 
 export interface PerformanceData {
@@ -218,7 +240,7 @@ export interface ConsensusResponse {
 // Agent Communication Events
 export interface AgentEventHandlers {
   onMessage: (message: AgentMessage) => Promise<void>;
-  onTaskAssigned: (task: any) => Promise<void>;
+  onTaskAssigned: (task: Record<string, unknown>) => Promise<void>;
   onError: (error: AgentError) => Promise<void>;
   onStatusChange: (status: AgentStatus) => Promise<void>;
 }
@@ -231,4 +253,58 @@ export interface AgentCapabilities {
   canMonitorPerformance: boolean;
   supportedNetworks: string[];
   supportedProtocols: string[];
+}
+
+// Additional types for ExecutionStrategyAgent
+export interface MEVProtection {
+  enabled: boolean;
+  strategy: 'private-mempool' | 'commit-reveal' | 'sandwich-protection';
+  estimatedProtection: number;
+  cost: string;
+  provider?: string;
+  additionalCost?: number;
+  reasoning?: string[];
+}
+
+export interface GasStrategy {
+  gasPrice: string;
+  gasLimit: string;
+  priorityFee?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  strategy: 'fast' | 'standard' | 'safe' | 'custom';
+  estimatedCost?: string;
+  priority?: 'high' | 'medium' | 'low';
+}
+
+export interface TimingStrategy {
+  optimal: boolean;
+  delayRecommended: number;
+  reason: string;
+  executionWindow?: {
+    start: number;
+    end: number;
+  };
+  immediate?: boolean;
+  optimalWindow?: {
+    start: number;
+    end: number;
+  };
+}
+
+export interface ExecutionSignal {
+  type: 'market' | 'technical' | 'risk' | 'timing';
+  signal: 'buy' | 'sell' | 'hold' | 'wait';
+  strength: number; // 0-1
+  confidence: number; // 0-1
+  source: string;
+  timestamp: number;
+}
+
+export interface MarketSignal {
+  type: 'volatility' | 'liquidity' | 'volume' | 'sentiment';
+  direction: 'bullish' | 'bearish' | 'neutral';
+  strength: number; // 0-1
+  timeframe: string;
+  indicators: Record<string, number>;
 }

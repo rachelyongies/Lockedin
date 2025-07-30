@@ -25,7 +25,7 @@ interface RetryPolicy {
 
 interface TaskContext {
   id: string;
-  task: any;
+  task: Record<string, unknown>;
   startTime: number;
   retryCount: number;
   abortController: AbortController;
@@ -33,7 +33,7 @@ interface TaskContext {
 
 interface ResponseHandler {
   requestId: string;
-  resolve: (value: any) => void;
+  resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
 }
@@ -100,11 +100,11 @@ export abstract class BaseAgent extends EventEmitter {
   // Abstract methods that specialized agents must implement
   abstract initialize(): Promise<void>;
   abstract processMessage(message: AgentMessage, signal: AbortSignal): Promise<void>;
-  abstract handleTask(task: any, signal: AbortSignal): Promise<any>;
+  abstract handleTask(task: Record<string, unknown>, signal: AbortSignal): Promise<unknown>;
   abstract cleanup(): Promise<void>;
   
   // Optional intelligent error analysis (can be overridden by specialized agents)
-  protected async analyzeError(error: Error, context: any): Promise<{
+  protected async analyzeError(error: Error, context: Record<string, unknown>): Promise<{
     severity: 'low' | 'medium' | 'high' | 'critical';
     category: string;
     recommendations: string[];
@@ -262,7 +262,7 @@ export abstract class BaseAgent extends EventEmitter {
   }
 
   // Task execution with cancellation support
-  async executeTask(taskId: string, task: any, timeoutMs?: number): Promise<any> {
+  async executeTask(taskId: string, task: Record<string, unknown>, timeoutMs?: number): Promise<unknown> {
     const release = await this.taskMutex.acquire();
     
     try {
@@ -315,7 +315,7 @@ export abstract class BaseAgent extends EventEmitter {
     }
   }
 
-  private async handleTaskWithRetry(taskId: string): Promise<any> {
+  private async handleTaskWithRetry(taskId: string): Promise<unknown> {
     const taskContext = this.activeTasks.get(taskId);
     if (!taskContext) throw new Error('Task context not found');
     
@@ -381,10 +381,10 @@ export abstract class BaseAgent extends EventEmitter {
   }
 
   // Inter-agent communication with proper typing and timeout control
-  protected async requestDataFromAgent<T = any>(
+  protected async requestDataFromAgent<T = unknown>(
     targetAgent: string, 
     requestType: MessageType,
-    payload: any,
+    payload: unknown,
     timeoutMs: number = 30000
   ): Promise<T> {
     const requestId = this.generateTaskId();
@@ -577,6 +577,39 @@ export abstract class BaseAgent extends EventEmitter {
       healthy: issues.length === 0,
       issues
     };
+  }
+
+  // Public API methods for AgentCoordinator
+  getConfig(): AgentConfig {
+    return { ...this.config };
+  }
+
+  getCapabilities(): AgentCapabilities {
+    // Convert string array to capabilities object for backward compatibility
+    const capabilityStrings = this.config.capabilities || [];
+    return {
+      canAnalyzeMarket: capabilityStrings.includes('market-analysis'),
+      canDiscoverRoutes: capabilityStrings.includes('route-discovery'),
+      canAssessRisk: capabilityStrings.includes('risk-assessment'),
+      canExecuteTransactions: capabilityStrings.includes('transaction-execution'),
+      canMonitorPerformance: capabilityStrings.includes('performance-monitoring'),
+      supportedNetworks: capabilityStrings.filter(cap => cap.startsWith('network:')).map(cap => cap.replace('network:', '')),
+      supportedProtocols: capabilityStrings.filter(cap => cap.startsWith('protocol:')).map(cap => cap.replace('protocol:', ''))
+    };
+  }
+
+  getStatus(): AgentStatus {
+    return this.status;
+  }
+
+  getMetrics(): AgentMetrics {
+    return { ...this.metrics };
+  }
+
+  isHealthy(): boolean {
+    return this.status === AgentStatus.ACTIVE && 
+           this.metrics.successRate > 0.8 && 
+           !this.circuitBreaker.isOpen;
   }
 
   // Event setup

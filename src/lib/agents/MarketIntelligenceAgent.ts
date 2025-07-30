@@ -138,7 +138,7 @@ export interface DuneQueryResult {
   execution_id: string;
   state: 'QUERY_STATE_COMPLETED' | 'QUERY_STATE_EXECUTING' | 'QUERY_STATE_FAILED';
   result?: {
-    rows: any[];
+    rows: Array<Record<string, unknown>>;
     metadata: {
       column_names: string[];
       result_set_bytes: number;
@@ -175,7 +175,7 @@ class DuneAnalyticsClient {
     this.apiKey = apiKey;
   }
 
-  async executeQuery(queryId: number, parameters: Record<string, any> = {}): Promise<string> {
+  async executeQuery(queryId: number, parameters: Record<string, unknown> = {}): Promise<string> {
     const response = await fetch(`${this.baseUrl}/query/${queryId}/execute`, {
       method: 'POST',
       headers: {
@@ -234,7 +234,7 @@ class DuneAnalyticsClient {
       }
 
       // Transform Dune results to our format
-      return result.result.rows.map((row: any) => ({
+      return result.result.rows.map((row: Record<string, unknown>) => ({
         protocol: row.protocol_name || row.dex_name,
         chain: row.blockchain || row.chain,
         volume_24h: parseFloat(row.volume_usd_24h || row.daily_volume),
@@ -268,7 +268,7 @@ class DuneAnalyticsClient {
         throw new Error('User metrics query failed');
       }
 
-      return result.result.rows.map((row: any) => ({
+      return result.result.rows.map((row: Record<string, unknown>) => ({
         chain: row.blockchain || row.chain,
         active_users_1h: parseInt(row.active_users_1h || '0'),
         active_users_24h: parseInt(row.active_users_24h || row.daily_active_users),
@@ -308,7 +308,7 @@ class DuneAnalyticsClient {
         return [];
       }
 
-      return result.result.rows.map((row: any) => ({
+      return result.result.rows.map((row: Record<string, unknown>) => ({
         chain: row.blockchain || 'ethereum',
         hour: row.hour,
         avg_gas_price: parseFloat(row.avg_gas_price_gwei),
@@ -338,7 +338,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
   // Dune data caches
   private dexMetricsCache: Map<string, {data: DuneDEXMetrics[], timestamp: number}> = new Map();
   private userMetricsCache: Map<string, {data: DuneUserMetrics[], timestamp: number}> = new Map();
-  private gasAnalyticsCache: Map<string, {data: any[], timestamp: number}> = new Map();
+  private gasAnalyticsCache: Map<string, {data: Array<Record<string, unknown>>, timestamp: number}> = new Map();
 
   constructor(
     config: Partial<AgentConfig> = {}, 
@@ -622,7 +622,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     }
   }
 
-  private processGasAnalytics(gasData: any[]): {
+  private processGasAnalytics(gasData: Array<Record<string, unknown>>): {
     currentPrices: Record<string, number>;
     trends: Record<string, TrendAnalysis>;
     spikes: SpikeEvent[];
@@ -634,7 +634,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     const predictions: Record<string, number> = {};
 
     // Group by chain
-    const chainData = new Map<string, any[]>();
+    const chainData = new Map<string, Array<Record<string, unknown>>>();
     
     for (const dataPoint of gasData) {
       if (!chainData.has(dataPoint.chain)) {
@@ -679,7 +679,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     };
   }
 
-  private detectGasSpikes(gasData: any[]): SpikeEvent[] {
+  private detectGasSpikes(gasData: Array<Record<string, unknown>>): SpikeEvent[] {
     const spikes: SpikeEvent[] = [];
     
     if (gasData.length < 10) return spikes;
@@ -796,9 +796,9 @@ export class MarketIntelligenceAgent extends BaseAgent {
 
   private async generateEnhancedSignals(
     conditions: MarketConditions,
-    dexMetrics: any,
-    userMetrics: any,
-    gasAnalytics: any
+    dexMetrics: Record<string, unknown>,
+    userMetrics: Record<string, unknown>,
+    gasAnalytics: Record<string, unknown>
   ): Promise<MarketSignal[]> {
     const signals: MarketSignal[] = [];
 
@@ -821,7 +821,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     return signals.filter(signal => signal.confidence > 0.4);
   }
 
-  private generateVolumeSignal(dexMetrics: any): MarketSignal | null {
+  private generateVolumeSignal(dexMetrics: Record<string, unknown>): MarketSignal | null {
     const ethereumVolume = dexMetrics.volumeByChain['ethereum'] || 0;
     const totalVolume = dexMetrics.totalVolume;
     
@@ -868,7 +868,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     };
   }
 
-  private generateUserActivitySignal(userMetrics: any): MarketSignal | null {
+  private generateUserActivitySignal(userMetrics: Record<string, unknown>): MarketSignal | null {
     const totalUsers = userMetrics.totalActiveUsers;
     const ethereumUsers = userMetrics.usersByChain['ethereum'] || 0;
     
@@ -911,7 +911,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     };
   }
 
-  private generateEnhancedGasSignal(gasAnalytics: any, conditions: MarketConditions): MarketSignal | null {
+  private generateEnhancedGasSignal(gasAnalytics: Record<string, unknown>, conditions: MarketConditions): MarketSignal | null {
     const currentEthGas = gasAnalytics.currentPrices['ethereum'] || conditions.gasPrices.ethereum.fast;
     const predictedGas = gasAnalytics.predictions['ethereum'] || currentEthGas;
     const gasTrend = gasAnalytics.trends['ethereum'];
@@ -966,8 +966,8 @@ export class MarketIntelligenceAgent extends BaseAgent {
 
   private async monitorNetworkActivityWithDune(
     conditions: MarketConditions,
-    dexMetrics: any,
-    userMetrics: any
+    dexMetrics: Record<string, unknown>,
+    userMetrics: Record<string, unknown>
   ): Promise<NetworkActivity> {
     return {
       ethereum: {

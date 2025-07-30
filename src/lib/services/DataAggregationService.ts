@@ -607,6 +607,16 @@ export class DataAggregationService {
     }
   }
 
+  async getGasOracle(): Promise<{ fast: number; standard: number; safe: number }> {
+    try {
+      const gasPrices = await this.getGasPrices();
+      return gasPrices.ethereum;
+    } catch (error) {
+      console.error('Failed to get gas oracle data:', error);
+      return this.getDynamicGasFallback('ethereum');
+    }
+  }
+
   // ===== ROUTE OPTIMIZATION =====
 
   async findOptimalRoutes(
