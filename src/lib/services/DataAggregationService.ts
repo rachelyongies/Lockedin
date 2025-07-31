@@ -464,38 +464,59 @@ export class DataAggregationService {
 
   // ===== DEFILLAMA API INTEGRATION =====
 
+  // Add request deduplication to prevent multiple simultaneous calls
+  private protocolLiquidityPromise: Promise<Record<string, number>> | null = null;
+
   async getProtocolLiquidity(): Promise<Record<string, number>> {
     const cacheKey = 'protocol-tvl';
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached as Record<string, number>;
+    if (cached) {
+      console.log('✅ Using cached DEX liquidity data');
+      return cached as Record<string, number>;
+    }
+
+    // Prevent multiple simultaneous requests
+    if (this.protocolLiquidityPromise) {
+      console.log('⏳ DEX data fetch already in progress, waiting...');
+      return this.protocolLiquidityPromise;
+    }
 
     console.log('🔍 Fetching real DEX liquidity data from multiple sources...');
+    
+    this.protocolLiquidityPromise = this.fetchProtocolLiquidityData().finally(() => {
+      this.protocolLiquidityPromise = null;
+    });
+
+    return this.protocolLiquidityPromise;
+  }
+
+  private async fetchProtocolLiquidityData(): Promise<Record<string, number>> {
+    const cacheKey = 'protocol-tvl';
     
     // Get individual protocol TVL data for major DEXs - using correct DeFiLlama protocol slugs
     const majorDexes = [
       'uniswap',
-      'curve-dex',     // Curve uses 'curve-dex' slug
       'sushiswap', 
       'balancer',
       'pancakeswap',
-      '1inch',
+      '1inch-network',    // 1inch uses '1inch-network' slug
       'dydx',
       'raydium',
-      'jupiter-exchange', // Jupiter uses 'jupiter-exchange' slug
+      'jupiter',          // Jupiter uses 'jupiter' slug
       'orca'
     ];
 
     const liquidity: Record<string, number> = {};
-    let successCount = 0;
 
-    // Fetch individual protocol data
-    for (const dexName of majorDexes) {
+    // Fetch all protocols in parallel for speed
+    console.log(`📊 Fetching ${majorDexes.length} DEX protocols in parallel...`);
+    
+    const fetchPromises = majorDexes.map(async (dexName) => {
       try {
         const url = `${this.DEFILLAMA_BASE_URL}/protocol/${dexName}`;
-        console.log(`📊 Fetching ${dexName} TVL from ${url}`);
         
         const response = await fetch(url, {
-          timeout: 10000,
+          timeout: 8000, // Reduced timeout
           headers: {
             'Accept': 'application/json',
             'User-Agent': 'UniteDefi/1.0'
@@ -505,13 +526,11 @@ export class DataAggregationService {
         if (response.ok) {
           const data = await response.json();
           
-          // Normalize the key (remove -dex, -exchange suffixes for consistency)
-          const normalizedKey = dexName.replace('-dex', '').replace('-exchange', '');
+          // Normalize the key (remove suffixes for consistency)
+          const normalizedKey = dexName.replace('-dex', '').replace('-exchange', '').replace('-network', '');
           
           if (data && typeof data.tvl === 'number' && data.tvl > 0) {
-            liquidity[normalizedKey] = data.tvl;
-            successCount++;
-            console.log(`✅ ${normalizedKey}: $${(data.tvl / 1000000).toFixed(0)}M TVL`);
+            return { key: normalizedKey, tvl: data.tvl, source: 'direct' };
           } else if (data && data.currentChainTvls) {
             // Handle different response format
             const totalTvl = Object.values(data.currentChainTvls).reduce((sum: number, val: unknown) => {
@@ -519,20 +538,26 @@ export class DataAggregationService {
             }, 0);
             
             if (totalTvl > 0) {
-              liquidity[normalizedKey] = totalTvl;
-              successCount++;
-              console.log(`✅ ${normalizedKey}: $${(totalTvl / 1000000).toFixed(0)}M TVL (from chains)`);
+              return { key: normalizedKey, tvl: totalTvl, source: 'chains' };
             }
           }
-        } else {
-          console.warn(`❌ Failed to fetch ${dexName}: ${response.status}`);
         }
+        return null;
       } catch (error) {
         console.warn(`❌ Error fetching ${dexName}:`, error);
+        return null;
       }
-      
-      // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
+    const results = await Promise.all(fetchPromises);
+    let successCount = 0;
+
+    for (const result of results) {
+      if (result) {
+        liquidity[result.key] = result.tvl;
+        successCount++;
+        console.log(`✅ ${result.key}: $${(result.tvl / 1000000).toFixed(0)}M TVL (${result.source})`);
+      }
     }
 
     if (successCount > 0) {
