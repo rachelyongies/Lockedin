@@ -625,7 +625,7 @@ export default function IntelligentAIRouterPage() {
                       <option key={token.id} value={token.id}>{token.symbol} - {token.name} ({token.network})</option>
                     ))}
                   </select>
-                  {routerState.aiResults && (
+                  {routerState.aiResults && routerState.aiResults.routes && routerState.aiResults.routes.length > 0 && routerState.aiResults.routes[0].estimatedOutput && (
                     <div className="bg-gray-700/30 rounded-lg p-3">
                       <div className="text-2xl font-bold text-green-400">
                         {routerState.aiResults.routes[0].estimatedOutput} {routerState.toToken?.symbol}

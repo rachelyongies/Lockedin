@@ -329,18 +329,18 @@ export class DataAggregationService {
     const cached = this.getFromCache(cacheKey);
     if (cached) return cached as Record<string, TokenInfo>;
 
-    const url = `${this.INCH_BASE_URL}/swap/v5.0/${chainId}/tokens`;
-    
-    const headers: Record<string, string> = {};
-    if (this.apiKeys.oneInch) {
-      headers['Authorization'] = `Bearer ${this.apiKeys.oneInch}`;
-    }
+    // Use proxy API to avoid CORS issues
+    const url = `/api/tokens/${chainId}`;
 
     try {
-      const response = await fetch(url, { headers });
+      console.log(`🔍 Fetching tokens via proxy: ${url}`);
+      
+      const response = await fetch(url);
       
       if (!response.ok) {
-        throw new Error(`1inch tokens API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`❌ 1inch API error (${response.status}):`, errorText);
+        throw new Error(`1inch tokens API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -469,33 +469,128 @@ export class DataAggregationService {
     const cached = this.getFromCache(cacheKey);
     if (cached) return cached as Record<string, number>;
 
-    const url = `${this.DEFILLAMA_BASE_URL}/protocols`;
+    console.log('🔍 Fetching real DEX liquidity data from multiple sources...');
+    
+    // Get individual protocol TVL data for major DEXs - using correct DeFiLlama protocol slugs
+    const majorDexes = [
+      'uniswap',
+      'curve-dex',     // Curve uses 'curve-dex' slug
+      'sushiswap', 
+      'balancer',
+      'pancakeswap',
+      '1inch',
+      'dydx',
+      'raydium',
+      'jupiter-exchange', // Jupiter uses 'jupiter-exchange' slug
+      'orca'
+    ];
 
-    try {
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`DeFiLlama API error: ${response.status}`);
+    const liquidity: Record<string, number> = {};
+    let successCount = 0;
+
+    // Fetch individual protocol data
+    for (const dexName of majorDexes) {
+      try {
+        const url = `${this.DEFILLAMA_BASE_URL}/protocol/${dexName}`;
+        console.log(`📊 Fetching ${dexName} TVL from ${url}`);
+        
+        const response = await fetch(url, {
+          timeout: 10000,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'UniteDefi/1.0'
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Normalize the key (remove -dex, -exchange suffixes for consistency)
+          const normalizedKey = dexName.replace('-dex', '').replace('-exchange', '');
+          
+          if (data && typeof data.tvl === 'number' && data.tvl > 0) {
+            liquidity[normalizedKey] = data.tvl;
+            successCount++;
+            console.log(`✅ ${normalizedKey}: $${(data.tvl / 1000000).toFixed(0)}M TVL`);
+          } else if (data && data.currentChainTvls) {
+            // Handle different response format
+            const totalTvl = Object.values(data.currentChainTvls).reduce((sum: number, val: unknown) => {
+              return sum + (typeof val === 'number' ? val : 0);
+            }, 0);
+            
+            if (totalTvl > 0) {
+              liquidity[normalizedKey] = totalTvl;
+              successCount++;
+              console.log(`✅ ${normalizedKey}: $${(totalTvl / 1000000).toFixed(0)}M TVL (from chains)`);
+            }
+          }
+        } else {
+          console.warn(`❌ Failed to fetch ${dexName}: ${response.status}`);
+        }
+      } catch (error) {
+        console.warn(`❌ Error fetching ${dexName}:`, error);
       }
-
-      const protocols = await response.json();
-      const liquidity: Record<string, number> = {};
       
-      // Focus on DEX protocols
-      const dexProtocols = protocols.filter((p: Record<string, unknown>) => 
-        p.category === 'Dexes' && typeof p.tvl === 'number' && p.tvl > 1000000 // Filter for DEXs with >$1M TVL
-      );
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
 
-      for (const protocol of dexProtocols) {
-        liquidity[protocol.name.toLowerCase()] = protocol.tvl;
-      }
-
+    if (successCount > 0) {
+      console.log(`✅ Successfully fetched ${successCount}/${majorDexes.length} DEX protocols`);
       this.setCache(cacheKey, liquidity, 300000); // 5 minute cache
       return liquidity;
-    } catch (error) {
-      console.error('Failed to get protocol liquidity:', error);
-      return this.getFallbackLiquidity();
     }
+
+    // If individual endpoints fail, try CoinGecko as alternative
+    console.log('🔄 DeFiLlama individual endpoints failed, trying CoinGecko DeFi...');
+    try {
+      const coinGeckoUrl = 'https://api.coingecko.com/api/v3/global/decentralized_finance_defi';
+      const response = await fetch(coinGeckoUrl, {
+        timeout: 10000,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'UniteDefi/1.0',
+          ...(this.apiKeys.coinGecko && { 'x-cg-pro-api-key': this.apiKeys.coinGecko })
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.data && data.data.defi_market_cap) {
+          // Use market cap as proxy for TVL with reasonable estimates
+          const totalDefiMcap = data.data.defi_market_cap;
+          console.log(`📊 CoinGecko DeFi market cap: $${(totalDefiMcap / 1000000000).toFixed(1)}B`);
+          
+          // Distribute based on known market share approximations
+          const marketShares = {
+            'uniswap': 0.25,      // ~25% of DEX volume
+            'curve': 0.15,        // ~15% of DEX volume  
+            'pancakeswap': 0.12,  // ~12% of DEX volume
+            'sushiswap': 0.08,    // ~8% of DEX volume
+            'balancer': 0.06,     // ~6% of DEX volume
+            '1inch': 0.05,        // ~5% of DEX volume
+            'dydx': 0.04,         // ~4% of DEX volume
+            'raydium': 0.03,      // ~3% of DEX volume
+            'jupiter': 0.02,      // ~2% of DEX volume
+            'orca': 0.02          // ~2% of DEX volume
+          };
+
+          const estimatedTotalDexTvl = totalDefiMcap * 0.4; // Assume DEXs are 40% of DeFi
+          
+          for (const [dex, share] of Object.entries(marketShares)) {
+            liquidity[dex] = estimatedTotalDexTvl * share;
+          }
+          
+          console.log('✅ Using CoinGecko-based DEX TVL estimates');
+          this.setCache(cacheKey, liquidity, 300000);
+          return liquidity;
+        }
+      }
+    } catch (error) {
+      console.warn('❌ CoinGecko DeFi endpoint failed:', error);
+    }
+
+    throw new Error('All real data sources failed - no fallback data available');
   }
 
   async getChainTVL(): Promise<Record<string, number>> {
