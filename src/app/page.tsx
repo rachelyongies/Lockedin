@@ -19,6 +19,7 @@ import { MultiWalletStatus } from '@/components/bridge/MultiWalletStatus';
 import { BridgeDebug } from '@/components/bridge/BridgeDebug/BridgeDebug';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 
 export default function Home() {
   // Global state
@@ -267,6 +268,41 @@ export default function Home() {
               <span className="text-sm text-gray-300">Bitcoin Network Ready</span>
             </div>
           </motion.div>
+        </div>
+
+        {/* Bridge Navigation */}
+        <div className="mb-8 max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Link href="/cross-chain-htlc-bridge">
+              <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 rounded-lg p-6 border border-orange-200/20 hover:border-orange-300/40 transition-all cursor-pointer">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-lg font-bold">🔒</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white text-lg">Cross-Chain HTLC Bridge</h3>
+                    <p className="text-sm text-gray-300">ETH ↔ BTC bridging with 1inch Fusion+ HTLC escrows</p>
+                    <p className="text-xs text-orange-400 mt-1">🔗 Atomic cross-chain swaps</p>
+                  </div>
+                </div>
+              </div>
+            </Link>
+            
+            <Link href="/multi-wallet">
+              <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg p-6 border border-purple-200/20 hover:border-purple-300/40 transition-all cursor-pointer">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-purple-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-lg font-bold">👛</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white text-lg">Multi-Wallet Manager</h3>
+                    <p className="text-sm text-gray-300">Connect and manage multiple wallets</p>
+                    <p className="text-xs text-purple-400 mt-1">🔗 Auto-detect & balance monitoring</p>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          </div>
         </div>
 
         {/* Multi-Wallet Quick Info */}
