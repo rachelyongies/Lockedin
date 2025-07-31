@@ -1337,8 +1337,8 @@ class GasPriceOracle {
 
   async getCurrentGasPrice(): Promise<string> {
     try {
-      const gasData = await this.dataService.getGasOracle();
-      return gasData.standard.toString();
+      const gasData = await this.dataService.getGasPrices();
+      return gasData.ethereum.standard.toString();
     } catch (error) {
       console.warn('Failed to get current gas price:', error);
       return '30000000000'; // 30 gwei fallback

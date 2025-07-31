@@ -70,7 +70,7 @@ export function AISmartBridge({
         fromToken,
         toToken,
         amount,
-        '0x1234567890123456789012345678901234567890' // Mock wallet address
+        walletAddress || '0x0000000000000000000000000000000000000000'
       );
 
       setRouteAnalyses(routes);

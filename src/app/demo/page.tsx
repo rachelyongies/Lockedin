@@ -22,7 +22,9 @@ import {
   Network,
   Users,
   Bot,
-  Check
+  Check,
+  MessageCircle,
+  Calendar
 } from 'lucide-react';
 
 // Import AI Agent System
@@ -30,6 +32,13 @@ import { AIAgentBridgeService, AIAgentAnalysis, AgentPrediction } from '@/lib/se
 import { Token, BitcoinToken, EthereumToken, SolanaToken, StarknetToken, StellarToken } from '@/types/bridge';
 import { useWalletStore } from '@/store/useWalletStore';
 import { cn } from '@/lib/utils/helpers';
+
+// Import new components
+import { IntelligentRouter } from '@/components/bridge/IntelligentRouter';
+import { TradingCompanion } from '@/components/ai/TradingCompanion';
+import { StrategyManager } from '@/components/strategy/StrategyManager';
+import { WhaleTracker } from '@/components/social/WhaleTracker';
+import { AnalyticsDashboard } from '@/components/analytics/AnalyticsDashboard';
 
 // AI Router Interface
 interface AIRouterState {
@@ -187,6 +196,7 @@ export default function IntelligentAIRouterPage() {
   const walletAddress = typeof account === 'string' ? account : (account as { address?: string })?.address;
   const agentService = AIAgentBridgeService.getInstance();
   
+  const [activeTab, setActiveTab] = useState<'router' | 'strategies' | 'social' | 'analytics'>('router');
   const [routerState, setRouterState] = useState<AIRouterState>({
     fromToken: SUPPORTED_TOKENS[0], // BTC
     toToken: SUPPORTED_TOKENS[1], // ETH
@@ -200,7 +210,6 @@ export default function IntelligentAIRouterPage() {
   });
 
   const [liveMetrics, setLiveMetrics] = useState(LIVE_AI_METRICS);
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Simulate live metrics updates
   useEffect(() => {
@@ -215,277 +224,36 @@ export default function IntelligentAIRouterPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const runAIAnalysis = async () => {
-    if (!routerState.fromToken || !routerState.toToken || !routerState.amount) {
-      return;
+  const handleBridge = async () => {
+    console.log('Executing bridge with AI optimization');
+  };
+
+  const tabs = [
+    { 
+      id: 'router' as const, 
+      label: 'AI Router', 
+      icon: Brain,
+      description: 'ML-powered route optimization'
+    },
+    { 
+      id: 'strategies' as const, 
+      label: 'Strategies', 
+      icon: Calendar,
+      description: 'Automated trading strategies'
+    },
+    { 
+      id: 'social' as const, 
+      label: 'Social Intel', 
+      icon: Users,
+      description: 'Whale tracking & trends'
+    },
+    { 
+      id: 'analytics' as const, 
+      label: 'Analytics', 
+      icon: BarChart3,
+      description: 'Performance insights'
     }
-    
-    setRouterState(prev => ({ 
-      ...prev, 
-      isAnalyzing: true, 
-      executionStatus: 'analyzing',
-      activeAgents: [],
-      currentPhase: ''
-    }));
-    
-    try {
-      // Simulate agent activation phases
-      const phases = [
-        { agents: ['market-intelligence'], phase: 'Analyzing market conditions...', delay: 800 },
-        { agents: ['route-discovery'], phase: 'Discovering optimal routes...', delay: 1000 },
-        { agents: ['risk-assessment', 'security'], phase: 'Assessing risks and security...', delay: 1200 },
-        { agents: ['execution-strategy'], phase: 'Optimizing execution strategy...', delay: 800 },
-        { agents: ['performance-monitor'], phase: 'Finalizing analysis...', delay: 600 }
-      ];
-
-      // Animate through phases
-      for (const { agents, phase, delay } of phases) {
-        setRouterState(prev => ({ 
-          ...prev, 
-          currentPhase: phase,
-          activeAgents: [...prev.activeAgents, ...agents]
-        }));
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-
-      // Get actual AI analysis
-      const aiAnalysis = await agentService.analyzeRoute(
-        routerState.fromToken,
-        routerState.toToken,
-        routerState.amount,
-        walletAddress || '0x0000000000000000000000000000000000000000'
-      );
-
-      // Get predictions
-      const predictions = await agentService.getAgentPredictions(
-        routerState.fromToken,
-        routerState.toToken,
-        routerState.amount
-      );
-    
-      setRouterState(prev => ({ 
-        ...prev, 
-        isAnalyzing: false, 
-        aiResults: aiAnalysis,
-        predictions: predictions,
-        executionStatus: 'ready'
-      }));
-    } catch (error) {
-      console.error('AI Analysis failed:', error);
-      // Fallback to mock analysis
-      runMockAnalysis();
-    }
-  };
-
-  const runMockAnalysis = async () => {
-    // Fallback mock analysis if real service fails
-    const mockResults: AIAgentAnalysis = {
-      routes: [{
-        id: 'route-1',
-        fromToken: routerState.fromToken!.symbol,
-        toToken: routerState.toToken!.symbol,
-        amount: routerState.amount,
-        estimatedOutput: (parseFloat(routerState.amount) * 1.8).toString(),
-        priceImpact: '0.12',
-        estimatedGas: '180000',
-        estimatedTime: 180,
-        confidence: 0.942,
-        risks: ['Low network congestion', 'Medium slippage risk'],
-        advantages: ['Best route available', 'High liquidity', 'Proven protocols'],
-        proposedBy: 'RouteDiscoveryAgent',
-        path: [
-          { 
-            protocol: 'Bitcoin Network', 
-            fromToken: routerState.fromToken!.symbol, 
-            toToken: 'BTC-WRAPPED', 
-            amount: routerState.amount, 
-            estimatedOutput: (parseFloat(routerState.amount) * 0.9995).toString(), 
-            fee: '0.001' 
-          },
-          { 
-            protocol: '1inch Fusion', 
-            fromToken: 'BTC-WRAPPED', 
-            toToken: 'ETH-BRIDGE', 
-            amount: (parseFloat(routerState.amount) * 0.9995).toString(), 
-            estimatedOutput: (parseFloat(routerState.amount) * 1.795).toString(), 
-            fee: '0.003' 
-          },
-          { 
-            protocol: 'Ethereum', 
-            fromToken: 'ETH-BRIDGE', 
-            toToken: routerState.toToken!.symbol, 
-            amount: (parseFloat(routerState.amount) * 1.795).toString(), 
-            estimatedOutput: (parseFloat(routerState.amount) * 1.8).toString(), 
-            fee: '0.002' 
-          }
-        ]
-      }],
-      insights: [
-        'AI found the most efficient path with 94.2% confidence',
-        'AI optimized gas usage to save $12.50 compared to standard routing',
-        'Current network conditions optimal for quick execution',
-        'Private mempool execution recommended for this trade size'
-      ],
-      riskAssessments: [{
-        routeId: 'route-1',
-        overallRisk: 0.15,
-        factors: {
-          protocolRisk: 0.1,
-          liquidityRisk: 0.05,
-          slippageRisk: 0.1,
-          mevRisk: 0.2
-        },
-        recommendations: ['Use proven protocols', 'Monitor gas prices'],
-        blockers: [],
-        assessedBy: 'risk-assessment-agent'
-      }],
-      confidence: 0.942,
-      executionStrategy: {
-        routeId: 'route-1',
-        mevProtection: {
-          enabled: true,
-          strategy: 'private-mempool',
-          estimatedProtection: 0.96
-        },
-        gasStrategy: {
-          gasPrice: '25000000000',
-          gasLimit: '180000',
-          priorityFee: '2000000000',
-          strategy: 'standard',
-          estimatedCost: '4.5'
-        },
-        timing: {
-          optimal: false,
-          delayRecommended: 45,
-          reason: 'Network congestion decreasing, gas prices dropping'
-        },
-        orderSplitting: {
-          enabled: false,
-          numberOfParts: 1,
-          timeBetweenParts: 0,
-          randomization: false,
-          sizeDistribution: [1.0],
-          estimatedImprovements: {
-            costSavings: 0,
-            riskReduction: 0,
-            mevReduction: 0
-          }
-        },
-        contingencyPlans: ['Fallback to standard routing', 'Increase gas price if needed'],
-        strategyBy: 'execution-strategy-agent',
-        confidence: 0.942,
-        reasoning: ['High confidence AI analysis with optimal market conditions'],
-        estimatedImprovements: {
-          costSavings: 18.75,
-          timeReduction: 12.50,
-          riskReduction: 0.96
-        }
-      },
-      marketConditions: {
-        timestamp: Date.now(),
-        volatility: { 
-          overall: 0.12, 
-          tokenSpecific: { [routerState.fromToken!.symbol]: 0.15, [routerState.toToken!.symbol]: 0.09 }
-        },
-        liquidity: { 
-          overall: 850000, 
-          perDEX: { uniswap: 400000, curve: 300000, balancer: 150000 }
-        },
-        networkCongestion: {
-          ethereum: 0.25,
-          polygon: 0.15,
-          bsc: 0.20,
-          arbitrum: 0.10,
-          bitcoin: 0.30,
-          stellar: 0.05,
-          solana: 0.18,
-          starknet: 0.12
-        },
-        gasPrices: {
-          ethereum: { fast: 35, standard: 25, safe: 20 },
-          polygon: { fast: 45, standard: 35, safe: 25 }
-        },
-        timeOfDay: new Date().getHours(),
-        dayOfWeek: new Date().getDay()
-      }
-    };
-    
-    const mockPredictions: AgentPrediction = {
-      optimalSlippage: 0.0012,
-      predictedGasCost: '25000000000',
-      successProbability: 0.989,
-      estimatedTime: 180,
-      mevProtection: {
-        enabled: true,
-        strategy: 'private-mempool',
-        estimatedProtection: 0.96
-      }
-    };
-
-    setRouterState(prev => ({ 
-      ...prev, 
-      isAnalyzing: false, 
-      aiResults: mockResults,
-      predictions: mockPredictions,
-      executionStatus: 'ready'
-    }));
-  };
-
-  const executeRoute = async () => {
-    if (!routerState.aiResults) return;
-    
-    setRouterState(prev => ({ ...prev, executionStatus: 'executing' }));
-    
-    try {
-      // Simulate execution with the AI-optimized strategy
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      setRouterState(prev => ({ ...prev, executionStatus: 'completed' }));
-    } catch (error) {
-      console.error('Route execution failed:', error);
-      setRouterState(prev => ({ ...prev, executionStatus: 'idle' }));
-    }
-  };
-
-  const resetRouter = () => {
-    setRouterState(prev => ({ 
-      ...prev, 
-      aiResults: null,
-      predictions: null,
-      executionStatus: 'idle',
-      activeAgents: [],
-      currentPhase: ''
-    }));
-  };
-
-  const swapTokens = () => {
-    setRouterState(prev => ({
-      ...prev,
-      fromToken: prev.toToken,
-      toToken: prev.fromToken,
-      aiResults: null,
-      predictions: null,
-      executionStatus: 'idle',
-      activeAgents: [],
-      currentPhase: ''
-    }));
-  };
-
-  const handleTokenSelect = (isFrom: boolean, tokenId: string) => {
-    const token = SUPPORTED_TOKENS.find(t => t.id === tokenId);
-    if (!token) return;
-    
-    setRouterState(prev => ({
-      ...prev,
-      [isFrom ? 'fromToken' : 'toToken']: token,
-      aiResults: null,
-      predictions: null,
-      executionStatus: 'idle',
-      activeAgents: [],
-      currentPhase: ''
-    }));
-  };
-
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white overflow-hidden">
@@ -517,7 +285,7 @@ export default function IntelligentAIRouterPage() {
                 Intelligent AI Router
               </h1>
               <p className="text-xl text-gray-300 mt-2">
-                Next-generation cross-chain bridging with AI agents
+                Next-generation cross-chain bridging with AI agents & 1inch Fusion+
               </p>
             </div>
           </div>
@@ -563,553 +331,425 @@ export default function IntelligentAIRouterPage() {
           ))}
         </motion.div>
 
-        <div className="grid lg:grid-cols-5 gap-8">
-          {/* AI Bridge Interface */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
-            className="lg:col-span-2"
-          >
-            <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2">
-              <Wallet className="w-6 h-6 text-blue-400" />
-              <span>AI Bridge</span>
-            </h2>
-            
-            <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6 space-y-6">
-              {/* From Section */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium text-gray-300">From</label>
-                <div className="space-y-3">
-                  <select 
-                    value={routerState.fromToken?.id || ''}
-                    onChange={(e) => handleTokenSelect(true, e.target.value)}
-                    className="w-full bg-gray-700/50 border border-gray-600 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    {SUPPORTED_TOKENS.map(token => (
-                      <option key={token.id} value={token.id}>{token.symbol} - {token.name} ({token.network})</option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    value={routerState.amount}
-                    onChange={(e) => setRouterState(prev => ({ ...prev, amount: e.target.value, aiResults: null, predictions: null, executionStatus: 'idle' }))}
-                    placeholder="Amount"
-                    className="w-full bg-gray-700/50 border border-gray-600 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+        {/* Tab Navigation */}
+        <div className="flex flex-wrap gap-3 mb-8 justify-center">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex items-center space-x-2 px-6 py-3 rounded-xl transition-all duration-300",
+                "border border-gray-700/50",
+                activeTab === tab.id
+                  ? "bg-gradient-to-r from-blue-500/20 to-purple-500/20 border-blue-500/50 text-white shadow-lg shadow-blue-500/20"
+                  : "bg-gray-800/50 hover:bg-gray-700/50 text-gray-400 hover:text-white"
+              )}
+            >
+              <tab.icon className="w-5 h-5" />
+              <span className="font-medium">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        <AnimatePresence mode="wait">
+          {activeTab === 'router' && (
+            <motion.div
+              key="router"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6"
+            >
+              {/* Direct AI Bridge Interface */}
+              <div className="mb-6">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="relative">
+                    <Brain className="w-8 h-8 text-blue-400" />
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                      className="absolute -top-1 -right-1 w-3 h-3 bg-blue-400 rounded-full opacity-75"
+                    />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">AI Smart Bridge</h2>
+                    <p className="text-gray-400">Powered by Machine Learning & 1inch Fusion+</p>
+                  </div>
                 </div>
               </div>
 
-              {/* Swap Button */}
-              <div className="flex justify-center">
-                <motion.button
-                  onClick={swapTokens}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  className="p-2 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full text-white hover:from-blue-600 hover:to-purple-600 transition-all duration-200"
-                >
-                  <ArrowUpDown className="w-5 h-5" />
-                </motion.button>
-              </div>
-
-              {/* To Section */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium text-gray-300">To</label>
-                <div className="space-y-3">
-                  <select 
-                    value={routerState.toToken?.id || ''}
-                    onChange={(e) => handleTokenSelect(false, e.target.value)}
-                    className="w-full bg-gray-700/50 border border-gray-600 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    {SUPPORTED_TOKENS.map(token => (
-                      <option key={token.id} value={token.id}>{token.symbol} - {token.name} ({token.network})</option>
-                    ))}
-                  </select>
-                  {routerState.aiResults && routerState.aiResults.routes && routerState.aiResults.routes.length > 0 && routerState.aiResults.routes[0].estimatedOutput && (
-                    <div className="bg-gray-700/30 rounded-lg p-3">
-                      <div className="text-2xl font-bold text-green-400">
-                        {routerState.aiResults.routes[0].estimatedOutput} {routerState.toToken?.symbol}
-                      </div>
-                      <div className="text-sm text-gray-400">
-                        Estimated Output (AI Optimized)
+              {/* Bridge Interface - Always Visible */}
+              <div className="space-y-6">
+                {/* Token Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">From Token</label>
+                    <div className="relative">
+                      <select
+                        value={routerState.fromToken?.id || ''}
+                        onChange={(e) => {
+                          const token = SUPPORTED_TOKENS.find(t => t.id === e.target.value);
+                          setRouterState(prev => ({ ...prev, fromToken: token || null }));
+                        }}
+                        className="w-full bg-gray-800/50 border border-gray-600 rounded-xl p-4 text-white appearance-none cursor-pointer hover:bg-gray-700/50 transition-colors"
+                      >
+                        <option value="">Select token...</option>
+                        {SUPPORTED_TOKENS.map((token) => (
+                          <option key={token.id} value={token.id} className="bg-gray-800">
+                            {token.symbol} - {token.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                        <ChevronRight className="w-5 h-5 text-gray-400 rotate-90" />
                       </div>
                     </div>
-                  )}
+                    {routerState.fromToken && (
+                      <div className="bg-gray-800/30 border border-gray-600/50 rounded-lg p-3 flex items-center space-x-3">
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center",
+                          routerState.fromToken.symbol === 'BTC' ? "bg-orange-500" :
+                          routerState.fromToken.symbol === 'ETH' ? "bg-blue-500" :
+                          routerState.fromToken.symbol === 'SOL' ? "bg-purple-500" :
+                          routerState.fromToken.symbol === 'STRK' ? "bg-cyan-500" :
+                          routerState.fromToken.symbol === 'XLM' ? "bg-blue-400" :
+                          "bg-green-500"
+                        )}>
+                          <span className="text-white font-bold text-sm">
+                            {routerState.fromToken.symbol === 'BTC' ? '₿' :
+                             routerState.fromToken.symbol === 'ETH' ? 'Ξ' :
+                             routerState.fromToken.symbol === 'SOL' ? '◎' :
+                             routerState.fromToken.symbol === 'STRK' ? 'S' :
+                             routerState.fromToken.symbol === 'XLM' ? '★' :
+                             routerState.fromToken.symbol.charAt(0)}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="text-white font-semibold">{routerState.fromToken.symbol}</div>
+                          <div className="text-gray-400 text-sm">{routerState.fromToken.name}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-300">To Token</label>
+                    <div className="relative">
+                      <select
+                        value={routerState.toToken?.id || ''}
+                        onChange={(e) => {
+                          const token = SUPPORTED_TOKENS.find(t => t.id === e.target.value);
+                          setRouterState(prev => ({ ...prev, toToken: token || null }));
+                        }}
+                        className="w-full bg-gray-800/50 border border-gray-600 rounded-xl p-4 text-white appearance-none cursor-pointer hover:bg-gray-700/50 transition-colors"
+                      >
+                        <option value="">Select token...</option>
+                        {SUPPORTED_TOKENS.filter(t => t.id !== routerState.fromToken?.id).map((token) => (
+                          <option key={token.id} value={token.id} className="bg-gray-800">
+                            {token.symbol} - {token.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                        <ChevronRight className="w-5 h-5 text-gray-400 rotate-90" />
+                      </div>
+                    </div>
+                    {routerState.toToken && (
+                      <div className="bg-gray-800/30 border border-gray-600/50 rounded-lg p-3 flex items-center space-x-3">
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center",
+                          routerState.toToken.symbol === 'BTC' ? "bg-orange-500" :
+                          routerState.toToken.symbol === 'ETH' ? "bg-blue-500" :
+                          routerState.toToken.symbol === 'SOL' ? "bg-purple-500" :
+                          routerState.toToken.symbol === 'STRK' ? "bg-cyan-500" :
+                          routerState.toToken.symbol === 'XLM' ? "bg-blue-400" :
+                          "bg-green-500"
+                        )}>
+                          <span className="text-white font-bold text-sm">
+                            {routerState.toToken.symbol === 'BTC' ? '₿' :
+                             routerState.toToken.symbol === 'ETH' ? 'Ξ' :
+                             routerState.toToken.symbol === 'SOL' ? '◎' :
+                             routerState.toToken.symbol === 'STRK' ? 'S' :
+                             routerState.toToken.symbol === 'XLM' ? '★' :
+                             routerState.toToken.symbol.charAt(0)}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="text-white font-semibold">{routerState.toToken.symbol}</div>
+                          <div className="text-gray-400 text-sm">{routerState.toToken.name}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Advanced Settings */}
-              <div className="border-t border-gray-700 pt-4">
-                <button
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span>Advanced AI Settings</span>
-                  <ChevronRight className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
-                </button>
-                
+                {/* Amount Input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-300">Amount</label>
+                  <div className="bg-gray-800/50 border border-gray-600 rounded-xl p-4">
+                    <input
+                      type="number"
+                      value={routerState.amount}
+                      onChange={(e) => setRouterState(prev => ({ ...prev, amount: e.target.value }))}
+                      className="w-full bg-transparent text-white text-lg outline-none"
+                      placeholder="0.0"
+                    />
+                  </div>
+                </div>
+
+                {/* Analyze Routes Button */}
+                {routerState.fromToken && routerState.toToken && routerState.amount && (
+                  <div className="flex justify-center">
+                    <motion.button
+                      onClick={() => setRouterState(prev => ({ 
+                        ...prev, 
+                        isAnalyzing: true,
+                        executionStatus: 'analyzing',
+                        currentPhase: 'Starting AI route analysis...'
+                      }))}
+                      disabled={routerState.isAnalyzing}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={cn(
+                        "px-8 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center space-x-2",
+                        routerState.isAnalyzing
+                          ? "bg-gray-600/50 text-gray-400 cursor-not-allowed"
+                          : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+                      )}
+                    >
+                      {routerState.isAnalyzing ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-gray-400/30 border-t-gray-400 rounded-full animate-spin" />
+                          <span>Analyzing Routes...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="w-5 h-5" />
+                          <span>Analyze Routes with AI</span>
+                        </>
+                      )}
+                    </motion.button>
+                  </div>
+                )}
+
+                {/* AI Analysis Section */}
                 <AnimatePresence>
-                  {showAdvanced && (
+                  {(routerState.isAnalyzing || routerState.executionStatus === 'ready') && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="mt-4 space-y-3"
+                      className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-2xl p-6"
                     >
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-gray-400">MEV Protection</label>
-                          <select className="w-full bg-gray-700/50 border border-gray-600 rounded-lg p-2 text-sm text-white">
-                            <option>Auto (Recommended)</option>
-                            <option>Maximum</option>
-                            <option>Standard</option>
-                            <option>Off</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400">Speed Priority</label>
-                          <select className="w-full bg-gray-700/50 border border-gray-600 rounded-lg p-2 text-sm text-white">
-                            <option>Balanced</option>
-                            <option>Fastest</option>
-                            <option>Cheapest</option>
-                          </select>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                {routerState.executionStatus === 'idle' && (
-                  <motion.button
-                    onClick={runAIAnalysis}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="w-full py-4 px-6 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold rounded-xl transition-all duration-200 flex items-center justify-center space-x-3"
-                  >
-                    <Brain className="w-6 h-6" />
-                    <span>Analyze with AI</span>
-                  </motion.button>
-                )}
-
-                {routerState.executionStatus === 'analyzing' && (
-                  <div className="w-full py-4 px-6 bg-blue-500/20 border border-blue-500/30 text-blue-300 font-semibold rounded-xl flex items-center justify-center space-x-3">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="w-6 h-6 border-2 border-blue-300/30 border-t-blue-300 rounded-full"
-                    />
-                    <span>{routerState.currentPhase || 'AI Agents Analyzing...'}</span>
-                  </div>
-                )}
-
-                {routerState.executionStatus === 'ready' && (
-                  <div className="space-y-2">
-                    <motion.button
-                      onClick={executeRoute}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="w-full py-4 px-6 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold rounded-xl transition-all duration-200 flex items-center justify-center space-x-3"
-                    >
-                      <Zap className="w-6 h-6" />
-                      <span>Execute Route</span>
-                    </motion.button>
-                    <button
-                      onClick={resetRouter}
-                      className="w-full py-2 text-sm text-gray-400 hover:text-white transition-colors"
-                    >
-                      New Analysis
-                    </button>
-                  </div>
-                )}
-
-                {routerState.executionStatus === 'executing' && (
-                  <div className="w-full py-4 px-6 bg-green-500/20 border border-green-500/30 text-green-300 font-semibold rounded-xl flex items-center justify-center space-x-3">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="w-6 h-6 border-2 border-green-300/30 border-t-green-300 rounded-full"
-                    />
-                    <span>Executing Transaction...</span>
-                  </div>
-                )}
-
-                {routerState.executionStatus === 'completed' && (
-                  <div className="space-y-3">
-                    <div className="w-full py-4 px-6 bg-green-500/20 border border-green-500/30 text-green-300 font-semibold rounded-xl flex items-center justify-center space-x-3">
-                      <CheckCircle className="w-6 h-6" />
-                      <span>Transaction Completed!</span>
-                    </div>
-                    <button
-                      onClick={resetRouter}
-                      className="w-full py-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      Start New Bridge
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-
-          {/* AI Analysis Results */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 }}
-            className="lg:col-span-3"
-          >
-            <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2">
-              <Activity className="w-6 h-6 text-green-400" />
-              <span>AI Analysis</span>
-            </h2>
-
-            <AnimatePresence mode="wait">
-              {routerState.executionStatus === 'analyzing' && (
-                <motion.div
-                  key="analyzing"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="space-y-6"
-                >
-                  {/* Agent Status Grid */}
-                  <div className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-2xl p-6">
-                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center space-x-2">
-                      <Users className="w-5 h-5 text-purple-400" />
-                      <span>Active AI Agents</span>
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {Object.entries(AGENT_NAMES).map(([agentId, agentName]) => {
-                        const isActive = routerState.activeAgents.includes(agentId);
-                        return (
-                          <motion.div
-                            key={agentId}
-                            animate={{ 
-                              opacity: isActive ? 1 : 0.5, 
-                              scale: isActive ? 1 : 0.95 
-                            }}
-                            className={cn(
-                              "p-3 rounded-xl border transition-all duration-300",
-                              isActive 
-                                ? "border-blue-500/50 bg-blue-500/10" 
-                                : "border-gray-700/50 bg-gray-800/30"
-                            )}
-                          >
-                            <div className="flex items-center space-x-2">
-                              <Bot className={cn(
-                                "w-4 h-4",
-                                isActive ? "text-blue-400" : "text-gray-500"
-                              )} />
-                              <span className={cn(
-                                "text-sm",
-                                isActive ? "text-white" : "text-gray-400"
-                              )}>
-                                {agentName}
-                              </span>
-                            </div>
-                            {isActive && (
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: "100%" }}
-                                transition={{ duration: 1 }}
-                                className="h-1 bg-blue-400/50 rounded-full mt-2"
-                              />
-                            )}
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  
-                  {/* Analysis Status */}
-                  <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-2xl p-6">
-                    <div className="flex items-center space-x-4">
-                      <div className="relative">
-                        <Network className="w-8 h-8 text-purple-400" />
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                          className="absolute inset-0 w-8 h-8 border-2 border-purple-400/30 border-t-purple-400 rounded-full"
-                        />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-white mb-1">
-                          🤖 AI Agents Collaborating...
-                        </h3>
-                        <p className="text-gray-400 text-sm">
-                          {routerState.currentPhase || 'Initializing analysis...'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {routerState.aiResults && (
-                <motion.div
-                  key="results"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="space-y-6"
-                >
-                  {/* Analysis Complete Header */}
-                  <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-2xl p-6">
-                    <div className="flex items-center space-x-3 mb-4">
-                      <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
-                        <Check className="w-5 h-5 text-green-400" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-white">
-                          ✨ Multi-Agent Analysis Complete
-                        </h3>
-                        <p className="text-gray-400 text-sm">
-                          Consensus reached with {(routerState.aiResults.confidence * 100).toFixed(0)}% confidence
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Key Metrics */}
-                    <div className="grid grid-cols-4 gap-4 mt-4">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-green-400">
-                          {routerState.aiResults.routes.length}
-                        </div>
-                        <div className="text-xs text-gray-400">Routes Found</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-blue-400">
-                          {((1 - (routerState.aiResults.riskAssessments[0]?.overallRisk || 0)) * 100).toFixed(0)}%
-                        </div>
-                        <div className="text-xs text-gray-400">Safety Score</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-purple-400">
-                          {routerState.aiResults.executionStrategy?.timing.optimal ? 'Now' : 'Wait'}
-                        </div>
-                        <div className="text-xs text-gray-400">Timing</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-orange-400">
-                          {routerState.aiResults.executionStrategy?.mevProtection.enabled ? 'Yes' : 'No'}
-                        </div>
-                        <div className="text-xs text-gray-400">MEV Protection</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Route Visualization */}
-                  <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center space-x-2">
-                      <ArrowRight className="w-5 h-5 text-blue-400" />
-                      <span>Optimal AI Route</span>
-                      <div className="bg-green-500/20 text-green-400 px-2 py-1 rounded-full text-xs font-medium">
-                        {(routerState.aiResults.confidence * 100).toFixed(1)}% Confidence
-                      </div>
-                    </h3>
-                    <div className="flex items-center justify-between">
-                      {routerState.aiResults.routes[0].path.map((step: { protocol: string; fee: string }, index: number) => (
-                        <React.Fragment key={index}>
-                          <div className="text-center flex-1">
-                            <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mb-2 mx-auto">
-                              <span className="text-sm font-bold">{index + 1}</span>
-                            </div>
-                            <div className="text-xs font-medium">{step.protocol}</div>
-                            <div className="text-xs text-gray-400">Fee: {step.fee}</div>
-                          </div>
-                          {index < (routerState.aiResults?.routes[0]?.path?.length || 0) - 1 && (
+                      {routerState.isAnalyzing ? (
+                        <div className="text-center py-8">
+                          <div className="relative mb-4">
                             <motion.div
-                              initial={{ scaleX: 0 }}
-                              animate={{ scaleX: 1 }}
-                              transition={{ delay: 0.2 * index, duration: 0.5 }}
-                              className="flex-1 h-0.5 bg-gradient-to-r from-blue-400 to-purple-400 mx-4"
+                              animate={{ rotate: 360 }}
+                              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                              className="w-12 h-12 border-4 border-blue-400/30 border-t-blue-400 rounded-full mx-auto"
                             />
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  </div>
+                          </div>
+                          <h3 className="text-lg font-semibold text-white mb-2">
+                            🧠 AI is analyzing optimal routes...
+                          </h3>
+                          <p className="text-gray-400 text-sm mb-4">
+                            Processing market conditions, fees, and execution time
+                          </p>
+                          <div className="space-y-2">
+                            {[
+                              "Analyzing network congestion...",
+                              "Calculating optimal slippage...",
+                              "Evaluating route security...",
+                              "Predicting execution time..."
+                            ].map((step, index) => (
+                              <motion.div
+                                key={step}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.5 }}
+                                className="flex items-center justify-center space-x-2 text-sm text-gray-300"
+                              >
+                                <motion.div
+                                  animate={{ scale: [1, 1.2, 1] }}
+                                  transition={{ duration: 0.5, delay: index * 0.5 }}
+                                  className="w-2 h-2 bg-blue-400 rounded-full"
+                                />
+                                <span>{step}</span>
+                              </motion.div>
+                            ))}
+                          </div>
+                          <motion.button
+                            onClick={() => setRouterState(prev => ({ 
+                              ...prev, 
+                              isAnalyzing: false,
+                              executionStatus: 'ready'
+                            }))}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 2 }}
+                            className="mt-6 px-4 py-2 bg-green-500/20 text-green-400 rounded-lg text-sm hover:bg-green-500/30 transition-colors"
+                          >
+                            Complete Analysis (Demo)
+                          </motion.button>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center space-x-3 mb-4">
+                            <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-5 h-5 text-green-400" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-semibold text-white">
+                                ✨ AI Analysis Complete
+                              </h3>
+                              <p className="text-gray-400 text-sm">
+                                Optimal route found with {liveMetrics.avgConfidence} confidence
+                              </p>
+                            </div>
+                          </div>
 
-                  {/* Performance Metrics */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl p-4 text-center">
-                      <div className="text-2xl font-bold text-green-400 mb-1">
-                        {routerState.predictions ? `$${(routerState.predictions.successProbability * 100).toFixed(2)}` : '$0.00'}
-                      </div>
-                      <div className="text-xs text-gray-400">Cost Savings</div>
+                  {/* AI Metrics */}
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-400">95.8%</div>
+                      <div className="text-xs text-gray-400">Confidence</div>
                     </div>
-                    <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20 rounded-xl p-4 text-center">
-                      <div className="text-2xl font-bold text-blue-400 mb-1">
-                        {routerState.predictions ? `${(routerState.predictions.successProbability * 100).toFixed(1)}%` : '0%'}
-                      </div>
-                      <div className="text-xs text-gray-400">Success Rate</div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-400">$42</div>
+                      <div className="text-xs text-gray-400">Est. Savings</div>
                     </div>
-                    <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-4 text-center">
-                      <div className="text-2xl font-bold text-purple-400 mb-1">
-                        {routerState.aiResults.riskAssessments[0]?.overallRisk ? 
-                          (routerState.aiResults.riskAssessments[0].overallRisk < 0.3 ? 'LOW' : 
-                           routerState.aiResults.riskAssessments[0].overallRisk < 0.7 ? 'MEDIUM' : 'HIGH') : 'LOW'}
-                      </div>
-                      <div className="text-xs text-gray-400">Risk Level</div>
-                    </div>
-                    <div className="bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-xl p-4 text-center">
-                      <div className="text-2xl font-bold text-orange-400 mb-1">
-                        {routerState.aiResults.routes[0].estimatedTime}s
-                      </div>
-                      <div className="text-xs text-gray-400">Est. Time</div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-400">92%</div>
+                      <div className="text-xs text-gray-400">Safety Score</div>
                     </div>
                   </div>
 
                   {/* AI Insights */}
-                  <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-2xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center space-x-2">
-                      <Sparkles className="w-5 h-5 text-yellow-400" />
-                      <span>AI Insights</span>
-                    </h3>
-                    <div className="space-y-3">
-                      {routerState.aiResults.insights.map((insight: string, index: number) => (
-                        <motion.div
-                          key={index}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.1 * index }}
-                          className="bg-blue-500/10 p-3 rounded-lg"
-                        >
-                          <div className="flex items-start space-x-3">
-                            <div className="text-lg">💡</div>
-                            <div className="flex-1">
-                              <div className="text-sm text-gray-300">{insight}</div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
+                  <div className="space-y-3 mb-6">
+                    <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl p-3">
+                      <p className="text-yellow-100 text-sm font-medium">
+                        💡 Optimal timing detected: Gas fees are 23% below average
+                      </p>
+                    </div>
+                    <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl p-3">
+                      <p className="text-green-100 text-sm font-medium">
+                        🚀 Route optimized for maximum efficiency with 1inch Fusion+
+                      </p>
                     </div>
                   </div>
 
-                  {/* Execution Strategy Details */}
-                  <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6">
-                    <h3 className="text-lg font-semibold mb-4 flex items-center space-x-2">
-                      <Shield className="w-5 h-5 text-purple-400" />
-                      <span>Execution Strategy</span>
-                    </h3>
-                    <div className="grid md:grid-cols-2 gap-6">
-                      {/* Timing */}
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-400 mb-2">Timing Recommendation</h4>
-                        <div className="flex items-center space-x-2">
-                          <Clock className="w-5 h-5 text-orange-400" />
-                          <span className="text-white">
-                            {routerState.aiResults.executionStrategy.timing.optimal ? 
-                              'Execute immediately' : 
-                              `Wait ${Math.round(routerState.aiResults.executionStrategy.timing.delayRecommended / 60)} minutes`
-                            }
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-400 mt-1">
-                          {routerState.aiResults.executionStrategy.timing.reason}
-                        </p>
-                      </div>
-
-                      {/* MEV Protection */}
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-400 mb-2">MEV Protection</h4>
-                        <div className="flex items-center space-x-2">
-                          <Shield className="w-5 h-5 text-green-400" />
-                          <span className="text-white">
-                            {routerState.aiResults.executionStrategy.mevProtection.strategy.replace('-', ' ')}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-400 mt-1">
-                          {(routerState.aiResults.executionStrategy.mevProtection.estimatedProtection * 100).toFixed(0)}% protection effectiveness
-                        </p>
-                      </div>
-
-                      {/* Gas Strategy */}
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-400 mb-2">Gas Optimization</h4>
-                        <div className="flex items-center space-x-2">
-                          <Zap className="w-5 h-5 text-blue-400" />
-                          <span className="text-white">
-                            {(parseFloat(routerState.aiResults.executionStrategy.gasStrategy.gasPrice) / 1e9).toFixed(0)} gwei
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-400 mt-1">
-                          Strategy: {routerState.aiResults.executionStrategy.gasStrategy.strategy}
-                        </p>
-                      </div>
-
-                      {/* Agent Predictions */}
-                      {routerState.predictions && (
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-400 mb-2">AI Predictions</h4>
-                          <div className="flex items-center space-x-2">
-                            <BarChart3 className="w-5 h-5 text-purple-400" />
-                            <span className="text-white">
-                              {(routerState.predictions.optimalSlippage * 100).toFixed(2)}% slippage
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-400 mt-1">
-                            {Math.round(routerState.predictions.estimatedTime / 60)}m estimated time
-                          </p>
+                  {/* Execute Button */}
+                  <div className="flex space-x-4">
+                    <motion.button
+                      onClick={() => setRouterState(prev => ({ 
+                        ...prev, 
+                        isAnalyzing: true,
+                        executionStatus: 'analyzing'
+                      }))}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center space-x-2"
+                    >
+                      <Brain className="w-5 h-5" />
+                      <span>Re-analyze Routes</span>
+                    </motion.button>
+                    
+                    <motion.button
+                      onClick={handleBridge}
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="flex-1 py-3 px-6 bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white rounded-xl font-semibold transition-all duration-200 flex items-center justify-center space-x-2"
+                    >
+                      <Zap className="w-5 h-5" />
+                      <span>Execute Bridge</span>
+                      <ChevronRight className="w-5 h-5" />
+                    </motion.button>
+                  </div>
                         </div>
                       )}
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-              
-              {routerState.executionStatus === 'completed' && (
-                <motion.div
-                  key="completed"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-2xl p-8 text-center"
-                >
-                  <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-white mb-2">
-                    🎉 Bridge Executed Successfully!
-                  </h3>
-                  <p className="text-gray-400 mb-4">
-                    Your AI-optimized cross-chain bridge has been completed
-                  </p>
-                  <motion.button
-                    onClick={resetRouter}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold rounded-xl transition-all duration-200"
-                  >
-                    Start New Bridge
-                  </motion.button>
-                </motion.div>
-              )}
-
-              {!routerState.aiResults && routerState.executionStatus === 'idle' && (
-                <motion.div
-                  key="idle"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="bg-gradient-to-br from-gray-800/30 to-gray-900/30 border border-gray-700/30 rounded-2xl p-12 text-center"
-                >
-                  <Brain className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-gray-400 mb-2">
-                    Ready for AI Analysis
-                  </h3>
-                  <p className="text-gray-500 mb-4">
-                    Our AI agents will analyze 1000+ routes across multiple chains to find the optimal path
-                  </p>
-                  {!isConnected && (
-                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-sm text-yellow-300">
-                      💡 Connect your wallet for personalized routing and gas optimization
-                    </div>
+                    </motion.div>
                   )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        </div>
+                </AnimatePresence>
+
+                {/* Route Performance Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-700/30 rounded-xl p-4">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Zap className="w-5 h-5 text-yellow-400" />
+                      <span className="text-sm font-medium text-gray-300">Gas Optimization</span>
+                    </div>
+                    <p className="text-2xl font-bold text-white">Up to 40%</p>
+                    <p className="text-xs text-gray-400 mt-1">Lower gas fees with smart routing</p>
+                  </div>
+
+                  <div className="bg-gray-700/30 rounded-xl p-4">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <Brain className="w-5 h-5 text-blue-400" />
+                      <span className="text-sm font-medium text-gray-300">ML Confidence</span>
+                    </div>
+                    <p className="text-2xl font-bold text-white">95.8%</p>
+                    <p className="text-xs text-gray-400 mt-1">Success rate prediction</p>
+                  </div>
+
+                  <div className="bg-gray-700/30 rounded-xl p-4">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <BarChart3 className="w-5 h-5 text-purple-400" />
+                      <span className="text-sm font-medium text-gray-300">Routes Analyzed</span>
+                    </div>
+                    <p className="text-2xl font-bold text-white">1,000+</p>
+                    <p className="text-xs text-gray-400 mt-1">Per second with 1inch Fusion+</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'strategies' && (
+            <motion.div
+              key="strategies"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6"
+            >
+              <StrategyManager />
+            </motion.div>
+          )}
+
+          {activeTab === 'social' && (
+            <motion.div
+              key="social"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6"
+            >
+              <WhaleTracker />
+            </motion.div>
+          )}
+
+          {activeTab === 'analytics' && (
+            <motion.div
+              key="analytics"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6"
+            >
+              <AnalyticsDashboard />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Trading Companion (always rendered for floating button) */}
+        <TradingCompanion
+          currentRoute={undefined}
+          fromToken={routerState.fromToken!}
+          toToken={routerState.toToken!}
+          amount={routerState.amount}
+        />
       </div>
     </div>
   );

@@ -40,7 +40,7 @@ export const ETHEREUM_NETWORKS: NetworkConfig[] = [
     name: 'Sepolia Testnet',
     type: 'testnet',
     currency: 'ETH',
-    rpcUrl: process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL || 'https://sepolia.infura.io/v3/',
+    rpcUrl: process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL || 'https://sepolia.gateway.tenderly.co',
     explorerUrl: 'https://sepolia.etherscan.io',
     faucetUrl: 'https://sepoliafaucet.com/',
     isEnabled: process.env.NEXT_PUBLIC_ENABLE_TESTNET === 'true',

@@ -47,13 +47,8 @@ export class AIAgentBridgeService {
   private initialized = false;
 
   private constructor() {
-    // Initialize data service with API keys from environment
-    this.dataService = new DataAggregationService({
-      oneInch: process.env.NEXT_PUBLIC_1INCH_API_KEY,
-      coinGecko: process.env.COINGECKO_API_KEY,
-      infura: process.env.INFURA_API_KEY,
-      alchemy: process.env.ALCHEMY_API_KEY
-    });
+    // Initialize data service using singleton pattern
+    this.dataService = DataAggregationService.getInstance();
     this.decisionEngine = new DecisionEngine(this.dataService);
     this.coordinator = new AgentCoordinator({
       maxAgents: 10,
@@ -637,7 +632,7 @@ export class AIAgentBridgeService {
     return feeMap[protocol] || '0.003';
   }
 
-  private calculateRealGas(protocol: string, gasPrices: any): string {
+  private calculateRealGas(protocol: string, gasPrices: Record<string, { fast: number; standard: number; safe: number }>): string {
     const baseGas = 150000;
     const protocolMultiplier: Record<string, number> = {
       'uniswap': 1.2,

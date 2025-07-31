@@ -181,7 +181,7 @@ export const DEFAULT_NETWORKS: Record<number, NetworkInfo> = {
     chainId: 5,
     name: 'Goerli Testnet',
     currency: 'ETH',
-    rpcUrl: 'https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
+    rpcUrl: 'https://ethereum-goerli.publicnode.com',
     blockExplorerUrl: 'https://goerli.etherscan.io',
     isTestnet: true
   }

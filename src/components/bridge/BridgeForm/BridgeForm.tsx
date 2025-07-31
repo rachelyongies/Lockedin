@@ -8,10 +8,12 @@ import { BridgeDetails } from '../BridgeDetails';
 import { ActionButton } from '../ActionButton';
 import { useBridgeFormState } from './useBridgeFormState';
 import { TransactionMonitor } from '../TransactionFlow/TransactionMonitor';
+import { IntelligentRouter } from '../IntelligentRouter';
 import { cn } from '@/lib/utils/helpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Token } from '@/types/bridge';
 import { useWalletStore } from '@/store/useWalletStore';
+import { Brain, Zap } from 'lucide-react';
 
 export interface BridgeFormProps {
   className?: string;
@@ -91,6 +93,7 @@ export function BridgeForm({
 
   // UI state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [activeTab, setActiveTab] = useState<'standard' | 'intelligent'>('standard');
   
 
   // Handle token selection

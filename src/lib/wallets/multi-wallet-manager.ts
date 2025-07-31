@@ -838,7 +838,7 @@ export class MultiWalletManager {
       11155111: { // Sepolia
         chainId: '0xaa36a7',
         chainName: 'Sepolia Test Network',
-        rpcUrls: ['https://sepolia.infura.io/v3/'],
+        rpcUrls: ['https://sepolia.gateway.tenderly.co'],
         blockExplorerUrls: ['https://sepolia.etherscan.io/'],
         nativeCurrency: {
           name: 'Ethereum',

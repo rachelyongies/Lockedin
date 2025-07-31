@@ -2,7 +2,7 @@ import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode } f
 
 const FUSION_API_CONFIG = {
   baseUrl: process.env.NEXT_PUBLIC_1INCH_FUSION_API_URL || 'https://api.1inch.dev/fusion',
-  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || 'demo_api_key',
+  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || '',
   timeout: 30000, // set min time out 
   retryAttempts: 3,
   retryDelay: 1000,
