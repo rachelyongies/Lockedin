@@ -44,6 +44,7 @@ import { solanaBridgeService } from '@/lib/services/solana-bridge-service';
 import { starknetBridgeService } from '@/lib/services/starknet-bridge-service';
 import { stellarBridgeService } from '@/lib/services/stellar-bridge-service';
 
+
 // Real quote fetching function using bridge services
 async function fetchBridgeQuote(
   fromToken: Token, 
@@ -135,6 +136,14 @@ export function useBridgeFormState({
       return;
     }
 
+    // If no wallet is connected, clear everything and don't fetch quote
+    if (!walletAddress) {
+      setQuote(null);
+      setToAmount('');
+      setQuoteError(undefined);
+      return;
+    }
+
     // Cancel previous request
     if (quoteAbortController.current) {
       quoteAbortController.current.abort();
@@ -159,10 +168,18 @@ export function useBridgeFormState({
         if (signal.aborted) return;
         
         const errorMessage = error?.message || 'Failed to fetch quote';
-        setQuoteError(errorMessage);
+        
+        // Only show wallet errors once, not repeatedly
+        if (errorMessage.toLowerCase().includes('wallet')) {
+          console.log('Wallet connection required for quotes');
+          setQuoteError('Connect wallet to get quotes');
+        } else {
+          setQuoteError(errorMessage);
+          onQuoteError?.(errorMessage);
+        }
+        
         setQuote(null);
         setToAmount('');
-        onQuoteError?.(errorMessage);
       })
       .finally(() => {
         if (!signal.aborted) {

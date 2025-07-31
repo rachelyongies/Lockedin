@@ -244,13 +244,14 @@ export class PerformanceMonitorAgent extends BaseAgent {
   async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
     if (signal.aborted) return null;
     
-    switch (task.type) {
+    const taskObj = task as Record<string, unknown>;
+    switch (taskObj.type) {
       case 'generate-report':
         return await this.generatePerformanceReport();
       case 'analyze-trends':
-        return await this.analyzeTrends(task.params);
+        return await this.analyzeTrends(taskObj.params);
       default:
-        throw new Error(`Unknown task type: ${task.type}`);
+        throw new Error(`Unknown task type: ${taskObj.type}`);
     }
   }
 

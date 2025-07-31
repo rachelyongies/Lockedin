@@ -624,17 +624,18 @@ export class RouteDiscoveryAgent extends BaseAgent {
   }
 
   async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
-    const { type, data } = task;
+    const taskObj = task as { type: string; data: Record<string, unknown> };
+    const { type, data } = taskObj;
     
     switch (type) {
       case 'find-routes':
-        return await this.findOptimalRoutes(data);
+        return await this.findOptimalRoutes(data as unknown as RouteSearchParams);
       case 'find-fusion-routes':
-        return await this.findFusionOptimizedRoutes(data);
+        return await this.findFusionOptimizedRoutes(data as unknown as RouteSearchParams);
       case 'update-fusion-compatibility':
         return await this.updateFusionCompatibility();
       case 'analyze-gas-curves':
-        return await this.analyzeGasCurves(data);
+        return await this.analyzeGasCurves(data as { tokenPair: [string, string]; amounts: string[]; chainId: number; });
       default:
         throw new Error(`Unknown route discovery task: ${type}`);
     }
@@ -1178,31 +1179,32 @@ export class RouteDiscoveryAgent extends BaseAgent {
         const pools = await this.getProtocolPools(protocol, chainId);
         
         for (const pool of pools) {
+          const poolObj = pool as Record<string, unknown>;
           const edge: PoolEdge = {
-            id: pool.id,
+            id: String(poolObj.id),
             protocol,
-            fromToken: pool.token0,
-            toToken: pool.token1,
-            liquidity: pool.liquidityUSD,
-            fee: pool.fee,
+            fromToken: String(poolObj.token0),
+            toToken: String(poolObj.token1),
+            liquidity: Number(poolObj.liquidityUSD),
+            fee: Number(poolObj.fee),
             gasEstimate: this.estimateGasForProtocol(protocol),
-            slippage: this.createSlippageModel(protocol, pool),
+            slippage: this.createSlippageModel(protocol, poolObj),
             lastUpdate: Date.now(),
-            reliability: pool.reliability || 0.8,
-            mevRisk: this.calculateMEVRisk(protocol, pool),
+            reliability: Number(poolObj.reliability) || 0.8,
+            mevRisk: this.calculateMEVRisk(protocol, poolObj),
             fusionCompatible: false // Will be tested during compatibility update
           };
 
-          this.addEdgeToGraph(pool.token0, edge);
+          this.addEdgeToGraph(String(poolObj.token0), edge);
           
           const reverseEdge: PoolEdge = {
             ...edge,
             id: pool.id + '-reverse',
-            fromToken: pool.token1,
-            toToken: pool.token0
+            fromToken: String(poolObj.token1),
+            toToken: String(poolObj.token0)
           };
           
-          this.addEdgeToGraph(pool.token1, reverseEdge);
+          this.addEdgeToGraph(String(poolObj.token1), reverseEdge);
         }
       } catch (error) {
         console.warn(`Failed to build edges for ${protocol} on chain ${chainId}:`, error);
@@ -1228,19 +1230,20 @@ export class RouteDiscoveryAgent extends BaseAgent {
       case 'uniswap-v2':
       case 'sushiswap':
         type = 'uniswap_v2';
-        params = { k: pool.reserve0 * pool.reserve1 || 1000000, fee: pool.fee || 0.003 };
+        params = { k: Number(pool.reserve0 || 0) * Number(pool.reserve1 || 0) || 1000000, fee: Number(pool.fee) || 0.003 };
         break;
       case 'uniswap-v3':
         type = 'uniswap_v3';
-        params = { liquidity: pool.liquidity || 1000000, fee: pool.fee || 0.003 };
+        params = { liquidity: Number(pool.liquidity) || 1000000, fee: Number(pool.fee) || 0.003 };
         break;
       case 'curve':
         type = 'curve';
-        params = { A: pool.amplificationParameter || 100, fee: pool.fee || 0.0004 };
+        params = { A: Number(pool.amplificationParameter) || 100, fee: Number(pool.fee) || 0.0004 };
         break;
       case 'balancer':
         type = 'balancer';
-        params = { weights: pool.weights || [0.5, 0.5], fee: pool.fee || 0.001 };
+        const weights = (pool.weights as number[]) || [0.5, 0.5];
+        params = { weight0: weights[0] || 0.5, weight1: weights[1] || 0.5, fee: Number(pool.fee) || 0.001 };
         break;
       default:
         type = 'constant';
@@ -1261,7 +1264,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
 
   private calculateTokenRisk(tokenInfo: { marketCap?: number; price?: number }): number {
     let risk = 0.5;
-    if (tokenInfo.marketCap < 1000000) risk += 0.3;
+    if (tokenInfo.marketCap && tokenInfo.marketCap < 1000000) risk += 0.3;
     if (!tokenInfo.price) risk += 0.2;
     return Math.min(risk, 1.0);
   }
@@ -1292,7 +1295,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
     };
     
     let risk = baseRisk[protocol] || 0.5;
-    if (pool.liquidityUSD > 10000000) risk += 0.2;
+    if (pool.liquidityUSD && Number(pool.liquidityUSD) > 10000000) risk += 0.2;
     return Math.min(risk, 1.0);
   }
 
@@ -1338,8 +1341,9 @@ export class RouteDiscoveryAgent extends BaseAgent {
 
   private async handleRouteRequest(message: AgentMessage): Promise<void> {
     try {
-      const { params } = message.payload;
-      const result = await this.findOptimalRoutes(params);
+      const payload = message.payload as { params: Record<string, unknown> };
+    const { params } = payload;
+      const result = await this.findOptimalRoutes(params as unknown as RouteSearchParams);
       
       await this.sendMessage({
         to: message.from,
@@ -1353,10 +1357,12 @@ export class RouteDiscoveryAgent extends BaseAgent {
   }
 
   private async handleMarketUpdate(message: AgentMessage): Promise<void> {
-    const { conditions } = message.payload;
+    const payload = message.payload as { conditions: Record<string, unknown> };
+    const { conditions } = payload;
     
     // Clear cache on significant market changes
-    if (conditions.volatility?.overall > 0.3) {
+    const volatility = conditions.volatility as { overall?: number };
+    if (volatility?.overall && volatility.overall > 0.3) {
       this.routeCache.clear();
     }
   }

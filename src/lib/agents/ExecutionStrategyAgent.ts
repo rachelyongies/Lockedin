@@ -222,10 +222,17 @@ export class ExecutionStrategyAgent extends BaseAgent {
     
     switch (message.type) {
       case MessageType.REQUEST_ANALYSIS:
-        await this.handleStrategyRequest(message.payload);
+        await this.handleStrategyRequest(message.payload as Record<string, unknown>);
         break;
       case MessageType.EXECUTION_RESULT:
-        await this.recordExecutionOutcome(message.payload, message.payload.actualResults || {});
+        const payload = message.payload as Record<string, unknown>;
+        await this.recordExecutionOutcome(String(payload.strategyId || ''), (payload.actualResults as ExecutionOutcome['actualResults']) || {
+          executionSuccess: false,
+          actualSlippage: 0,
+          actualGasCost: '0',
+          actualExecutionTime: 0,
+          mevDetected: false
+        });
         break;
       default:
         console.log(`ExecutionStrategyAgent: Unhandled message type ${message.type}`);
@@ -237,9 +244,20 @@ export class ExecutionStrategyAgent extends BaseAgent {
     
     switch (task.type) {
       case 'optimize-strategy':
-        return await this.generateExecutionStrategy(task.route, task.riskAssessment, task.marketConditions, task.userPreferences || {});
+        const userPrefs = task.userPreferences as {
+          mevTolerance: 'none' | 'low' | 'medium' | 'high';
+          urgency: 'immediate' | 'normal' | 'patient';
+          maxDelay: number;
+          gasPriority: 'economy' | 'standard' | 'fast' | 'instant';
+        } || {
+          mevTolerance: 'medium',
+          urgency: 'normal',
+          maxDelay: 300,
+          gasPriority: 'standard'
+        };
+        return await this.generateExecutionStrategy(task.route as RouteProposal, task.riskAssessment as RiskAssessment, task.marketConditions as MarketConditions, userPrefs);
       case 'analyze-mev':
-        return await this.analyzeMEVRisks(task.route, task.marketConditions);
+        return await this.analyzeMEVRisks(task.route as RouteProposal, task.marketConditions as MarketConditions);
       default:
         throw new Error(`Unknown task type: ${task.type}`);
     }
@@ -1270,7 +1288,7 @@ export class ExecutionStrategyAgent extends BaseAgent {
   private async analyzeOrderBookImbalance(route: RouteProposal): Promise<number> { return 0.1; }
   private async optimizeGasStrategy(route: RouteProposal, priority: string, marketConditions: MarketConditions): Promise<GasStrategy> {
     return {
-      priority: priority as MessagePriority,
+      priority: (priority as unknown as "low" | "medium" | "high") || "medium",
       gasPrice: '30000000000',
       gasLimit: '200000',
       maxFeePerGas: '35000000000',

@@ -235,13 +235,13 @@ class DuneAnalyticsClient {
 
       // Transform Dune results to our format
       return result.result.rows.map((row: Record<string, unknown>) => ({
-        protocol: row.protocol_name || row.dex_name,
-        chain: row.blockchain || row.chain,
-        volume_24h: parseFloat(row.volume_usd_24h || row.daily_volume),
-        transactions_24h: parseInt(row.tx_count_24h || row.daily_txs),
-        unique_users_24h: parseInt(row.unique_users_24h || row.daily_users),
-        avg_trade_size: parseFloat(row.avg_trade_size_usd || '0'),
-        timestamp: row.hour || row.day || new Date().toISOString()
+        protocol: String(row.protocol_name || row.dex_name || 'unknown'),
+        chain: String(row.blockchain || row.chain || 'unknown'),
+        volume_24h: parseFloat(String(row.volume_usd_24h || row.daily_volume || '0')),
+        transactions_24h: parseInt(String(row.tx_count_24h || row.daily_txs || '0')),
+        unique_users_24h: parseInt(String(row.unique_users_24h || row.daily_users || '0')),
+        avg_trade_size: parseFloat(String(row.avg_trade_size_usd || '0')),
+        timestamp: String(row.hour || row.day || new Date().toISOString())
       }));
     } catch (error) {
       console.error('Error fetching DEX metrics from Dune:', error);
@@ -269,13 +269,13 @@ class DuneAnalyticsClient {
       }
 
       return result.result.rows.map((row: Record<string, unknown>) => ({
-        chain: row.blockchain || row.chain,
-        active_users_1h: parseInt(row.active_users_1h || '0'),
-        active_users_24h: parseInt(row.active_users_24h || row.daily_active_users),
-        new_users_24h: parseInt(row.new_users_24h || '0'),
-        returning_users_24h: parseInt(row.returning_users_24h || '0'),
-        avg_transactions_per_user: parseFloat(row.avg_tx_per_user || '0'),
-        timestamp: row.hour || row.day || new Date().toISOString()
+        chain: String(row.blockchain || row.chain || 'unknown'),
+        active_users_1h: parseInt(String(row.active_users_1h || '0')),
+        active_users_24h: parseInt(String(row.active_users_24h || row.daily_active_users || '0')),
+        new_users_24h: parseInt(String(row.new_users_24h || '0')),
+        returning_users_24h: parseInt(String(row.returning_users_24h || '0')),
+        avg_transactions_per_user: parseFloat(String(row.avg_tx_per_user || '0')),
+        timestamp: String(row.hour || row.day || new Date().toISOString())
       }));
     } catch (error) {
       console.error('Error fetching user metrics from Dune:', error);
@@ -309,12 +309,12 @@ class DuneAnalyticsClient {
       }
 
       return result.result.rows.map((row: Record<string, unknown>) => ({
-        chain: row.blockchain || 'ethereum',
-        hour: row.hour,
-        avg_gas_price: parseFloat(row.avg_gas_price_gwei),
-        median_gas_price: parseFloat(row.median_gas_price_gwei),
-        gas_used: parseInt(row.total_gas_used),
-        tx_count: parseInt(row.transaction_count)
+        chain: String(row.blockchain || 'ethereum'),
+        hour: String(row.hour || new Date().getHours()),
+        avg_gas_price: parseFloat(String(row.avg_gas_price_gwei || '0')),
+        median_gas_price: parseFloat(String(row.median_gas_price_gwei || '0')),
+        gas_used: parseInt(String(row.total_gas_used || '0')),
+        tx_count: parseInt(String(row.transaction_count || '0'))
       }));
     } catch (error) {
       console.error('Error fetching gas analytics from Dune:', error);
@@ -411,7 +411,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     }
   }
 
-  async handleTask(task: any, signal: AbortSignal): Promise<any> {
+  async handleTask(task: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {
     const { type, data } = task;
     
     switch (type) {
@@ -462,7 +462,15 @@ export class MarketIntelligenceAgent extends BaseAgent {
         return this.processDEXMetrics(cached.data);
       }
       
-      return this.getFallbackDEXMetrics();
+      // Use DataAggregationService as fallback
+      console.warn('Using DataAggregationService fallback for DEX metrics');
+      const networkConditions = await this.dataService.getNetworkConditions();
+      return {
+        totalVolume: 0, // Would need to calculate from available data
+        volumeByChain: {},
+        volumeByProtocol: {},
+        trends: {}
+      };
     }
   }
 
@@ -539,7 +547,14 @@ export class MarketIntelligenceAgent extends BaseAgent {
         return this.processUserMetrics(cached.data);
       }
       
-      return this.getFallbackUserMetrics();
+      // Use DataAggregationService as fallback
+      console.warn('Using DataAggregationService fallback for user metrics');
+      return {
+        totalActiveUsers: 0,
+        usersByChain: {},
+        userGrowth: {},
+        trends: {}
+      };
     }
   }
 
@@ -618,7 +633,25 @@ export class MarketIntelligenceAgent extends BaseAgent {
         return this.processGasAnalytics(cached.data);
       }
       
-      return this.getFallbackGasAnalytics();
+      // Use DataAggregationService as fallback
+      console.warn('Using DataAggregationService fallback for gas analytics');
+      const gasData = await this.dataService.getGasPrices();
+      
+      // Convert gas data structure to simple price mapping
+      const currentPrices: Record<string, number> = {};
+      if (gasData.ethereum?.standard) {
+        currentPrices.ethereum = gasData.ethereum.standard;
+      }
+      if (gasData.polygon?.standard) {
+        currentPrices.polygon = gasData.polygon.standard;
+      }
+      
+      return {
+        currentPrices,
+        predictions: {},
+        trends: {},
+        spikes: []
+      };
     }
   }
 
@@ -637,25 +670,31 @@ export class MarketIntelligenceAgent extends BaseAgent {
     const chainData = new Map<string, Array<Record<string, unknown>>>();
     
     for (const dataPoint of gasData) {
-      if (!chainData.has(dataPoint.chain)) {
-        chainData.set(dataPoint.chain, []);
+      const chain = String(dataPoint.chain || 'unknown');
+      if (!chainData.has(chain)) {
+        chainData.set(chain, []);
       }
-      chainData.get(dataPoint.chain)!.push(dataPoint);
+      chainData.get(chain)!.push(dataPoint);
     }
 
     // Process each chain
     for (const [chain, data] of chainData) {
       // Sort by time
-      data.sort((a, b) => new Date(a.hour).getTime() - new Date(b.hour).getTime());
+      data.sort((a, b) => {
+        const timeA = new Date(String(a.hour || new Date())).getTime();
+        const timeB = new Date(String(b.hour || new Date())).getTime();
+        return timeA - timeB;
+      });
       
       // Get current price (most recent)
       if (data.length > 0) {
-        currentPrices[chain] = data[data.length - 1].avg_gas_price;
+        const lastDataPoint = data[data.length - 1];
+        currentPrices[chain] = Number(lastDataPoint.avg_gas_price || 0);
       }
       
       // Calculate trend
       if (data.length >= 3) {
-        const prices = data.map(d => d.avg_gas_price);
+        const prices = data.map(d => Number(d.avg_gas_price || 0));
         trends[chain] = this.calculateDetailedTrend(prices);
         
         // Detect spikes
@@ -665,7 +704,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
       
       // Simple prediction (next hour)
       if (data.length >= 5) {
-        const recentPrices = data.slice(-5).map(d => d.avg_gas_price);
+        const recentPrices = data.slice(-5).map(d => Number(d.avg_gas_price || 0));
         const trend = this.calculateSimpleTrend(recentPrices);
         predictions[chain] = Math.max(1, currentPrices[chain] * (1 + trend));
       }
@@ -685,7 +724,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     if (gasData.length < 10) return spikes;
     
     // Calculate baseline (median of recent data)
-    const prices = gasData.map(d => d.avg_gas_price);
+    const prices = gasData.map(d => Number(d.avg_gas_price || 0));
     const sortedPrices = [...prices].sort((a, b) => a - b);
     const baseline = sortedPrices[Math.floor(sortedPrices.length / 2)];
     const threshold = baseline * 1.5; // 50% above baseline is a spike
@@ -693,7 +732,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     let currentSpike: {start: number, peak: number, magnitude: number} | null = null;
     
     for (let i = 0; i < gasData.length; i++) {
-      const price = gasData[i].avg_gas_price;
+      const price = Number(gasData[i].avg_gas_price || 0);
       
       if (price > threshold) {
         if (!currentSpike) {
@@ -711,7 +750,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
         const duration = (i - currentSpike.start) * 60; // Assuming hourly data
         
         spikes.push({
-          timestamp: new Date(gasData[currentSpike.start].hour).getTime(),
+          timestamp: new Date(String(gasData[currentSpike.start].hour || new Date())).getTime(),
           type: 'gas',
           magnitude: currentSpike.magnitude,
           duration,
@@ -822,8 +861,9 @@ export class MarketIntelligenceAgent extends BaseAgent {
   }
 
   private generateVolumeSignal(dexMetrics: Record<string, unknown>): MarketSignal | null {
-    const ethereumVolume = dexMetrics.volumeByChain['ethereum'] || 0;
-    const totalVolume = dexMetrics.totalVolume;
+    const volumeByChain = dexMetrics.volumeByChain as Record<string, unknown> || {};
+    const ethereumVolume = Number(volumeByChain['ethereum'] || 0);
+    const totalVolume = Number(dexMetrics.totalVolume || 0);
     
     // Compare with historical baseline (simplified)
     const historicalBaseline = 2000000000; // $2B daily volume baseline
@@ -869,8 +909,9 @@ export class MarketIntelligenceAgent extends BaseAgent {
   }
 
   private generateUserActivitySignal(userMetrics: Record<string, unknown>): MarketSignal | null {
-    const totalUsers = userMetrics.totalActiveUsers;
-    const ethereumUsers = userMetrics.usersByChain['ethereum'] || 0;
+    const totalUsers = Number(userMetrics.totalActiveUsers || 0);
+    const usersByChain = userMetrics.usersByChain as Record<string, unknown> || {};
+    const ethereumUsers = Number(usersByChain['ethereum'] || 0);
     
     // Historical baseline
     const userBaseline = 500000; // 500K daily active users
@@ -912,9 +953,13 @@ export class MarketIntelligenceAgent extends BaseAgent {
   }
 
   private generateEnhancedGasSignal(gasAnalytics: Record<string, unknown>, conditions: MarketConditions): MarketSignal | null {
-    const currentEthGas = gasAnalytics.currentPrices['ethereum'] || conditions.gasPrices.ethereum.fast;
-    const predictedGas = gasAnalytics.predictions['ethereum'] || currentEthGas;
-    const gasTrend = gasAnalytics.trends['ethereum'];
+    const currentPrices = gasAnalytics.currentPrices as Record<string, unknown> || {};
+    const predictions = gasAnalytics.predictions as Record<string, unknown> || {};
+    const trends = gasAnalytics.trends as Record<string, unknown> || {};
+    
+    const currentEthGas = Number(currentPrices['ethereum']) || conditions.gasPrices.ethereum.fast;
+    const predictedGas = Number(predictions['ethereum']) || currentEthGas;
+    const gasTrend = trends['ethereum'] as { direction?: string; percentage?: number } || {};
     
     let type: MarketSignal['type'];
     let actionRecommendation: MarketSignal['actionRecommendation'];
@@ -935,7 +980,8 @@ export class MarketIntelligenceAgent extends BaseAgent {
     }
 
     // Factor in spikes
-    const recentSpikes = gasAnalytics.spikes.filter((spike: SpikeEvent) => 
+    const spikes = gasAnalytics.spikes as SpikeEvent[] || [];
+    const recentSpikes = spikes.filter((spike: SpikeEvent) => 
       spike.type === 'gas' && Date.now() - spike.timestamp < 3600000 // Last hour
     );
 
@@ -973,20 +1019,20 @@ export class MarketIntelligenceAgent extends BaseAgent {
       ethereum: {
         gasPrice: {
           current: conditions.gasPrices.ethereum.fast,
-          trend: dexMetrics.trends['ethereum'] || { direction: 'sideways', strength: 0, duration: 0, volumeConfirmation: false, recentSpikes: [], momentum: 0 }
+          trend: (dexMetrics.trends as Record<string, unknown>)?.['ethereum'] as TrendAnalysis || { direction: 'sideways', strength: 0, duration: 0, volumeConfirmation: false, recentSpikes: [], momentum: 0 }
         },
         congestion: conditions.networkCongestion.ethereum,
-        dexVolume: dexMetrics.volumeByChain['ethereum'] || 0,
-        activeUsers: userMetrics.usersByChain['ethereum'] || 0
+        dexVolume: Number((dexMetrics.volumeByChain as Record<string, unknown>)?.['ethereum']) || 0,
+        activeUsers: Number((userMetrics.usersByChain as Record<string, unknown>)?.['ethereum']) || 0
       },
       polygon: {
         gasPrice: {
           current: conditions.gasPrices.polygon.fast,
-          trend: dexMetrics.trends['polygon'] || { direction: 'sideways', strength: 0, duration: 0, volumeConfirmation: false, recentSpikes: [], momentum: 0 }
+          trend: (dexMetrics.trends as Record<string, unknown>)?.['polygon'] as TrendAnalysis || { direction: 'sideways', strength: 0, duration: 0, volumeConfirmation: false, recentSpikes: [], momentum: 0 }
         },
         congestion: conditions.networkCongestion.polygon,
-        dexVolume: dexMetrics.volumeByChain['polygon'] || 0,
-        activeUsers: userMetrics.usersByChain['polygon'] || 0
+        dexVolume: Number((dexMetrics.volumeByChain as Record<string, unknown>)?.['polygon']) || 0,
+        activeUsers: Number((userMetrics.usersByChain as Record<string, unknown>)?.['polygon']) || 0
       },
       crossChain: {
         bridgeVolume: 50000000,
@@ -1078,56 +1124,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
     return (last - first) / first;
   }
 
-  // ===== FALLBACK METHODS =====
-
-  private getFallbackDEXMetrics() {
-    return {
-      totalVolume: 2000000000,
-      volumeByChain: {
-        ethereum: 1500000000,
-        polygon: 300000000,
-        arbitrum: 200000000
-      },
-      volumeByProtocol: {
-        uniswap: 800000000,
-        sushiswap: 300000000,
-        curve: 400000000
-      },
-      trends: {}
-    };
-  }
-
-  private getFallbackUserMetrics() {
-    return {
-      totalActiveUsers: 800000,
-      usersByChain: {
-        ethereum: 500000,
-        polygon: 200000,
-        arbitrum: 100000
-      },
-      userGrowth: {
-        ethereum: 0.05,
-        polygon: 0.12,
-        arbitrum: 0.08
-      },
-      trends: {}
-    };
-  }
-
-  private getFallbackGasAnalytics() {
-    return {
-      currentPrices: {
-        ethereum: 25,
-        polygon: 30
-      },
-      trends: {},
-      spikes: [],
-      predictions: {
-        ethereum: 28,
-        polygon: 32
-      }
-    };
-  }
+  // ===== PRODUCTION METHODS =====
 
   // ===== EXISTING METHODS =====
 

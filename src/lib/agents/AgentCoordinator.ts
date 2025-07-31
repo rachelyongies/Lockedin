@@ -97,7 +97,7 @@ export class AgentCoordinator extends EventEmitter {
   
   // Pending response handlers for inter-agent communication
   private responseHandlers = new Map<string, {
-    resolve: (value: unknown) => void;
+    resolve: (value: ConsensusResponse) => void;
     reject: (error: Error) => void;
     timeout: NodeJS.Timeout;
   }>();
@@ -769,6 +769,21 @@ export class AgentCoordinator extends EventEmitter {
     return registry.priority * health * reliability * failurePenalty;
   }
 
+  // Initialize the coordinator (alias for start for compatibility)
+  async initialize(): Promise<void> {
+    await this.start();
+  }
+
+  // Handle incoming messages (route them appropriately)
+  async handleMessage(message: AgentMessage): Promise<void> {
+    await this.routeMessage(message);
+  }
+
+  // Shutdown the coordinator (alias for stop for compatibility)
+  async shutdown(): Promise<void> {
+    await this.stop();
+  }
+
   // System lifecycle management
   async start(): Promise<void> {
     if (this._isRunning) {
@@ -1000,13 +1015,14 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   private async handleConsensusMessage(message: AgentMessage): Promise<void> {
-    const { responseId, ...response } = message.payload;
+    const payload = message.payload as ConsensusResponse & { responseId: string };
+    const { responseId, ...response } = payload;
     
     const handler = this.responseHandlers.get(responseId);
     if (handler) {
       clearTimeout(handler.timeout);
       this.responseHandlers.delete(responseId);
-      handler.resolve(response);
+      handler.resolve(response as ConsensusResponse);
     }
   }
 
@@ -1017,13 +1033,15 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   private async handleErrorReport(message: AgentMessage): Promise<void> {
-    const { error, context } = message.payload;
+    const payload = message.payload as { error: string; context: Record<string, unknown> };
+    const { error, context } = payload;
     console.error(`📣 Error report from ${message.from}:`, error);
     this.emit('errorReport', { agentId: message.from, error, context });
   }
 
   private async handleAnalysisRequest(message: AgentMessage): Promise<void> {
-    const { type, data } = message.payload;
+    const payload = message.payload as { type: string; data: Record<string, unknown> };
+    const { type, data } = payload;
     
     switch (type) {
       case 'system-health':
@@ -1057,7 +1075,16 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   // System status methods
-  async getSystemHealth(): Promise<any> {
+  async getSystemHealth(): Promise<{
+    healthy: boolean;
+    totalAgents: number;
+    activeAgents: number;
+    unhealthyAgents: string[];
+    failedAgents: string[];
+    issues: string[];
+    timestamp: Date;
+    uptime: number;
+  }> {
     const unhealthyAgents: string[] = [];
     const failedAgents: string[] = [];
     const issues: string[] = [];

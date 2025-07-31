@@ -31,9 +31,9 @@ interface TaskContext {
   abortController: AbortController;
 }
 
-interface ResponseHandler {
+interface ResponseHandler<T = unknown> {
   requestId: string;
-  resolve: (value: unknown) => void;
+  resolve: (value: T | PromiseLike<T>) => void;
   reject: (error: Error) => void;
   timeout: NodeJS.Timeout;
 }
@@ -53,7 +53,7 @@ export abstract class BaseAgent extends EventEmitter {
   private taskMutex = new Mutex();
   
   // Response handling for inter-agent communication
-  private responseHandlers = new Map<string, ResponseHandler>();
+  private responseHandlers = new Map<string, ResponseHandler<unknown>>();
   
   // Retry configuration
   protected retryPolicy: RetryPolicy = {
@@ -399,7 +399,7 @@ export abstract class BaseAgent extends EventEmitter {
       // Register response handler
       this.responseHandlers.set(requestId, {
         requestId,
-        resolve,
+        resolve: resolve as (value: unknown) => void,
         reject,
         timeout
       });
@@ -408,7 +408,7 @@ export abstract class BaseAgent extends EventEmitter {
       this.sendMessage({
         to: targetAgent,
         type: requestType,
-        payload: { requestId, ...payload },
+        payload: { requestId, ...(payload as Record<string, unknown>) },
         priority: MessagePriority.MEDIUM
       });
     });
@@ -416,12 +416,13 @@ export abstract class BaseAgent extends EventEmitter {
 
   // Handle responses from other agents
   protected handleAgentResponse(message: AgentMessage): void {
-    if (message.type === MessageType.EXECUTION_RESULT && message.payload?.requestId) {
-      const handler = this.responseHandlers.get(message.payload.requestId);
+    const payload = message.payload as Record<string, unknown> | undefined;
+    if (message.type === MessageType.EXECUTION_RESULT && payload?.requestId) {
+      const handler = this.responseHandlers.get(String(payload.requestId));
       if (handler) {
         clearTimeout(handler.timeout);
-        this.responseHandlers.delete(message.payload.requestId);
-        handler.resolve(message.payload.data);
+        this.responseHandlers.delete(String(payload.requestId));
+        handler.resolve(payload.data);
       }
     }
   }

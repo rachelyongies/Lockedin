@@ -227,21 +227,22 @@ export class RiskAssessmentAgent extends BaseAgent {
   }
 
   async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
-    const { type, data } = task;
+    const taskObj = task as { type: string; data: Record<string, unknown> };
+    const { type, data } = taskObj;
     
     switch (type) {
       case 'assess-route-risk':
-        return await this.assessRouteRisk(data.route, data.marketConditions);
+        return await this.assessRouteRisk(data.route as RouteProposal, data.marketConditions as MarketConditions);
       case 'analyze-protocol-risk':
-        return await this.analyzeProtocolRisk(data.protocol);
+        return await this.analyzeProtocolRisk(data.protocol as string);
       case 'assess-token-risk':
-        return await this.assessTokenRisk(data.tokenAddress);
+        return await this.assessTokenRisk(data.tokenAddress as string);
       case 'market-risk-check':
-        return await this.assessMarketRisk(data.marketConditions);
+        return await this.assessMarketRisk(data.marketConditions as MarketConditions);
       case 'update-risk-profiles':
         return await this.updateRiskProfiles();
       case 'security-incident-analysis':
-        return await this.analyzeSecurityIncident(data.incident);
+        return await this.analyzeSecurityIncident(data.incident as SecurityIncident);
       default:
         throw new Error(`Unknown risk assessment task: ${type}`);
     }
@@ -261,7 +262,7 @@ export class RiskAssessmentAgent extends BaseAgent {
     const cacheKey = `${route.id}-${riskTolerance}-${marketConditions.timestamp}`;
     const cached = this.assessmentCache.get(cacheKey);
     
-    if (cached && Date.now() - (cached as { timestamp: number }).timestamp < 60000) { // 1 minute cache
+    if (cached && Date.now() - (cached as RouteRiskAnalysis & { timestamp: number }).timestamp < 60000) { // 1 minute cache
       return this.convertToRiskAssessment(cached, route.id);
     }
 
@@ -577,7 +578,7 @@ export class RiskAssessmentAgent extends BaseAgent {
       const centralizedRisk = await this.calculateCentralizationRisk(tokenAddress);
       const rugPullRisk = await this.calculateRugPullRisk(tokenAddress);
       const complianceRisk = await this.calculateComplianceRisk(tokenAddress);
-      const marketCapRisk = this.calculateMarketCapRisk(tokenInfo.marketCap || 0);
+      const marketCapRisk = this.calculateMarketCapRisk(Number((tokenInfo as Record<string, unknown>).marketCap) || 0);
       
       const riskFactors = {
         liquidityRisk,
@@ -596,7 +597,7 @@ export class RiskAssessmentAgent extends BaseAgent {
       
       return {
         address: tokenAddress,
-        symbol: tokenInfo.symbol || 'UNKNOWN',
+        symbol: String((tokenInfo as Record<string, unknown>).symbol) || 'UNKNOWN',
         overallRisk,
         riskFactors,
         riskFlags,
@@ -775,7 +776,8 @@ export class RiskAssessmentAgent extends BaseAgent {
       warnings.push('Cross-chain bridge risk - funds may be locked or lost');
     }
     
-    if (marketConditions.volatility.overall > 0.4) {
+    const volatility = marketConditions.volatility as { overall?: number };
+    if (volatility?.overall && volatility.overall > 0.4) {
       warnings.push('High market volatility increases execution risk');
     }
     
@@ -1066,7 +1068,7 @@ export class RiskAssessmentAgent extends BaseAgent {
     return [];
   }
 
-  private async getTokenInfo(tokenAddress: string): Promise<any> {
+  private async getTokenInfo(tokenAddress: string): Promise<Record<string, unknown>> {
     // Would fetch from token registry or chain
     return {
       symbol: 'TOKEN',
@@ -1197,18 +1199,19 @@ export class RiskAssessmentAgent extends BaseAgent {
 
   private async handleRiskAssessmentRequest(message: AgentMessage): Promise<void> {
     try {
-      const { type, data } = message.payload;
+      const payload = message.payload as { type: string; data: Record<string, unknown> };
+    const { type, data } = payload;
       let result;
       
       switch (type) {
         case 'route-risk':
-          result = await this.assessRouteRisk(data.route, data.marketConditions, data.riskTolerance);
+          result = await this.assessRouteRisk(data.route as RouteProposal, data.marketConditions as MarketConditions, data.riskTolerance as "conservative" | "moderate" | "aggressive" | undefined);
           break;
         case 'protocol-risk':
-          result = await this.analyzeProtocolRisk(data.protocol);
+          result = await this.analyzeProtocolRisk(data.protocol as string);
           break;
         case 'token-risk':
-          result = await this.assessTokenRisk(data.tokenAddress);
+          result = await this.assessTokenRisk(data.tokenAddress as string);
           break;
         default:
           throw new Error(`Unknown risk assessment type: ${type}`);
@@ -1227,11 +1230,12 @@ export class RiskAssessmentAgent extends BaseAgent {
 
   private async handleRouteRiskAnalysis(message: AgentMessage): Promise<void> {
     try {
-      const { routes, marketConditions } = message.payload;
+      const payload = message.payload as { routes: unknown[]; marketConditions: MarketConditions };
+    const { routes, marketConditions } = payload;
       const riskAssessments: RiskAssessment[] = [];
       
       for (const route of routes) {
-        const assessment = await this.assessRouteRisk(route, marketConditions);
+        const assessment = await this.assessRouteRisk(route as RouteProposal, marketConditions);
         riskAssessments.push(assessment);
       }
       
@@ -1247,10 +1251,12 @@ export class RiskAssessmentAgent extends BaseAgent {
   }
 
   private async handleMarketRiskUpdate(message: AgentMessage): Promise<void> {
-    const { marketConditions } = message.payload;
+    const payload = message.payload as { marketConditions: Record<string, unknown> };
+    const { marketConditions } = payload;
     
     // Update risk assessments based on new market data
-    if (marketConditions.volatility.overall > 0.4) {
+    const volatility = marketConditions.volatility as { overall?: number };
+    if (volatility?.overall && volatility.overall > 0.4) {
       // Clear cache during high volatility to ensure fresh assessments
       this.assessmentCache.clear();
     }
@@ -1390,7 +1396,7 @@ class ChainSecurityAPI {
 }
 
 class ImmuneFiAPI {
-  async getBugBountyInfo(protocol: string): Promise<any> {
+  async getBugBountyInfo(protocol: string): Promise<Record<string, unknown>> {
     return { active: true, maxReward: 1000000 };
   }
 }

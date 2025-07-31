@@ -119,7 +119,7 @@ export class DataAggregationService {
     alchemy?: string;
   };
 
-  private cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+  private cache = new Map<string, { data: unknown; timestamp: number; ttl: number }>();
   private readonly DEFAULT_CACHE_TTL = 30000; // 30 seconds
 
   // Token metadata mapping for proper ID conversion
@@ -270,7 +270,7 @@ export class DataAggregationService {
   async getFusionQuote(params: FusionQuoteParams, chainId: number = 1): Promise<FusionQuoteResponse> {
     const cacheKey = `fusion-quote-${JSON.stringify(params)}-${chainId}`;
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as FusionQuoteResponse;
 
     const url = `${this.INCH_BASE_URL}/fusion/quoter/v1.0/${chainId}/quote/receive`;
     
@@ -327,7 +327,7 @@ export class DataAggregationService {
   async getAvailableTokens(chainId: number = 1): Promise<Record<string, TokenInfo>> {
     const cacheKey = `tokens-${chainId}`;
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as Record<string, TokenInfo>;
 
     const url = `${this.INCH_BASE_URL}/swap/v5.0/${chainId}/tokens`;
     
@@ -370,7 +370,7 @@ export class DataAggregationService {
     const geckoIds = tokenIdentifiers.map(id => this.getGeckoId(id));
     const cacheKey = `prices-${geckoIds.join(',')}`;
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as Record<string, number>;
 
     const url = `${this.COINGECKO_BASE_URL}/simple/price`;
     const params = new URLSearchParams({
@@ -422,7 +422,12 @@ export class DataAggregationService {
   }> {
     const cacheKey = 'market-global';
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as {
+      totalMarketCap: number;
+      totalVolume: number;
+      marketCapChange24h: number;
+      dominance: Record<string, number>;
+    };
 
     const url = `${this.COINGECKO_BASE_URL}/global`;
     
@@ -462,7 +467,7 @@ export class DataAggregationService {
   async getProtocolLiquidity(): Promise<Record<string, number>> {
     const cacheKey = 'protocol-tvl';
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as Record<string, number>;
 
     const url = `${this.DEFILLAMA_BASE_URL}/protocols`;
 
@@ -477,8 +482,8 @@ export class DataAggregationService {
       const liquidity: Record<string, number> = {};
       
       // Focus on DEX protocols
-      const dexProtocols = protocols.filter((p: any) => 
-        p.category === 'Dexes' && p.tvl > 1000000 // Filter for DEXs with >$1M TVL
+      const dexProtocols = protocols.filter((p: Record<string, unknown>) => 
+        p.category === 'Dexes' && typeof p.tvl === 'number' && p.tvl > 1000000 // Filter for DEXs with >$1M TVL
       );
 
       for (const protocol of dexProtocols) {
@@ -496,7 +501,7 @@ export class DataAggregationService {
   async getChainTVL(): Promise<Record<string, number>> {
     const cacheKey = 'chain-tvl';
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as Record<string, number>;
 
     const url = `${this.DEFILLAMA_BASE_URL}/v2/chains`;
 
@@ -527,7 +532,7 @@ export class DataAggregationService {
   async getNetworkConditions(): Promise<MarketConditions> {
     const cacheKey = 'network-conditions';
     const cached = this.getFromCache(cacheKey);
-    if (cached) return cached;
+    if (cached) return cached as MarketConditions;
 
     try {
       const [marketData, chainTVL, prices] = await Promise.all([
@@ -824,13 +829,15 @@ export class DataAggregationService {
 
   // ===== UTILITY METHODS =====
 
-  private calculateCongestion(network: string, gasPrice: any): number {
+  private calculateCongestion(network: string, gasPrice: Record<string, unknown>): number {
     // Simple congestion calculation based on gas prices
     if (network === 'ethereum') {
-      const fast = gasPrice.fast;
-      if (fast > 100) return 0.9;
-      if (fast > 50) return 0.7;
-      if (fast > 25) return 0.5;
+      const fast = gasPrice.fast as number;
+      if (typeof fast === 'number') {
+        if (fast > 100) return 0.9;
+        if (fast > 50) return 0.7;
+        if (fast > 25) return 0.5;
+      }
       return 0.3;
     }
     return 0.3; // Default moderate congestion
@@ -869,7 +876,7 @@ export class DataAggregationService {
 
   // ===== CACHING SYSTEM =====
 
-  private getFromCache(key: string): any | null {
+  private getFromCache(key: string): unknown | null {
     const cached = this.cache.get(key);
     if (!cached) return null;
     
@@ -881,7 +888,7 @@ export class DataAggregationService {
     return cached.data;
   }
 
-  private setCache(key: string, data: any, ttl: number = this.DEFAULT_CACHE_TTL): void {
+  private setCache(key: string, data: unknown, ttl: number = this.DEFAULT_CACHE_TTL): void {
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
