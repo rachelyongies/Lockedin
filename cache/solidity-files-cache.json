@@ -587,6 +587,48 @@
       "artifacts": [
         "SolanaBridge"
       ]
+    },
+    "/Users/rachelyong/Desktop/Projects/chaincrossing/contracts/HTLC1inchEscrow.sol": {
+      "lastModificationDate": 1753928766698,
+      "contentHash": "4e2bdc74da0dd9d04cb8a8a1e6b0a623",
+      "sourceName": "contracts/HTLC1inchEscrow.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "viaIR": true,
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "@openzeppelin/contracts/access/Ownable.sol",
+        "@openzeppelin/contracts/utils/ReentrancyGuard.sol",
+        "@openzeppelin/contracts/token/ERC20/IERC20.sol",
+        "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.19"
+      ],
+      "artifacts": [
+        "HTLC1inchEscrow"
+      ]
     }
   }
 }

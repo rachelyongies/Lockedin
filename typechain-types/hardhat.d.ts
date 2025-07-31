@@ -50,7 +50,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.Fusion1inchBitcoinBridge__factory>;
     getContractFactory(
-
+      name: "HTLC1inchEscrow",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.HTLC1inchEscrow__factory>;
+    getContractFactory(
       name: "SolanaBridge",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.SolanaBridge__factory>;
@@ -63,12 +66,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.StellarBridge__factory>;
 
-    getContractFactory(
-      name: "Fusion1inchBitcoinBridge",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.Fusion1inchBitcoinBridge__factory>;
-
-
     getContractAt(
       name: "Ownable",
       address: string | ethers.Addressable,
@@ -115,6 +112,11 @@ declare module "hardhat/types/runtime" {
       signer?: ethers.Signer
     ): Promise<Contracts.Fusion1inchBitcoinBridge>;
     getContractAt(
+      name: "HTLC1inchEscrow",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.HTLC1inchEscrow>;
+    getContractAt(
       name: "SolanaBridge",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
@@ -129,11 +131,7 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.StellarBridge>;
-    getContractAt(
-      name: "Fusion1inchBitcoinBridge",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.Fusion1inchBitcoinBridge>;
+
     deployContract(
       name: "Ownable",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -171,6 +169,10 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Fusion1inchBitcoinBridge>;
     deployContract(
+      name: "HTLC1inchEscrow",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.HTLC1inchEscrow>;
+    deployContract(
       name: "SolanaBridge",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.SolanaBridge>;
@@ -182,10 +184,7 @@ declare module "hardhat/types/runtime" {
       name: "StellarBridge",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.StellarBridge>;
-    deployContract(
-      name: "Fusion1inchBitcoinBridge",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.Fusion1inchBitcoinBridge>;
+
     deployContract(
       name: "Ownable",
       args: any[],
@@ -232,6 +231,11 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.Fusion1inchBitcoinBridge>;
     deployContract(
+      name: "HTLC1inchEscrow",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.HTLC1inchEscrow>;
+    deployContract(
       name: "SolanaBridge",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -246,13 +250,6 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.StellarBridge>;
-
-    deployContract(
-      name: "Fusion1inchBitcoinBridge",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.Fusion1inchBitcoinBridge>;
-
 
     // default types
     getContractFactory(

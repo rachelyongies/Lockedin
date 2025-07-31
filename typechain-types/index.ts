@@ -24,6 +24,8 @@ export type { BitcoinBridge } from "./contracts/BitcoinBridge";
 export { BitcoinBridge__factory } from "./factories/contracts/BitcoinBridge__factory";
 export type { Fusion1inchBitcoinBridge } from "./contracts/Fusion1inchBitcoinBridge";
 export { Fusion1inchBitcoinBridge__factory } from "./factories/contracts/Fusion1inchBitcoinBridge__factory";
+export type { HTLC1inchEscrow } from "./contracts/HTLC1inchEscrow";
+export { HTLC1inchEscrow__factory } from "./factories/contracts/HTLC1inchEscrow__factory";
 export type { SolanaBridge } from "./contracts/SolanaBridge";
 export { SolanaBridge__factory } from "./factories/contracts/SolanaBridge__factory";
 export type { StarknetBridge } from "./contracts/StarknetBridge";
