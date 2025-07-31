@@ -189,12 +189,16 @@ export class EnhancedFusionService {
         savings: data.savings || '2.3' // 1inch typically 2-3% better
       };
     } catch (error) {
-      // Mock competitor data showing 1inch advantage
-      return {
-        uniswap: { rate: '0.95', gasCost: '0.01' },
-        sushiswap: { rate: '0.94', gasCost: '0.012' },
-        savings: '2.3' // 1inch advantage
-      };
+      console.error('🚨 Competitor Analysis FAILED - Real Data Required:', {
+        error: error instanceof Error ? error.message : error,
+        timestamp: new Date().toISOString(),
+        details: 'Competitor rate comparison not implemented - requires real DEX API integration'
+      });
+      
+      throw new Error(
+        `Competitor analysis failed: Cannot fetch competitor rates without real DEX API integration. ` +
+        `Error: ${error instanceof Error ? error.message : 'Unknown error'}. Real-time rate comparison required.`
+      );
     }
   }
 

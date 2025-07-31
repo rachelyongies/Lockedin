@@ -598,16 +598,13 @@ export class RouteDiscoveryAgent extends BaseAgent {
   async initialize(): Promise<void> {
     console.log('🛣️ Initializing Enhanced Route Discovery Agent with Fusion integration...');
     
-    // Build initial routing graph
-    await this.buildRoutingGraph();
+    // Defer heavy operations for faster startup
+    console.log('⚡ Using lazy initialization for faster startup');
     
-    // 🚀 Parallelized slippage model initialization
-    await this.initializeSlippageModelsParallel();
-    
-    // Start liquidity monitoring
+    // Start liquidity monitoring (lightweight)
     this.startLiquidityMonitoring();
     
-    console.log(`✅ Route Discovery Agent initialized with ${this.routingGraph.nodes.size} tokens, ${Array.from(this.routingGraph.edges.values()).flat().length} pools, ${this.routingGraph.fusionCompatibilityCache.size} Fusion compatibility entries`);
+    console.log(`✅ Route Discovery Agent initialized with lazy loading enabled`);
   }
 
   async processMessage(message: AgentMessage, signal: AbortSignal): Promise<void> {
@@ -1172,7 +1169,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
   }
 
   private async buildProtocolEdges(chainId: number): Promise<void> {
-    const protocols = ['uniswap-v2', 'uniswap-v3', 'sushiswap', 'curve', 'balancer'];
+    const protocols = this.getAvailableProtocols(chainId);
     
     for (const protocol of protocols) {
       try {
@@ -1300,18 +1297,234 @@ export class RouteDiscoveryAgent extends BaseAgent {
   }
 
   private async getProtocolPools(protocol: string, chainId: number): Promise<Array<Record<string, unknown>>> {
-    // Mock implementation - would fetch from protocol APIs
-    return [
-      {
-        id: `${protocol}-pool-1`,
-        token0: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-        token1: '0xA0b86a33E6441E3e3f4069b80b0c0ee29C5b7e09',
-        liquidityUSD: 10000000,
-        fee: 0.003,
-        reliability: 0.9
+    console.log(`🔍 Fetching pools for ${protocol} on chain ${chainId}...`);
+    
+    try {
+      // Check cache first
+      const { CacheService, CacheKeys, CacheTTL } = await import('../services/CacheService');
+      const cache = CacheService.getInstance();
+      const cacheKey = CacheKeys.defiLlamaPool(protocol, chainId);
+      
+      const cachedData = cache.getWithStats<Array<Record<string, unknown>>>(cacheKey);
+      if (cachedData) {
+        console.log(`⚡ Using cached pool data for ${protocol} on chain ${chainId}`);
+        return cachedData;
       }
-    ];
+      // Try DeFiLlama yields API for pool data
+      const protocolId = this.mapProtocolToDefiLlamaId(protocol);
+      if (protocolId) {
+        const { ApiClients } = await import('../services/HttpConnectionManager');
+        const response = await ApiClients.defillama.get(`https://yields.llama.fi/pools`);
+        if (response.ok) {
+          const allPools = await response.json();
+          const protocolPools = allPools.data?.filter((pool: any) => 
+            pool.project === protocolId && 
+            pool.chain === this.getDefiLlamaChainName(chainId)
+          ) || [];
+          
+          if (protocolPools.length > 0) {
+            console.log(`✅ Found ${protocolPools.length} pools for ${protocol}`);
+            const limitedPools = protocolPools.slice(0, 20); // Limit to top 20 pools
+            
+            // Cache the result
+            cache.set(cacheKey, limitedPools, CacheTTL.POOL_DATA);
+            
+            return limitedPools;
+          }
+        }
+      }
+      
+      // Alternative: Try protocol-specific TVL endpoint
+      if (protocolId) {
+        const { ApiClients } = await import('../services/HttpConnectionManager');
+        const response = await ApiClients.defillama.get(`https://api.llama.fi/protocol/${protocolId}`);
+        if (response.ok) {
+          const protocolData = await response.json();
+          const chainName = this.getDefiLlamaChainName(chainId);
+          if (protocolData.chains && protocolData.chains[chainName]) {
+            console.log(`✅ Found protocol data for ${protocol} on ${chainName}`);
+            const protocolPool = [{
+              id: `${protocolId}_${chainId}`,
+              protocol: protocolId,
+              chain: chainName,
+              tvl: protocolData.chains[chainName],
+              category: protocolData.category
+            }];
+            
+            // Cache the result
+            cache.set(cacheKey, protocolPool, CacheTTL.POOL_DATA);
+            
+            return protocolPool;
+          }
+        }
+      }
+      
+      // Try Bitcoin DeFi protocols if it's a Bitcoin chain
+      if (this.isBitcoinChain(chainId)) {
+        const btcPools = await this.getBitcoinDeFiPools(protocol);
+        if (btcPools.length > 0) {
+          console.log(`✅ Found ${btcPools.length} Bitcoin DeFi pools for ${protocol}`);
+          return btcPools;
+        }
+      }
+      
+      console.warn(`⚠️ No pool data available for ${protocol} on chain ${chainId}`);
+      return [];
+      
+    } catch (error) {
+      console.warn(`⚠️ Failed to fetch pools for ${protocol}:`, error);
+      return [];
+    }
   }
+  
+  private mapProtocolToDefiLlamaId(protocol: string): string | null {
+    const mapping: Record<string, string> = {
+      'uniswap-v2': 'uniswap-v2',
+      'uniswap-v3': 'uniswap-v3', 
+      'sushiswap': 'sushiswap',
+      'curve': 'curve-dex',
+      'balancer': 'balancer-v2',
+      'pancakeswap': 'pancakeswap',
+      'compound': 'compound-v3',
+      'aave': 'aave-v3',
+      'maker': 'makerdao',
+      'yearn': 'yearn-finance',
+      // Chain-specific protocols
+      'quickswap': 'quickswap',
+      'trader-joe': 'trader-joe',
+      'spookyswap': 'spookyswap'
+    };
+    return mapping[protocol] || null;
+  }
+  
+  private getChainName(chainId: number): string {
+    const chainNames: Record<number, string> = {
+      1: 'Ethereum',
+      56: 'BSC', 
+      137: 'Polygon',
+      250: 'Fantom',
+      43114: 'Avalanche',
+      42161: 'Arbitrum',
+      10: 'Optimism',
+      // Bitcoin networks
+      0: 'Bitcoin', // Mainnet
+      8332: 'Bitcoin', // Alternative ID
+      8333: 'Bitcoin' // Another common ID
+    };
+    return chainNames[chainId] || 'Ethereum';
+  }
+  
+  private getDefiLlamaChainName(chainId: number): string {
+    // DeFiLlama uses different chain names
+    const defiLlamaChains: Record<number, string> = {
+      1: 'Ethereum',
+      56: 'BSC',
+      137: 'Polygon', 
+      250: 'Fantom',
+      43114: 'Avalanche',
+      42161: 'Arbitrum',
+      10: 'Optimism',
+      0: 'Bitcoin'
+    };
+    return defiLlamaChains[chainId] || 'Ethereum';
+  }
+  
+  private getAvailableProtocols(chainId: number): string[] {
+    // Chain-specific protocol availability
+    const protocolsByChain: Record<number, string[]> = {
+      // Ethereum - all protocols available
+      1: ['uniswap-v2', 'uniswap-v3', 'sushiswap', 'curve', 'balancer', 'compound', 'aave'],
+      
+      // Polygon - no Uniswap V2, but has QuickSwap (Uniswap V2 fork)
+      137: ['uniswap-v3', 'sushiswap', 'curve', 'balancer', 'quickswap', 'aave'],
+      
+      // BSC - PancakeSwap dominant
+      56: ['pancakeswap', 'sushiswap', 'curve', 'uniswap-v3'],
+      
+      // Arbitrum - L2 protocols
+      42161: ['uniswap-v3', 'sushiswap', 'curve', 'balancer', 'aave'],
+      
+      // Optimism - L2 protocols  
+      10: ['uniswap-v3', 'sushiswap', 'curve', 'aave'],
+      
+      // Avalanche
+      43114: ['uniswap-v3', 'sushiswap', 'curve', 'aave', 'trader-joe'],
+      
+      // Fantom
+      250: ['sushiswap', 'curve', 'spookyswap']
+    };
+    
+    return protocolsByChain[chainId] || ['uniswap-v3', 'sushiswap', 'curve'];
+  }
+  
+  private isBitcoinChain(chainId: number): boolean {
+    return [0, 8332, 8333].includes(chainId);
+  }
+  
+  private async getBitcoinDeFiPools(protocol: string): Promise<Array<Record<string, unknown>>> {
+    console.log(`🔍 Fetching Bitcoin DeFi pools for ${protocol}...`);
+    
+    try {
+      // Try Stacks DeFi for Bitcoin-based protocols
+      if (protocol.includes('stacks') || protocol.includes('bitcoin')) {
+        const stacksPools = await this.getStacksDeFiPools();
+        if (stacksPools.length > 0) return stacksPools;
+      }
+      
+      // Try Lightning Network data
+      const lightningPools = await this.getLightningNetworkData(protocol);
+      if (lightningPools.length > 0) return lightningPools;
+      
+      console.warn(`⚠️ No Bitcoin DeFi data available for ${protocol}`);
+      return [];
+      
+    } catch (error) {
+      console.warn(`⚠️ Failed to fetch Bitcoin DeFi pools:`, error);
+      return [];
+    }
+  }
+  
+  private async getStacksDeFiPools(): Promise<Array<Record<string, unknown>>> {
+    try {
+      // Stacks API for Bitcoin DeFi protocols
+      const response = await fetch('https://api.stacksapi.co/v1/info/pools');
+      if (response.ok) {
+        const data = await response.json();
+        return data.pools || [];
+      }
+    } catch (error) {
+      console.warn('Failed to fetch Stacks DeFi pools:', error);
+    }
+    return [];
+  }
+  
+  private async getLightningNetworkData(protocol: string): Promise<Array<Record<string, unknown>>> {
+    try {
+      // Lightning Network statistics (1ML.com API)
+      const response = await fetch('https://1ml.com/json');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.channels) {
+          return [{
+            id: `lightning_${protocol}`,
+            protocol: 'lightning-network',
+            type: 'payment_channel',
+            capacity: data.total_capacity,
+            channels: data.channels,
+            nodes: data.nodes
+          }];
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to fetch Lightning Network data:', error);
+    }
+    return [];
+  }
+  
+  private isOneInchSupported(chainId: number): boolean {
+    return [1, 56, 137, 250, 43114, 42161, 10].includes(chainId);
+  }
+  
 
   private startLiquidityMonitoring(): void {
     this.liquidityMonitor = setInterval(async () => {

@@ -9,6 +9,7 @@ import { PerformanceMonitorAgent } from '../agents/PerformanceMonitorAgent';
 import { SecurityAgent } from '../agents/SecurityAgent';
 import { DataAggregationService } from './DataAggregationService';
 import { DecisionEngine } from './DecisionEngine';
+import { fusionAPI } from './1inch-fusion';
 import { 
   RouteProposal, 
   RiskAssessment, 
@@ -45,6 +46,14 @@ export class AIAgentBridgeService {
   private dataService: DataAggregationService;
   private decisionEngine: DecisionEngine;
   private initialized = false;
+  
+  // Performance monitoring
+  private performanceMetrics = {
+    totalAnalyses: 0,
+    averageResponseTime: 0,
+    cacheHitRate: 0,
+    successRate: 0
+  };
 
   private constructor() {
     // Initialize data service with API keys from environment
@@ -103,7 +112,7 @@ export class AIAgentBridgeService {
         dependencies: [],
         maxConcurrentTasks: 5,
         timeout: 15000
-      }, this.dataService, process.env.DUNE_API_KEY);
+      }, this.dataService, undefined); // API keys should be handled server-side only
 
       const executionStrategyAgent = new ExecutionStrategyAgent(this.dataService);
 
@@ -142,8 +151,11 @@ export class AIAgentBridgeService {
     fromToken: Token,
     toToken: Token,
     amount: string,
-    walletAddress: string
+    walletAddress?: string
   ): Promise<AIAgentAnalysis> {
+    const startTime = Date.now();
+    this.performanceMetrics.totalAnalyses++;
+    
     if (!this.initialized) {
       await this.initialize();
     }
@@ -163,7 +175,7 @@ export class AIAgentBridgeService {
           fromToken: fromTokenAddress,
           toToken: toTokenAddress,
           amount,
-          fromAddress: walletAddress,
+          fromAddress: walletAddress || '0x0000000000000000000000000000000000000000', // Use zero address for analysis without wallet
           chainId: this.getChainId(fromToken.network)
         },
         timestamp: Date.now(),
@@ -173,29 +185,56 @@ export class AIAgentBridgeService {
       // Send request to coordinator for real agent analysis
       await this.coordinator.handleMessage(analysisRequest);
 
-      // Generate real route proposals using current market data
-      console.log('🔍 Generating real routes using market data...');
-      const routes = await this.generateRealRoutes(fromTokenAddress, toTokenAddress, amount, walletAddress);
+      // Parallel execution for better performance
+      console.log('⚡ AI Agent Bridge - Starting parallel route analysis...');
+      console.log('🔍 Analysis details:', {
+        fromToken: fromToken.symbol,
+        toToken: toToken.symbol,
+        amount,
+        hasWallet: !!walletAddress,
+        walletAddress: walletAddress?.slice(0, 6) + '...' + walletAddress?.slice(-4) || 'none',
+        canUseFusionAPI: !!walletAddress && walletAddress !== '0x0000000000000000000000000000000000000000'
+      });
+      
+      const analysisStart = Date.now();
 
-      // Get real risk assessments using actual market data
-      const riskAssessments: RiskAssessment[] = [];
+      // Step 1: Generate routes and market conditions in parallel
+      // Pass original token objects, not addresses, for proper Fusion API integration
+      const [routes, marketConditions] = await Promise.all([
+        this.generateRealRoutes(fromToken, toToken, amount, walletAddress || '0x0000000000000000000000000000000000000000'),
+        this.dataService.getNetworkConditions()
+      ]);
+
+      console.log(`⚡ Route generation completed in ${Date.now() - analysisStart}ms`);
+
+      // Step 2: If we have routes, process risk assessments and execution strategy in parallel
+      let riskAssessments: RiskAssessment[] = [];
+      let executionStrategy: ExecutionStrategy;
+
       if (routes.length > 0) {
-        for (const route of routes) {
-          const riskAssessment = await this.generateRealRiskAssessment(route);
-          riskAssessments.push(riskAssessment);
-        }
+        const [riskResults, execStrategy] = await Promise.all([
+          // Parallel risk assessment for all routes
+          Promise.all(routes.map(route => this.generateRealRiskAssessment(route))),
+          // Execution strategy for best route
+          this.generateRealExecutionStrategy(routes[0])
+        ]);
+        
+        riskAssessments = riskResults;
+        executionStrategy = execStrategy;
+      } else {
+        executionStrategy = await this.generateDefaultExecutionStrategy();
       }
 
-      // Get real execution strategy using current market conditions
-      const executionStrategy: ExecutionStrategy = routes.length > 0 
-        ? await this.generateRealExecutionStrategy(routes[0])
-        : await this.generateDefaultExecutionStrategy();
-
-      // Get real market conditions from DataAggregationService
-      const marketConditions = await this.dataService.getNetworkConditions();
+      console.log(`⚡ Total analysis completed in ${Date.now() - analysisStart}ms`);
 
       // Generate insights based on agent analysis
       const insights = this.generateInsights(routes, riskAssessments, executionStrategy);
+
+      // Update performance metrics
+      const responseTime = Date.now() - startTime;
+      this.updatePerformanceMetrics(responseTime, true);
+
+      console.log(`⚡ Route analysis completed in ${responseTime}ms`);
 
       return {
         routes,
@@ -206,8 +245,59 @@ export class AIAgentBridgeService {
         insights
       };
     } catch (error) {
-      console.error('AI Agent analysis failed:', error);
-      throw error;
+      console.error('🚨 AI Agent Analysis FAILED - Real Data Required:', {
+        error: error instanceof Error ? error.message : error,
+        fromToken: fromToken?.symbol,
+        toToken: toToken?.symbol,
+        amount,
+        walletAddress,
+        timestamp: new Date().toISOString(),
+        apiKeys: {
+          oneInch: !!process.env.NEXT_PUBLIC_1INCH_API_KEY,
+          alchemy: !!process.env.ALCHEMY_API_KEY,
+          coinGecko: !!process.env.COINGECKO_API_KEY,
+          infura: !!process.env.INFURA_API_KEY
+        },
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      
+      // Update performance metrics for failed request
+      const responseTime = Date.now() - startTime;
+      this.updatePerformanceMetrics(responseTime, false);
+      
+      throw new Error(
+        `AI Analysis Failed: Cannot proceed without real market data. ` +
+        `Error: ${error instanceof Error ? error.message : 'API connection failed'}. ` +
+        `Check API key configuration and network connectivity.`
+      );
+    }
+  }
+
+  private updatePerformanceMetrics(responseTime: number, success: boolean): void {
+    // Update average response time
+    const totalTime = this.performanceMetrics.averageResponseTime * (this.performanceMetrics.totalAnalyses - 1);
+    this.performanceMetrics.averageResponseTime = (totalTime + responseTime) / this.performanceMetrics.totalAnalyses;
+    
+    // Update success rate
+    const totalSuccesses = this.performanceMetrics.successRate * (this.performanceMetrics.totalAnalyses - 1);
+    const newSuccesses = success ? totalSuccesses + 1 : totalSuccesses;
+    this.performanceMetrics.successRate = newSuccesses / this.performanceMetrics.totalAnalyses;
+  }
+
+  // Get performance metrics for monitoring
+  getPerformanceMetrics() {
+    return {
+      ...this.performanceMetrics,
+      cacheStats: this.getCacheStats()
+    };
+  }
+
+  private async getCacheStats() {
+    try {
+      const { CacheService } = await import('./CacheService');
+      return CacheService.getInstance().getStats();
+    } catch {
+      return { error: 'Cache service not available' };
     }
   }
 
@@ -244,19 +334,19 @@ export class AIAgentBridgeService {
         }
       };
     } catch (error) {
-      console.error('Failed to get agent predictions:', error);
-      // Return fallback predictions
-      return {
-        optimalSlippage: 0.005,
-        predictedGasCost: '30',
-        successProbability: 0.85,
-        estimatedTime: 300,
-        mevProtection: {
-          enabled: true,
-          strategy: 'private-mempool',
-          estimatedProtection: 0.8
-        }
-      };
+      console.error('🚨 ML Predictions FAILED - Real Data Required:', {
+        error: error instanceof Error ? error.message : error,
+        fromToken: fromToken?.symbol,
+        toToken: toToken?.symbol,
+        amount,
+        timestamp: new Date().toISOString(),
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      
+      throw new Error(
+        `ML Predictions Failed: Cannot generate predictions without real market data. ` +
+        `Error: ${error instanceof Error ? error.message : 'Data service unavailable'}.`
+      );
     }
   }
 
@@ -494,34 +584,101 @@ export class AIAgentBridgeService {
 
   // Generate real route proposals using current market data
   private async generateRealRoutes(
-    fromToken: string, 
-    toToken: string, 
+    fromToken: Token, 
+    toToken: Token, 
     amount: string, 
     fromAddress: string
   ): Promise<RouteProposal[]> {
     try {
+      console.log('🤖 AI Agent Bridge - Generating real routes');
+      console.log('📊 Route parameters:', {
+        fromToken: fromToken.symbol,
+        toToken: toToken.symbol,
+        amount,
+        fromAddress: fromAddress?.slice(0, 6) + '...' + fromAddress?.slice(-4),
+        willUseFusionAPI: fromAddress !== '0x0000000000000000000000000000000000000000'
+      });
+
       // Get real liquidity data
       const liquidity = await this.dataService.getProtocolLiquidity();
       const gasPrices = await this.dataService.getGasPrices();
       
+      console.log('📈 Market data retrieved:', {
+        liquidityProtocols: Object.keys(liquidity).length,
+        topProtocols: Object.entries(liquidity).sort(([,a], [,b]) => b - a).slice(0, 3).map(([name, tvl]) => `${name}: $${(tvl/1000000).toFixed(0)}M`),
+        gasAvailable: !!gasPrices.ethereum
+      });
+      
       const routes: RouteProposal[] = [];
       
-      // Generate routes based on real DEX liquidity
+      // Check if we should try Fusion API first (real wallet address provided)
+      const shouldTryFusionAPI = fromAddress && fromAddress !== '0x0000000000000000000000000000000000000000';
+      
+      console.log('🔄 AI Agent Bridge - Route generation strategy:', {
+        strategy: shouldTryFusionAPI ? 'FUSION_API_FIRST' : 'FALLBACK_ONLY',
+        reason: shouldTryFusionAPI ? 'Real wallet address provided' : 'No wallet or demo mode'
+      });
+
+      if (shouldTryFusionAPI) {
+        console.log('🚀 AI Agent Bridge - Attempting 1inch Fusion API integration');
+        try {
+          // Use the Token objects directly (no need to convert from symbols)
+          console.log('🔄 AI Agent Bridge - Calling 1inch Fusion API...');
+          const fusionQuote = await fusionAPI.getQuote(fromToken, toToken, amount, fromAddress);
+          
+          console.log('🎯 AI Agent Bridge - Fusion API success! Converting to RouteProposal...');
+          
+          // Convert Fusion quote to RouteProposal
+          const fusionRoute: RouteProposal = {
+            id: `fusion-${fusionQuote.id}`,
+            fromToken: fromToken.symbol,
+            toToken: toToken.symbol,
+            amount,
+            estimatedOutput: fusionQuote.toAmount,
+            path: [{
+              protocol: '1inch Fusion',
+              fromToken: fromToken.symbol,
+              toToken: toToken.symbol,
+              amount,
+              estimatedOutput: fusionQuote.toAmount,
+              fee: fusionQuote.protocolFee
+            }],
+            estimatedGas: fusionQuote.networkFee,
+            estimatedTime: 180, // 3 minutes average for Fusion
+            priceImpact: fusionQuote.priceImpact,
+            confidence: 0.95, // High confidence for 1inch data
+            risks: ['MEV exposure', 'Network congestion'],
+            advantages: ['Best price execution', 'MEV protection', 'Professional market makers'],
+            proposedBy: 'fusion-api'
+          };
+          
+          routes.push(fusionRoute);
+          console.log('✅ AI Agent Bridge - Fusion route added successfully');
+          
+        } catch (fusionError) {
+          console.log('❌ AI Agent Bridge - Fusion API failed, using fallback:', fusionError);
+        }
+      }
+      
+      // Generate routes based on real DEX liquidity (fallback/primary method)
+      console.log('📊 AI Agent Bridge - Using DEX liquidity data for route generation');
       const topDexes = Object.entries(liquidity)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 3); // Top 3 DEXs by liquidity
       
+      console.log('🏆 Top DEXs selected:', topDexes.map(([name, tvl]) => `${name}: $${(tvl/1000000).toFixed(0)}M TVL`));
+      
       for (const [protocol, tvl] of topDexes) {
         const route: RouteProposal = {
           id: `route-${protocol}-${Date.now()}`,
-          fromToken,
-          toToken,
+          fromToken: fromToken.symbol,
+          toToken: toToken.symbol,
           amount,
           estimatedOutput: this.calculateRealOutput(amount, protocol, tvl),
           path: [{
             protocol: this.formatProtocolName(protocol),
-            fromToken,
-            toToken,
+            fromToken: fromToken.symbol,
+            toToken: toToken.symbol,
             amount,
             estimatedOutput: this.calculateRealOutput(amount, protocol, tvl),
             fee: this.getProtocolFee(protocol)
@@ -537,9 +694,21 @@ export class AIAgentBridgeService {
         routes.push(route);
       }
       
+      console.log('✅ AI Agent Bridge - Route generation completed');
+      console.log('📋 Generated routes summary:', {
+        totalRoutes: routes.length,
+        protocols: routes.map(r => r.path[0]?.protocol).join(', '),
+        estimatedOutputs: routes.map(r => `${r.estimatedOutput} ${toToken.symbol}`),
+        dataSource: shouldTryFusionAPI ? 'Mixed (Fusion + DEX data)' : 'DEX liquidity data only'
+      });
+      
       return routes;
     } catch (error) {
-      console.error('Failed to generate real routes:', error);
+      console.error('❌ AI Agent Bridge - Route generation failed:', error);
+      console.error('🚨 Error details:', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined
+      });
       return [];
     }
   }
@@ -598,6 +767,72 @@ export class AIAgentBridgeService {
       contingencyPlans: ['Revert to standard DEX'],
       strategyBy: 'execution-strategy-001'
     };
+  }
+
+  // Helper method to create Token objects from symbols for Fusion API
+  private createTokenFromSymbol(symbol: string): Token {
+    // Token mapping for Fusion API compatibility
+    const tokenMap: Record<string, Partial<Token>> = {
+      'BTC': {
+        id: 'btc-ethereum',
+        symbol: 'WBTC', // Use WBTC for BTC on Ethereum
+        name: 'Wrapped Bitcoin',
+        network: 'ethereum',
+        chainId: 1,
+        address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+        decimals: 8,
+        isNative: false,
+        isWrapped: true
+      },
+      'ETH': {
+        id: 'eth-ethereum',
+        symbol: 'ETH',
+        name: 'Ethereum',
+        network: 'ethereum',
+        chainId: 1,
+        address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE',
+        decimals: 18,
+        isNative: true,
+        isWrapped: false
+      },
+      'USDT': {
+        id: 'usdt-ethereum',
+        symbol: 'USDT',
+        name: 'Tether',
+        network: 'ethereum',
+        chainId: 1,
+        address: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+        decimals: 6,
+        isNative: false,
+        isWrapped: false
+      },
+      'USDC': {
+        id: 'usdc-ethereum',
+        symbol: 'USDC',
+        name: 'USD Coin',
+        network: 'ethereum',
+        chainId: 1,
+        address: '0xa0b86a33e6441b8c4c8c8c8c8c8c8c8c8c8c8c8c',
+        decimals: 6,
+        isNative: false,
+        isWrapped: false
+      }
+    };
+    
+    const tokenData = tokenMap[symbol];
+    if (!tokenData) {
+      throw new Error(`Token ${symbol} not supported for Fusion API`);
+    }
+    
+    return {
+      logoUrl: '',
+      coingeckoId: symbol.toLowerCase(),
+      verified: true,
+      displayPrecision: 4,
+      description: `${tokenData.name} token`,
+      tags: [],
+      ...tokenData
+    } as Token;
   }
 
   // Helper methods for real data calculations

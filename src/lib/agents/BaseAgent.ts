@@ -550,8 +550,9 @@ export abstract class BaseAgent extends EventEmitter {
       issues.push(`Agent status is ${this.status}`);
     }
     
-    if (this.metrics.successRate < 0.8) {
-      issues.push(`Low success rate: ${(this.metrics.successRate * 100).toFixed(1)}%`);
+    // More lenient success rate check - only flag if we have data and it's poor
+    if (this.metrics.totalMessages > 5 && this.metrics.successRate < 0.7) {
+      issues.push(`Low success rate: ${(this.metrics.successRate * 100).toFixed(1)}% (${this.metrics.totalMessages} messages)`);
     }
     
     if (this.circuitBreaker.isOpen) {
@@ -574,8 +575,23 @@ export abstract class BaseAgent extends EventEmitter {
       issues.push(`High task load: ${this.activeTasks.size}/${this.config.maxConcurrentTasks}`);
     }
     
+    const isHealthy = issues.length === 0;
+    
+    // Log health status for debugging (only for unhealthy agents)
+    if (!isHealthy) {
+      console.log(`🔍 Health check for ${this.config.name}:`, {
+        status: this.status,
+        circuitBreakerOpen: this.circuitBreaker.isOpen,
+        successRate: this.metrics.successRate,
+        totalMessages: this.metrics.totalMessages,
+        lastActivity: new Date(this.metrics.lastActivity).toISOString(),
+        activeTasks: this.activeTasks.size,
+        issues
+      });
+    }
+    
     return {
-      healthy: issues.length === 0,
+      healthy: isHealthy,
       issues
     };
   }
@@ -608,9 +624,15 @@ export abstract class BaseAgent extends EventEmitter {
   }
 
   isHealthy(): boolean {
+    // Agent is healthy if:
+    // 1. Status is ACTIVE
+    // 2. Circuit breaker is closed
+    // 3. Either no failures recorded OR success rate > 0.7 (more lenient)
+    const hasGoodSuccessRate = this.metrics.totalMessages === 0 || this.metrics.successRate > 0.7;
+    
     return this.status === AgentStatus.ACTIVE && 
-           this.metrics.successRate > 0.8 && 
-           !this.circuitBreaker.isOpen;
+           !this.circuitBreaker.isOpen &&
+           hasGoodSuccessRate;
   }
 
   // Event setup

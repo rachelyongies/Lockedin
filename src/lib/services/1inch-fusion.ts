@@ -224,7 +224,7 @@ async function fetchWithRetry(
 
 // Token address mapping for 1inch
 const TOKEN_ADDRESS_MAP: Record<string, string> = {
-  // Ethereum Mainnet
+  // Ethereum Mainnet - Use the correct native ETH address for 1inch
   'ETH': '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE',
   'WETH': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   'WBTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
@@ -236,8 +236,20 @@ const TOKEN_ADDRESS_MAP: Record<string, string> = {
   'WBTC_GOERLI': '0x45AC1a6661fD0D4ec7Bf9aE58a9F63A7E2b51e73',
 };
 
+// Convert amount to wei (smallest unit) for API calls
+function toWei(amount: string, decimals: number = 18): string {
+  const [integer, decimal = ''] = amount.split('.');
+  const paddedDecimal = decimal.padEnd(decimals, '0').slice(0, decimals);
+  return (integer + paddedDecimal).replace(/^0+/, '') || '0';
+}
+
 // Convert our token to 1inch token address
 function getTokenAddress(token: Token): string {
+  // Handle native ETH - always use the correct 1inch address
+  if (token.symbol === 'ETH' || token.address === '0x0000000000000000000000000000000000000000') {
+    return TOKEN_ADDRESS_MAP['ETH'];
+  }
+  
   if (token.network === 'bitcoin') {
     // For Bitcoin, we need to use WBTC on Ethereum
     return TOKEN_ADDRESS_MAP['WBTC'];
@@ -266,10 +278,40 @@ export class FusionAPIService {
     walletAddress: string
   ): Promise<BridgeQuote> {
     try {
+      console.log('🔥 1inch Fusion API - Starting quote request');
+      console.log('📋 Request parameters:', {
+        fromToken: fromToken.symbol,
+        toToken: toToken.symbol,
+        amount,
+        walletAddress: walletAddress?.slice(0, 6) + '...' + walletAddress?.slice(-4),
+        network: fromToken.network
+      });
+
+      const fromTokenAddress = getTokenAddress(fromToken);
+      const toTokenAddress = getTokenAddress(toToken);
+      
+      console.log('🏷️ Token addresses:', {
+        fromTokenAddress,
+        toTokenAddress,
+        fromTokenMapped: fromTokenAddress !== fromToken.symbol,
+        toTokenMapped: toTokenAddress !== toToken.symbol
+      });
+
+      // Convert amount to wei for API call
+      const fromTokenDecimals = fromToken.symbol === 'WBTC' ? 8 : 18;
+      const amountInWei = toWei(amount, fromTokenDecimals);
+      
+      console.log('💰 Amount conversion:', {
+        originalAmount: amount,
+        decimals: fromTokenDecimals,
+        amountInWei,
+        tokenSymbol: fromToken.symbol
+      });
+
       const request: FusionQuoteRequest = {
-        fromTokenAddress: getTokenAddress(fromToken),
-        toTokenAddress: getTokenAddress(toToken),
-        amount: amount,
+        fromTokenAddress,
+        toTokenAddress,
+        amount: amountInWei,
         walletAddress: walletAddress,
         source: 'chaincrossing-bridge',
         enableEstimate: true,
@@ -277,18 +319,49 @@ export class FusionAPIService {
         allowPartialFill: false,
       };
 
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/quote`,
-        {
-          method: 'POST',
-          body: JSON.stringify(request),
-        }
-      );
+      console.log('📡 1inch Fusion API - Sending request to proxy:', '/api/1inch/fusion/quote');
+      console.log('🔑 API Key configured:', !!FUSION_API_CONFIG.apiKey && FUSION_API_CONFIG.apiKey !== 'demo_api_key');
+      console.log('📦 Request payload:', JSON.stringify(request, null, 2));
+
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch('/api/1inch/fusion/quote', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new FusionAPIError(
+          errorData.error || `HTTP ${response.status}`,
+          BridgeErrorCode.NETWORK_ERROR,
+          response.status,
+          errorData
+        );
+      }
+
+      console.log('✅ 1inch Fusion API - Response received');
+      console.log('📊 Response status:', response.status, response.statusText);
+      console.log('📋 Response headers:', Object.fromEntries(response.headers.entries()));
 
       const data: FusionQuoteResponse = await response.json();
+      
+      console.log('🎯 1inch Fusion API - Response data received');
+      console.log('📈 Quote data:', {
+        fromTokenAmount: data.fromTokenAmount,
+        toTokenAmount: data.toTokenAmount,
+        estimatedGas: data.estimatedGas,
+        gasCostUSD: data.gasCostUSD,
+        priceImpact: data.priceImpact,
+        protocolsUsed: data.protocols?.length || 0,
+        protocols: data.protocols?.map(p => p.name).join(', ') || 'none'
+      });
 
       // Convert 1inch response to our BridgeQuote format
-      return {
+      const bridgeQuote = {
         id: Math.random().toString(36).substr(2, 9), // Generate unique ID
         fromToken,
         toToken,
@@ -303,7 +376,26 @@ export class FusionAPIService {
         priceImpact: data.priceImpact,
         expiresAt: Date.now() + 30000, // 30 seconds
       };
+
+      console.log('🎉 1inch Fusion API - Quote successfully converted');
+      console.log('💰 Final quote:', {
+        id: bridgeQuote.id,
+        exchangeRate: bridgeQuote.exchangeRate,
+        toAmount: bridgeQuote.toAmount,
+        networkFee: bridgeQuote.networkFee,
+        priceImpact: bridgeQuote.priceImpact,
+        estimatedTime: bridgeQuote.estimatedTime
+      });
+      
+      return bridgeQuote;
     } catch (error) {
+      console.error('❌ 1inch Fusion API - Quote request failed');
+      console.error('Error details:', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined,
+        type: typeof error,
+        apiUrl: `${FUSION_API_CONFIG.baseUrl}/quote`
+      });
       throw createFusionAPIError(error);
     }
   }
@@ -328,13 +420,24 @@ export class FusionAPIService {
         quoteId,
       };
 
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/order`,
-        {
-          method: 'POST',
-          body: JSON.stringify(request),
-        }
-      );
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch('/api/1inch/fusion/order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
 
       return await response.json();
     } catch (error) {
@@ -345,12 +448,23 @@ export class FusionAPIService {
   // Get order status
   async getOrderStatus(orderId: string): Promise<FusionOrderStatusResponse> {
     try {
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/order/${orderId}`,
-        {
-          method: 'GET',
-        }
-      );
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch(`/api/1inch/fusion/order/${orderId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
 
       return await response.json();
     } catch (error) {
@@ -367,12 +481,23 @@ export class FusionAPIService {
     logoURI?: string;
   }>> {
     try {
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/tokens/${chainId}`,
-        {
-          method: 'GET',
-        }
-      );
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch(`/api/1inch/fusion/tokens/${chainId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
 
       return await response.json();
     } catch (error) {
@@ -383,12 +508,23 @@ export class FusionAPIService {
   // Get token prices
   async getTokenPrices(tokenAddresses: string[]): Promise<Record<string, number>> {
     try {
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/prices?tokens=${tokenAddresses.join(',')}`,
-        {
-          method: 'GET',
-        }
-      );
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch(`/api/1inch/fusion/prices?tokens=${tokenAddresses.join(',')}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
 
       const data = await response.json();
       return data.prices || {};

@@ -792,21 +792,29 @@ export class AgentCoordinator extends EventEmitter {
 
     console.log('🚀 Starting Agent Coordinator...');
 
-    // Start agents in dependency order
-    const startOrder = this.calculateStartOrder();
-
-    for (const agentId of startOrder) {
-      const registry = this.agents.get(agentId);
-      if (registry) {
-        try {
-          await registry.agent.start();
-          console.log(`✅ Started agent: ${agentId}`);
-        } catch (error) {
-          console.error(`❌ Failed to start agent ${agentId}:`, error);
-          registry.failureCount++;
-        }
+    // Start agents in parallel for better performance
+    console.log('⚡ Starting agents in parallel...');
+    const startTime = Date.now();
+    
+    const agentStartPromises = Array.from(this.agents.entries()).map(async ([agentId, registry]) => {
+      try {
+        await registry.agent.start();
+        console.log(`✅ Started agent: ${agentId}`);
+        return { agentId, success: true };
+      } catch (error) {
+        console.error(`❌ Failed to start agent ${agentId}:`, error);
+        registry.failureCount++;
+        return { agentId, success: false, error };
       }
-    }
+    });
+
+    // Wait for all agents to start
+    const results = await Promise.all(agentStartPromises);
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.length - successCount;
+    
+    const elapsedTime = Date.now() - startTime;
+    console.log(`⚡ Parallel agent startup completed in ${elapsedTime}ms: ${successCount} success, ${failureCount} failed`);
 
     this._isRunning = true;
     this.startHealthMonitoring();
@@ -1040,8 +1048,14 @@ export class AgentCoordinator extends EventEmitter {
   }
 
   private async handleAnalysisRequest(message: AgentMessage): Promise<void> {
-    const payload = message.payload as { type: string; data: Record<string, unknown> };
-    const { type, data } = payload;
+    const payload = message.payload as { type?: string; data?: Record<string, unknown> };
+    const { type } = payload;
+    
+    if (!type) {
+      // Handle route analysis requests (legacy format)
+      console.log('📊 Processing route analysis request');
+      return;
+    }
     
     switch (type) {
       case 'system-health':

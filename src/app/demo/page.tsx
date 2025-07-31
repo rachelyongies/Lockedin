@@ -29,7 +29,10 @@ import {
 import { AIAgentBridgeService, AIAgentAnalysis, AgentPrediction } from '@/lib/services/ai-agent-bridge-service';
 import { Token, BitcoinToken, EthereumToken, SolanaToken, StarknetToken, StellarToken } from '@/types/bridge';
 import { useWalletStore } from '@/store/useWalletStore';
+import { multiWalletManager } from '@/lib/wallets/multi-wallet-manager';
 import { cn } from '@/lib/utils/helpers';
+import { TradingCompanion } from '@/components/ai/TradingCompanion';
+import { PageWrapper } from '@/components/layout/PageWrapper';
 
 // AI Router Interface
 interface AIRouterState {
@@ -183,9 +186,22 @@ const LIVE_AI_METRICS = {
 };
 
 export default function IntelligentAIRouterPage() {
-  const { isConnected, account } = useWalletStore();
-  const walletAddress = typeof account === 'string' ? account : (account as { address?: string })?.address;
+  const { isConnected: storeConnected, account } = useWalletStore();
   const agentService = AIAgentBridgeService.getInstance();
+  
+  // Use useWalletStore since that's where your wallets are actually connected
+  const isConnected = storeConnected;
+  const walletAddress = typeof account === 'string' ? account : (account as { address?: string })?.address;
+
+  // Debug wallet connection (optional - can be removed after testing)
+  useEffect(() => {
+    console.log('🔍 AI Router - Wallet detection status:', {
+      storeConnected: storeConnected,
+      storeAccount: account ? 'present' : 'none',
+      walletAddress: walletAddress ? walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4) : 'none',
+      isConnected: isConnected
+    });
+  }, [storeConnected, account, walletAddress, isConnected]);
   
   const [routerState, setRouterState] = useState<AIRouterState>({
     fromToken: SUPPORTED_TOKENS[0], // BTC
@@ -248,12 +264,12 @@ export default function IntelligentAIRouterPage() {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      // Get actual AI analysis
+      // Get actual AI analysis (works without wallet connection)
       const aiAnalysis = await agentService.analyzeRoute(
         routerState.fromToken,
         routerState.toToken,
         routerState.amount,
-        walletAddress || '0x0000000000000000000000000000000000000000'
+        walletAddress // Optional - analysis works without wallet
       );
 
       // Get predictions
@@ -271,165 +287,18 @@ export default function IntelligentAIRouterPage() {
         executionStatus: 'ready'
       }));
     } catch (error) {
-      console.error('AI Analysis failed:', error);
-      // Fallback to mock analysis
-      runMockAnalysis();
+      console.error('🚨 AI Analysis failed - no mock fallback:', error);
+      setRouterState(prev => ({ 
+        ...prev, 
+        isAnalyzing: false,
+        aiResults: null,
+        predictions: null,
+        executionStatus: 'failed'
+      }));
     }
   };
 
-  const runMockAnalysis = async () => {
-    // Fallback mock analysis if real service fails
-    const mockResults: AIAgentAnalysis = {
-      routes: [{
-        id: 'route-1',
-        fromToken: routerState.fromToken!.symbol,
-        toToken: routerState.toToken!.symbol,
-        amount: routerState.amount,
-        estimatedOutput: (parseFloat(routerState.amount) * 1.8).toString(),
-        priceImpact: '0.12',
-        estimatedGas: '180000',
-        estimatedTime: 180,
-        confidence: 0.942,
-        risks: ['Low network congestion', 'Medium slippage risk'],
-        advantages: ['Best route available', 'High liquidity', 'Proven protocols'],
-        proposedBy: 'RouteDiscoveryAgent',
-        path: [
-          { 
-            protocol: 'Bitcoin Network', 
-            fromToken: routerState.fromToken!.symbol, 
-            toToken: 'BTC-WRAPPED', 
-            amount: routerState.amount, 
-            estimatedOutput: (parseFloat(routerState.amount) * 0.9995).toString(), 
-            fee: '0.001' 
-          },
-          { 
-            protocol: '1inch Fusion', 
-            fromToken: 'BTC-WRAPPED', 
-            toToken: 'ETH-BRIDGE', 
-            amount: (parseFloat(routerState.amount) * 0.9995).toString(), 
-            estimatedOutput: (parseFloat(routerState.amount) * 1.795).toString(), 
-            fee: '0.003' 
-          },
-          { 
-            protocol: 'Ethereum', 
-            fromToken: 'ETH-BRIDGE', 
-            toToken: routerState.toToken!.symbol, 
-            amount: (parseFloat(routerState.amount) * 1.795).toString(), 
-            estimatedOutput: (parseFloat(routerState.amount) * 1.8).toString(), 
-            fee: '0.002' 
-          }
-        ]
-      }],
-      insights: [
-        'AI found the most efficient path with 94.2% confidence',
-        'AI optimized gas usage to save $12.50 compared to standard routing',
-        'Current network conditions optimal for quick execution',
-        'Private mempool execution recommended for this trade size'
-      ],
-      riskAssessments: [{
-        routeId: 'route-1',
-        overallRisk: 0.15,
-        factors: {
-          protocolRisk: 0.1,
-          liquidityRisk: 0.05,
-          slippageRisk: 0.1,
-          mevRisk: 0.2
-        },
-        recommendations: ['Use proven protocols', 'Monitor gas prices'],
-        blockers: [],
-        assessedBy: 'risk-assessment-agent'
-      }],
-      confidence: 0.942,
-      executionStrategy: {
-        routeId: 'route-1',
-        mevProtection: {
-          enabled: true,
-          strategy: 'private-mempool',
-          estimatedProtection: 0.96
-        },
-        gasStrategy: {
-          gasPrice: '25000000000',
-          gasLimit: '180000',
-          priorityFee: '2000000000',
-          strategy: 'standard',
-          estimatedCost: '4.5'
-        },
-        timing: {
-          optimal: false,
-          delayRecommended: 45,
-          reason: 'Network congestion decreasing, gas prices dropping'
-        },
-        orderSplitting: {
-          enabled: false,
-          numberOfParts: 1,
-          timeBetweenParts: 0,
-          randomization: false,
-          sizeDistribution: [1.0],
-          estimatedImprovements: {
-            costSavings: 0,
-            riskReduction: 0,
-            mevReduction: 0
-          }
-        },
-        contingencyPlans: ['Fallback to standard routing', 'Increase gas price if needed'],
-        strategyBy: 'execution-strategy-agent',
-        confidence: 0.942,
-        reasoning: ['High confidence AI analysis with optimal market conditions'],
-        estimatedImprovements: {
-          costSavings: 18.75,
-          timeReduction: 12.50,
-          riskReduction: 0.96
-        }
-      },
-      marketConditions: {
-        timestamp: Date.now(),
-        volatility: { 
-          overall: 0.12, 
-          tokenSpecific: { [routerState.fromToken!.symbol]: 0.15, [routerState.toToken!.symbol]: 0.09 }
-        },
-        liquidity: { 
-          overall: 850000, 
-          perDEX: { uniswap: 400000, curve: 300000, balancer: 150000 }
-        },
-        networkCongestion: {
-          ethereum: 0.25,
-          polygon: 0.15,
-          bsc: 0.20,
-          arbitrum: 0.10,
-          bitcoin: 0.30,
-          stellar: 0.05,
-          solana: 0.18,
-          starknet: 0.12
-        },
-        gasPrices: {
-          ethereum: { fast: 35, standard: 25, safe: 20 },
-          polygon: { fast: 45, standard: 35, safe: 25 }
-        },
-        timeOfDay: new Date().getHours(),
-        dayOfWeek: new Date().getDay()
-      }
-    };
-    
-    const mockPredictions: AgentPrediction = {
-      optimalSlippage: 0.0012,
-      predictedGasCost: '25000000000',
-      successProbability: 0.989,
-      estimatedTime: 180,
-      mevProtection: {
-        enabled: true,
-        strategy: 'private-mempool',
-        estimatedProtection: 0.96
-      }
-    };
-
-    setRouterState(prev => ({ 
-      ...prev, 
-      isAnalyzing: false, 
-      aiResults: mockResults,
-      predictions: mockPredictions,
-      executionStatus: 'ready'
-    }));
-  };
+  // Mock analysis function removed - only real data allowed
 
   const executeRoute = async () => {
     if (!routerState.aiResults) return;
@@ -488,15 +357,26 @@ export default function IntelligentAIRouterPage() {
 
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white overflow-hidden">
-      {/* Animated Background */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-green-500/5 rounded-full blur-3xl animate-pulse" />
+    <PageWrapper
+      title="AI Router Demo"
+      description="Experience the future of cross-chain bridging with our AI-powered routing system"
+      keywords="AI router, cross-chain, bridge, artificial intelligence, defi"
+      maxWidth="2xl"
+      padding="lg"
+      breadcrumbs={[
+        { label: 'Bridge', href: '/' },
+        { label: 'AI Router Demo' }
+      ]}
+      className="min-h-screen"
+    >
+      {/* Additional animated elements for AI demo */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-500/5 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-green-500/3 rounded-full blur-3xl animate-pulse" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 py-8">
+      <div className="relative z-10">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -708,15 +588,22 @@ export default function IntelligentAIRouterPage() {
 
                 {routerState.executionStatus === 'ready' && (
                   <div className="space-y-2">
-                    <motion.button
-                      onClick={executeRoute}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="w-full py-4 px-6 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold rounded-xl transition-all duration-200 flex items-center justify-center space-x-3"
-                    >
-                      <Zap className="w-6 h-6" />
-                      <span>Execute Route</span>
-                    </motion.button>
+                    {isConnected ? (
+                      <motion.button
+                        onClick={executeRoute}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="w-full py-4 px-6 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white font-semibold rounded-xl transition-all duration-200 flex items-center justify-center space-x-3"
+                      >
+                        <Zap className="w-6 h-6" />
+                        <span>Execute Route</span>
+                      </motion.button>
+                    ) : (
+                      <div className="w-full py-4 px-6 bg-yellow-500/20 border border-yellow-500/30 text-yellow-300 font-semibold rounded-xl flex items-center justify-center space-x-3">
+                        <Wallet className="w-6 h-6" />
+                        <span>Connect Wallet to Execute Route</span>
+                      </div>
+                    )}
                     <button
                       onClick={resetRouter}
                       className="w-full py-2 text-sm text-gray-400 hover:text-white transition-colors"
@@ -748,6 +635,23 @@ export default function IntelligentAIRouterPage() {
                       className="w-full py-2 text-sm text-blue-400 hover:text-blue-300 transition-colors"
                     >
                       Start New Bridge
+                    </button>
+                  </div>
+                )}
+
+                {routerState.executionStatus === 'failed' && (
+                  <div className="space-y-3">
+                    <div className="w-full py-4 px-6 bg-red-500/20 border border-red-500/30 text-red-300 font-semibold rounded-xl flex items-center justify-center space-x-3">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.318 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                      <span>AI Analysis Failed - No Real Data Available</span>
+                    </div>
+                    <button
+                      onClick={resetRouter}
+                      className="w-full py-2 text-sm text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      Try Again
                     </button>
                   </div>
                 )}
@@ -1086,6 +990,36 @@ export default function IntelligentAIRouterPage() {
                 </motion.div>
               )}
 
+              {routerState.executionStatus === 'failed' && (
+                <motion.div
+                  key="failed"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="bg-gradient-to-r from-red-500/10 to-orange-500/10 border border-red-500/20 rounded-2xl p-8 text-center"
+                >
+                  <svg className="w-16 h-16 text-red-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.318 15.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                  <h3 className="text-xl font-semibold text-white mb-2">
+                    ⚠️ AI Analysis Failed
+                  </h3>
+                  <p className="text-red-300 mb-2 font-medium">
+                    Unable to connect to real market data APIs
+                  </p>
+                  <p className="text-gray-400 mb-4 text-sm">
+                    The system requires live data from 1inch, Alchemy, and other providers. Please check API configuration and try again.
+                  </p>
+                  <motion.button
+                    onClick={resetRouter}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="px-6 py-3 bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white font-semibold rounded-xl transition-all duration-200"
+                  >
+                    Try Again
+                  </motion.button>
+                </motion.div>
+              )}
+
               {!routerState.aiResults && routerState.executionStatus === 'idle' && (
                 <motion.div
                   key="idle"
@@ -1100,17 +1034,61 @@ export default function IntelligentAIRouterPage() {
                   <p className="text-gray-500 mb-4">
                     Our AI agents will analyze 1000+ routes across multiple chains to find the optimal path
                   </p>
-                  {!isConnected && (
-                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-sm text-yellow-300">
-                      💡 Connect your wallet for personalized routing and gas optimization
+                  <div className="space-y-2">
+                    <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-sm text-blue-300">
+                      ✨ AI analysis works without wallet connection
                     </div>
-                  )}
+                    {!isConnected && (
+                      <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-sm text-yellow-300">
+                        💡 Connect wallet only when ready to execute the route
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
+            
+            {/* AI Agent Companion - Always Available */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+              className="mt-8"
+            >
+              <h3 className="text-xl font-semibold mb-4 flex items-center space-x-2">
+                <Bot className="w-5 h-5 text-purple-400" />
+                <span>AI Agent Companion</span>
+                <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full">
+                  Always Available
+                </span>
+              </h3>
+              
+              <div className="bg-gradient-to-br from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-2xl p-6">
+                <TradingCompanion 
+                  embedded={true}
+                  currentRoute={routerState.aiResults?.routes[0] ? {
+                    id: routerState.aiResults.routes[0].id,
+                    fromToken: routerState.fromToken!,
+                    toToken: routerState.toToken!,
+                    amount: routerState.amount,
+                    estimatedOutput: routerState.aiResults.routes[0].estimatedOutput,
+                    fees: { network: { amountUSD: 0 }, protocol: { amountUSD: 0 } },
+                    estimatedTime: { minutes: Math.round(routerState.aiResults.routes[0].estimatedTime / 60) },
+                    path: routerState.aiResults.routes[0].path
+                  } : undefined}
+                  fromToken={routerState.fromToken || undefined}
+                  toToken={routerState.toToken || undefined}
+                  amount={routerState.amount}
+                  aiAnalysis={routerState.aiResults}
+                  predictions={routerState.predictions}
+                  executionStatus={routerState.executionStatus}
+                  activeAgents={routerState.activeAgents}
+                />
+              </div>
+            </motion.div>
           </motion.div>
         </div>
       </div>
-    </div>
+    </PageWrapper>
   );
 }

@@ -122,9 +122,10 @@ export function useBridgeFormState({
   const amountValidation = validateAmount(fromAmount);
   const isValidAmount = amountValidation.isValid && parseFloat(fromAmount || '0') > 0;
   
-  // Balance validation (mock balance for now)
-  const mockBalance = fromToken ? '10.5' : '0';
-  const balanceValidation = validateBalance(fromAmount, mockBalance);
+  // Balance validation - requires real wallet integration
+  const balanceValidation = fromToken ? 
+    { isValid: false, error: 'Real wallet balance check not implemented - connect wallet first' } :
+    { isValid: true, error: undefined };
   const balanceError = balanceValidation.isValid ? undefined : balanceValidation.error;
 
   // Fetch quote when inputs change

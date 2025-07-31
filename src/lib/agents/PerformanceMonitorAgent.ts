@@ -592,26 +592,50 @@ export class PerformanceMonitorAgent extends BaseAgent {
   private async updateInsights(): Promise<void> {
     console.log('🔍 Updating performance insights...');
     
+    // Debug: Check data availability
+    const metricsCount = this.executionMetrics.size;
+    const hourlyMetricsCount = this.systemPerformance.hourlyMetrics.length;
+    const agentCount = Object.keys(this.agentPerformance).length;
+    
+    console.log(`📊 Performance data: ${metricsCount} execution metrics, ${hourlyMetricsCount} hourly metrics, ${agentCount} agents`);
+    
+    if (metricsCount === 0 && hourlyMetricsCount === 0) {
+      console.warn('⚠️ No performance data available for analysis');
+      return;
+    }
+    
     const newInsights: PerformanceInsight[] = [];
     
     // Trend analysis
-    const trends = await this.trendAnalyzer.analyzeTrends(this.systemPerformance.hourlyMetrics);
-    newInsights.push(...trends);
+    if (hourlyMetricsCount > 0) {
+      const trends = await this.trendAnalyzer.analyzeTrends(this.systemPerformance.hourlyMetrics);
+      newInsights.push(...trends);
+      console.log(`📈 Generated ${trends.length} trend insights`);
+    }
     
     // Anomaly detection
-    const anomalies = await this.anomalyDetector.detectAnomalies(Array.from(this.executionMetrics.values()));
-    newInsights.push(...anomalies);
+    if (metricsCount > 0) {
+      const anomalies = await this.anomalyDetector.detectAnomalies(Array.from(this.executionMetrics.values()));
+      newInsights.push(...anomalies);
+      console.log(`🚨 Generated ${anomalies.length} anomaly insights`);
+    }
     
     // Optimization opportunities
-    const optimizations = await this.insightGenerator.generateOptimizations(
-      this.systemPerformance,
-      this.agentPerformance
-    );
-    newInsights.push(...optimizations);
+    if (agentCount > 0 || hourlyMetricsCount > 0) {
+      const optimizations = await this.insightGenerator.generateOptimizations(
+        this.systemPerformance,
+        this.agentPerformance
+      );
+      newInsights.push(...optimizations);
+      console.log(`⚡ Generated ${optimizations.length} optimization insights`);
+    }
     
     // Performance predictions
-    const predictions = await this.insightGenerator.generatePredictions(this.systemPerformance.hourlyMetrics);
-    newInsights.push(...predictions);
+    if (hourlyMetricsCount > 1) {
+      const predictions = await this.insightGenerator.generatePredictions(this.systemPerformance.hourlyMetrics);
+      newInsights.push(...predictions);
+      console.log(`🔮 Generated ${predictions.length} prediction insights`);
+    }
     
     // Update insights (keep last 50)
     this.performanceInsights = [...newInsights, ...this.performanceInsights].slice(0, 50);

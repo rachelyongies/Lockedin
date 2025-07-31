@@ -180,17 +180,22 @@ class DuneAnalyticsClient {
   }
 
   async executeQuery(queryId: number, parameters: Record<string, unknown> = {}): Promise<string> {
+    if (!this.hasValidApiKey) {
+      throw new Error('Dune API key is not configured or invalid');
+    }
+
     const response = await fetch(`${this.baseUrl}/query/${queryId}/execute`, {
       method: 'POST',
       headers: {
-        'X-Dune-API-Key': this.apiKey,
+        'x-dune-api-key': this.apiKey,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ query_parameters: parameters })
     });
 
     if (!response.ok) {
-      throw new Error(`Dune API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Dune API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -198,18 +203,23 @@ class DuneAnalyticsClient {
   }
 
   async getQueryResults(queryId: number, executionId?: string): Promise<DuneQueryResult> {
+    if (!this.hasValidApiKey) {
+      throw new Error('Dune API key is not configured or invalid');
+    }
+
     const url = executionId 
       ? `${this.baseUrl}/execution/${executionId}/results`
       : `${this.baseUrl}/query/${queryId}/results`;
 
     const response = await fetch(url, {
       headers: {
-        'X-Dune-API-Key': this.apiKey
+        'x-dune-api-key': this.apiKey
       }
     });
 
     if (!response.ok) {
-      throw new Error(`Dune API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Dune API error: ${response.status} - ${errorText}`);
     }
 
     return await response.json();
@@ -393,9 +403,14 @@ export class MarketIntelligenceAgent extends BaseAgent {
     try {
       console.log('🔌 Testing Dune Analytics connection...');
       
-      // Skip execution test for now - just validate API key format
-      if (!this.duneClient.hasValidApiKey) {
-        throw new Error('Invalid Dune API key format');
+      // Note: API keys should be accessed server-side only for security
+      const hasApiKey = this.duneClient.hasValidApiKey;
+      console.log(`🔑 API Key status: ${hasApiKey ? 'Configured' : 'Not configured (using fallback data)'}`);
+      
+      if (!hasApiKey) {
+        console.log('ℹ️ Dune Analytics API key not configured');
+        console.log('📊 Using fallback data sources for market intelligence');
+        return;
       }
       
       console.log('✅ Dune Analytics API key validated');

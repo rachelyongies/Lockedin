@@ -109,7 +109,7 @@ export interface FusionOrderStatus {
 
 export class DataAggregationService {
   private readonly INCH_BASE_URL = 'https://api.1inch.dev';
-  private readonly COINGECKO_BASE_URL = 'https://api.coingecko.com/api/v3';
+  private readonly COINGECKO_BASE_URL = '/api/coingecko';
   private readonly DEFILLAMA_BASE_URL = 'https://api.llama.fi';
   
   private apiKeys: {
@@ -380,13 +380,8 @@ export class DataAggregationService {
       include_24hr_vol: 'true'
     });
 
-    const headers: Record<string, string> = {};
-    if (this.apiKeys.coinGecko) {
-      headers['x-cg-demo-api-key'] = this.apiKeys.coinGecko;
-    }
-
     try {
-      const response = await fetch(`${url}?${params}`, { headers });
+      const response = await fetch(`${url}?${params}`);
       
       if (!response.ok) {
         throw new Error(`CoinGecko API error: ${response.status}`);
@@ -430,14 +425,9 @@ export class DataAggregationService {
     };
 
     const url = `${this.COINGECKO_BASE_URL}/global`;
-    
-    const headers: Record<string, string> = {};
-    if (this.apiKeys.coinGecko) {
-      headers['x-cg-demo-api-key'] = this.apiKeys.coinGecko;
-    }
 
     try {
-      const response = await fetch(url, { headers });
+      const response = await fetch(url);
       
       if (!response.ok) {
         throw new Error(`CoinGecko global API error: ${response.status}`);
@@ -569,15 +559,8 @@ export class DataAggregationService {
     // If individual endpoints fail, try CoinGecko as alternative
     console.log('🔄 DeFiLlama individual endpoints failed, trying CoinGecko DeFi...');
     try {
-      const coinGeckoUrl = 'https://api.coingecko.com/api/v3/global/decentralized_finance_defi';
-      const response = await fetch(coinGeckoUrl, {
-        timeout: 10000,
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'UniteDefi/1.0',
-          ...(this.apiKeys.coinGecko && { 'x-cg-pro-api-key': this.apiKeys.coinGecko })
-        }
-      });
+      const coinGeckoUrl = '/api/coingecko/global/defi';
+      const response = await fetch(coinGeckoUrl);
 
       if (response.ok) {
         const data = await response.json();
