@@ -45,12 +45,76 @@ export interface TransactionLog {
 
 export class StorageManager {
   private static instance: StorageManager;
+  private readonly MAX_CHAT_HISTORY_SIZE = 50; // Limit chat history entries
+  private readonly MAX_STORAGE_SIZE = 4 * 1024 * 1024; // 4MB limit (leaving 1MB buffer)
   
   static getInstance(): StorageManager {
     if (!StorageManager.instance) {
       StorageManager.instance = new StorageManager();
     }
     return StorageManager.instance;
+  }
+
+  // Custom JSON serializer that handles BigInt and other special types
+  private safeStringify(data: unknown): string {
+    return JSON.stringify(data, (key, value) => {
+      if (typeof value === 'bigint') {
+        return value.toString() + 'n'; // Mark as BigInt
+      }
+      if (value instanceof Date) {
+        return { __date: value.toISOString() };
+      }
+      if (value instanceof Map) {
+        return { __map: Array.from(value.entries()) };
+      }
+      if (value instanceof Set) {
+        return { __set: Array.from(value) };
+      }
+      // Remove circular references and functions
+      if (typeof value === 'function') {
+        return undefined;
+      }
+      return value;
+    });
+  }
+
+  // Custom JSON parser that reconstructs special types
+  private safeParse(jsonString: string): unknown {
+    return JSON.parse(jsonString, (key, value) => {
+      if (typeof value === 'string' && value.endsWith('n')) {
+        const numStr = value.slice(0, -1);
+        if (/^-?\d+$/.test(numStr)) {
+          return BigInt(numStr);
+        }
+      }
+      if (value && typeof value === 'object') {
+        if (value.__date) {
+          return new Date(value.__date);
+        }
+        if (value.__map) {
+          return new Map(value.__map);
+        }
+        if (value.__set) {
+          return new Set(value.__set);
+        }
+      }
+      return value;
+    });
+  }
+
+  // Get storage size estimation
+  private getStorageSize(): number {
+    let totalSize = 0;
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key) {
+        const value = sessionStorage.getItem(key);
+        if (value) {
+          totalSize += key.length + value.length;
+        }
+      }
+    }
+    return totalSize;
   }
 
   // LocalStorage methods (5MB limit)
@@ -86,14 +150,29 @@ export class StorageManager {
   // SessionStorage methods (5MB limit)
   saveToSession<T>(key: string, data: T): void {
     try {
-      sessionStorage.setItem(key, JSON.stringify(data));
+      const serializedData = this.safeStringify(data);
+      
+      // Check if this would exceed our size limit
+      const estimatedSize = this.getStorageSize() + key.length + serializedData.length;
+      if (estimatedSize > this.MAX_STORAGE_SIZE) {
+        console.warn('Storage size approaching limit, cleaning up old data');
+        this.clearOldSessionData();
+      }
+      
+      sessionStorage.setItem(key, serializedData);
     } catch (e) {
       console.error('SessionStorage save failed:', e);
+      
+      // More aggressive cleanup
       this.clearOldSessionData();
+      this.clearLargeSessionData();
+      
       try {
-        sessionStorage.setItem(key, JSON.stringify(data));
-      } catch {
-        throw new Error('Session storage quota exceeded');
+        const serializedData = this.safeStringify(data);
+        sessionStorage.setItem(key, serializedData);
+      } catch (retryError) {
+        console.error('SessionStorage retry failed:', retryError);
+        throw new Error('Session storage quota exceeded after cleanup');
       }
     }
   }
@@ -101,9 +180,11 @@ export class StorageManager {
   getFromSession<T>(key: string): T | null {
     try {
       const item = sessionStorage.getItem(key);
-      return item ? JSON.parse(item) : null;
+      return item ? this.safeParse(item) as T : null;
     } catch (e) {
-      console.error('SessionStorage read failed:', e);
+      console.error('SessionStorage parse failed:', e);
+      // Remove corrupted data
+      sessionStorage.removeItem(key);
       return null;
     }
   }
@@ -135,15 +216,37 @@ export class StorageManager {
     this.saveStrategies(strategies);
   }
 
-  // Chat history storage (SessionStorage)
+  // Chat history storage (SessionStorage) with size limiting
   saveChatHistory(messages: ChatMessage[]): void {
-    // Keep only last 100 messages to save space
-    const recentMessages = messages.slice(-100);
-    this.saveToSession('chat_history', recentMessages);
+    // Limit chat history size to prevent storage overflow
+    const limitedHistory = messages.slice(-this.MAX_CHAT_HISTORY_SIZE);
+    
+    // Remove large content from old messages to save space
+    const compactHistory = limitedHistory.map((msg, index) => {
+      if (index < limitedHistory.length - 10) { // Keep last 10 messages full
+        return {
+          ...msg,
+          content: msg.content.length > 500 ? msg.content.substring(0, 500) + '...' : msg.content
+        };
+      }
+      return msg;
+    });
+    
+    this.saveToSession('chat_history', {
+      messages: compactHistory,
+      timestamp: Date.now()
+    });
   }
 
   getChatHistory(): ChatMessage[] {
-    return this.getFromSession<ChatMessage[]>('chat_history') || [];
+    const stored = this.getFromSession<{ messages: ChatMessage[]; timestamp: number } | ChatMessage[]>('chat_history');
+    
+    // Handle both old and new format
+    if (Array.isArray(stored)) {
+      return stored; // Old format
+    }
+    
+    return stored?.messages || []; // New format
   }
 
   // User preferences
@@ -169,10 +272,62 @@ export class StorageManager {
   }
 
   private clearOldSessionData(): void {
-    const keysToCheck = ['temp_calculations', 'old_chat'];
-    keysToCheck.forEach(key => {
-      sessionStorage.removeItem(key);
-    });
+    try {
+      const cutoffTime = Date.now() - (60 * 60 * 1000); // 1 hour ago
+      const keysToRemove: string[] = [];
+      
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key?.startsWith('chat_') || key?.startsWith('analysis_')) {
+          try {
+            const data = sessionStorage.getItem(key);
+            if (data) {
+              const parsed = this.safeParse(data) as { timestamp?: number };
+              if (parsed.timestamp && parsed.timestamp < cutoffTime) {
+                keysToRemove.push(key);
+              }
+            }
+          } catch {
+            // If we can't parse it, it's corrupted, remove it
+            keysToRemove.push(key);
+          }
+        }
+      }
+      
+      keysToRemove.forEach(key => sessionStorage.removeItem(key));
+      console.log(`Cleared ${keysToRemove.length} old session storage items`);
+    } catch (e) {
+      console.error('Failed to clear old session data:', e);
+    }
+  }
+
+  // Clear large session data items to free up space
+  private clearLargeSessionData(): void {
+    try {
+      const itemSizes: Array<{ key: string; size: number }> = [];
+      
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key) {
+          const value = sessionStorage.getItem(key);
+          if (value) {
+            itemSizes.push({ key, size: value.length });
+          }
+        }
+      }
+      
+      // Sort by size (largest first) and remove the largest items
+      itemSizes.sort((a, b) => b.size - a.size);
+      const itemsToRemove = itemSizes.slice(0, Math.ceil(itemSizes.length * 0.3)); // Remove 30% of largest items
+      
+      itemsToRemove.forEach(item => {
+        sessionStorage.removeItem(item.key);
+      });
+      
+      console.log(`Cleared ${itemsToRemove.length} large session storage items`);
+    } catch (e) {
+      console.error('Failed to clear large session data:', e);
+    }
   }
 
   // Storage size monitoring
