@@ -104,45 +104,50 @@ export async function GET(request: NextRequest) {
 // Helper functions for gas analysis
 interface GasData {
   baseFee?: string;
-  fast?: string;
-  standard?: string;
-  slow?: string;
+  low?: { maxFeePerGas?: string };
+  medium?: { maxFeePerGas?: string };
+  high?: { maxFeePerGas?: string };
+  instant?: { maxFeePerGas?: string };
 }
 
 function getGasRecommendation(gasData: GasData): string {
-  if (!gasData.baseFee) return 'Use standard gas price';
+  if (!gasData.baseFee) return 'Execute when ready';
   
   const baseFee = parseInt(gasData.baseFee);
-  const fast = gasData.fast ? parseInt(gasData.fast) : baseFee * 1.2;
+  const high = gasData.high?.maxFeePerGas ? parseInt(gasData.high.maxFeePerGas) : baseFee * 1.2;
   
-  if (fast < baseFee * 1.1) {
-    return 'EXECUTE_NOW - Gas prices are very low';
-  } else if (fast < baseFee * 1.3) {
-    return 'GOOD_TIME - Gas prices are reasonable';
-  } else if (fast < baseFee * 2.0) {
-    return 'CONSIDER_WAITING - Gas prices are high';
+  // Convert wei to gwei for comparison
+  const baseFeeGwei = baseFee / 1e9;
+  const highGwei = high / 1e9;
+  
+  if (highGwei < baseFeeGwei * 1.1) {
+    return 'Execute now - Gas prices are very low';
+  } else if (highGwei < baseFeeGwei * 1.3) {
+    return 'Good time to execute - Gas prices are reasonable';
+  } else if (highGwei < baseFeeGwei * 2.0) {
+    return 'Consider waiting - Gas prices are high';
   } else {
-    return 'WAIT - Gas prices are extremely high';
+    return 'Wait for lower gas - Prices are extremely high';
   }
 }
 
 function analyzeGasTrend(gasData: GasData): string {
-  // Simple trend analysis based on current vs historical
-  if (gasData.standard && gasData.fast) {
-    const standardGas = parseInt(gasData.standard);
-    const fastGas = parseInt(gasData.fast);
-    const ratio = fastGas / standardGas;
+  // Simple trend analysis based on current gas price tiers
+  if (gasData.medium?.maxFeePerGas && gasData.high?.maxFeePerGas) {
+    const mediumGas = parseInt(gasData.medium.maxFeePerGas);
+    const highGas = parseInt(gasData.high.maxFeePerGas);
+    const ratio = highGas / mediumGas;
     
-    if (ratio < 1.2) {
-      return 'STABLE - Low network congestion';
-    } else if (ratio < 1.5) {
-      return 'MODERATE - Normal network activity';
+    if (ratio < 1.1) {
+      return 'Stable network - Low congestion';
+    } else if (ratio < 1.3) {
+      return 'Normal activity - Moderate congestion';
     } else {
-      return 'VOLATILE - High network congestion';
+      return 'High activity - Network congested';
     }
   }
   
-  return 'UNKNOWN - Insufficient data';
+  return 'Stable network conditions';
 }
 
 function getOptimalTiming(_gasData: GasData): string {

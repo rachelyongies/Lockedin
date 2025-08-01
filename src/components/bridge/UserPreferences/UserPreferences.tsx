@@ -59,8 +59,8 @@ const PREFERENCE_OPTIONS = [
     label: 'Balanced',
     description: 'Good balance of speed, cost & security',
     icon: Settings2,
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500/10 border-orange-500/20'
+    color: 'text-blue-500',
+    bgColor: 'bg-blue-500/10 border-blue-500/20'
   }
 ] as const;
 
@@ -116,18 +116,17 @@ export function UserPreferences({
           onClick={onToggleVisibility}
           variant="ghost"
           size="sm"
-          className="flex items-center gap-2"
+          className="!flex !flex-row !items-center !justify-center gap-2 px-3 py-3 h-auto min-h-[2.5rem]"
           disabled={disabled}
           aria-label="Toggle user preferences"
           aria-expanded={isVisible}
         >
           {currentPreference && (
-            <>
-              <currentPreference.icon className={cn('w-4 h-4', currentPreference.color)} />
+            <div className="flex items-center gap-2">
+              <currentPreference.icon className="w-4 h-4 text-white" />
               <span className="text-sm">{currentPreference.label}</span>
-            </>
+            </div>
           )}
-          <Settings2 className="w-3 h-3" />
         </Button>
       )}
 
@@ -182,7 +181,7 @@ export function UserPreferences({
                       onClick={() => onUserPreferenceChange(option.value)}
                       disabled={disabled}
                       className={cn(
-                        'p-3 rounded-lg border text-left transition-all',
+                        'p-4 rounded-lg border text-left transition-all',
                         'hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20',
                         userPreference === option.value
                           ? cn(option.bgColor, 'border-current')
@@ -269,10 +268,10 @@ export function UserPreferences({
                       variant={gasPreference === option.value ? "primary" : "secondary"}
                       size="sm"
                       disabled={disabled}
-                      className="text-xs flex flex-col items-center gap-1 h-auto py-2"
+                      className="text-xs !flex !flex-col !items-center gap-2 h-auto py-3 px-2 min-h-[3rem]"
                     >
-                      <span className="font-medium">{option.label}</span>
-                      <span className="text-xs opacity-80">{option.description}</span>
+                      <div className="font-medium text-center whitespace-nowrap">{option.label}</div>
+                      <div className="text-xs opacity-80 text-center leading-tight max-w-full">{option.description}</div>
                     </Button>
                   ))}
                 </div>

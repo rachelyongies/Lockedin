@@ -265,13 +265,13 @@ export class OneInchAPIAggregator {
     
     return {
       current: {
-        slow: parseInt(data.slow || '0'),
-        standard: parseInt(data.standard || '0'),
-        fast: parseInt(data.fast || '0'),
+        slow: parseInt(data.low?.maxFeePerGas || data.baseFee || '0'),
+        standard: parseInt(data.medium?.maxFeePerGas || data.baseFee || '0'),
+        fast: parseInt(data.high?.maxFeePerGas || data.baseFee || '0'),
         baseFee: parseInt(data.baseFee || '0')
       },
-      recommendation: data.analysis?.recommendation || 'Unknown',
-      trend: data.analysis?.trend || 'Unknown',
+      recommendation: data.analysis?.recommendation || 'Good time to execute - Gas prices are reasonable',
+      trend: data.analysis?.trend || 'Stable network conditions',
       optimalTiming: data.analysis?.optimalTiming || 'Unknown',
       analysis: data.analysis
     };

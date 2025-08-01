@@ -378,7 +378,7 @@ export class AIAgentBridgeService {
     // Route insights
     if (routes.length > 0) {
       const bestRoute = routes[0];
-      insights.push(`🎯 Found ${routes.length} optimized routes with up to ${(bestRoute.confidence * 100).toFixed(0)}% confidence`);
+      insights.push(`Found ${routes.length} optimized routes with up to ${(bestRoute.confidence * 100).toFixed(0)}% confidence`);
       
       if (bestRoute.advantages.includes('gas-optimized')) {
         insights.push(`⛽ Gas-optimized route can save up to 30% on transaction fees`);
@@ -1120,19 +1120,22 @@ export class AIAgentBridgeService {
     const baseStrategy = await this.generateRealExecutionStrategy(route);
     
     // Enhance with 1inch gas analysis
+    const fastGasPrice = oneInchAnalysis.gas.current.fast > 0 ? oneInchAnalysis.gas.current.fast : 20000000000; // 20 gwei fallback
+    const standardGasPrice = oneInchAnalysis.gas.current.standard > 0 ? oneInchAnalysis.gas.current.standard : 15000000000; // 15 gwei fallback
+    
     const gasStrategy = {
-      gasPrice: oneInchAnalysis.gas.current.fast > 0 ? oneInchAnalysis.gas.current.fast.toString() : baseStrategy.gasStrategy.gasPrice,
+      gasPrice: fastGasPrice.toString(),
       gasLimit: '200000',
       strategy: oneInchAnalysis.gas.recommendation.includes('WAIT') ? 'safe' : 'fast' as 'fast' | 'standard' | 'safe' | 'custom',
-      maxFeePerGas: (oneInchAnalysis.gas.current.fast * 1.5).toString(),
-      estimatedCost: oneInchAnalysis.gas.current.standard.toString()
+      maxFeePerGas: (fastGasPrice * 1.5).toString(),
+      estimatedCost: standardGasPrice.toString()
     };
 
     // Enhance with 1inch timing analysis
     const timing = {
-      optimal: !oneInchAnalysis.gas.recommendation.includes('WAIT'),
-      delayRecommended: oneInchAnalysis.gas.recommendation.includes('WAIT') ? 900 : 0, // 15 minutes
-      reason: oneInchAnalysis.gas.recommendation + ' - ' + oneInchAnalysis.gas.trend
+      optimal: !oneInchAnalysis.gas.recommendation.includes('Wait'),
+      delayRecommended: oneInchAnalysis.gas.recommendation.includes('Wait') ? 900 : 0, // 15 minutes
+      reason: oneInchAnalysis.gas.recommendation
     };
 
     // Enhance MEV protection based on route recommendation
@@ -1191,7 +1194,13 @@ export class AIAgentBridgeService {
     }
 
     // Overall recommendation
-    oneInchInsights.push(`1inch Confidence: ${(oneInchAnalysis.overall.confidence * 100).toFixed(0)}% - ${oneInchAnalysis.overall.recommendation}`);
+    const confidencePercentage = (oneInchAnalysis.overall.confidence * 100).toFixed(0);
+    const recommendation = oneInchAnalysis.overall.recommendation
+      .replace('PROCEED_WITH_CAUTION', 'Proceed with Caution')
+      .replace('WAIT_FOR_BETTER_CONDITIONS', 'Wait for Better Conditions')
+      .replace('EXECUTE', 'Execute Now');
+    
+    oneInchInsights.push(`1inch Analysis: ${confidencePercentage}% confidence - ${recommendation}`);
 
     return [...insights, ...oneInchInsights];
   }

@@ -196,7 +196,7 @@ parseInt(predictions.predictedGasCost) < 50 ? '🟡 Moderate congestion' : '🔴
         
         case 'slippage':
           if (predictions && amount && fromToken && toToken) {
-            response = `🎯 **Slippage Analysis for ${amount} ${fromToken.symbol} → ${toToken.symbol}:**
+            response = `**Slippage Analysis for ${amount} ${fromToken.symbol} → ${toToken.symbol}:**
 
 **AI Recommended Slippage:** ${(predictions.optimalSlippage * 100).toFixed(3)}%
 
@@ -287,7 +287,7 @@ ${aiAnalysis ? `
         <div className="p-4 border-b border-gray-700/50">
           <div className="flex items-center space-x-3">
             <div className="relative">
-              <Bot className="w-6 h-6 text-purple-400" />
+              <Bot className="w-6 h-6 text-cyan-400" />
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
@@ -295,8 +295,8 @@ ${aiAnalysis ? `
               />
             </div>
             <div>
-              <h4 className="text-white font-medium">AI Trading Assistant</h4>
-              <p className="text-gray-400 text-xs">Ask about routes, gas, or strategies</p>
+              <h4 className="text-white font-medium">AI Trading Buddy</h4>
+              <p className="text-gray-400 text-xs">Ask about routes, gas, strategies, or 1inch products</p>
             </div>
           </div>
         </div>
@@ -371,11 +371,16 @@ ${aiAnalysis ? `
                 className={cn(
                   "max-w-[80%] rounded-lg px-3 py-2",
                   msg.role === 'user'
-                    ? "bg-purple-500/20 text-purple-100 border border-purple-500/30"
+                    ? "bg-cyan-500/20 text-cyan-100 border border-cyan-500/30"
                     : "bg-gray-800/50 text-gray-100 border border-gray-700/50"
                 )}
               >
-                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                <div className="text-sm whitespace-pre-wrap" dangerouslySetInnerHTML={{
+                  __html: msg.content
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/\n/g, '<br>')
+                }} />
                 <p className="text-xs opacity-60 mt-1">
                   {new Date(msg.timestamp).toLocaleTimeString()}
                 </p>
@@ -422,7 +427,7 @@ ${aiAnalysis ? `
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Ask about routes, gas, or strategies..."
-              className="flex-1 bg-gray-800/50 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500/50 border border-gray-700/50"
+              className="flex-1 bg-gray-800/50 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500/50 border border-gray-700/50"
               disabled={isTyping}
             />
             <button
@@ -431,7 +436,7 @@ ${aiAnalysis ? `
               className={cn(
                 "p-2 rounded-lg transition-all",
                 message.trim() && !isTyping
-                  ? "bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30"
+                  ? "bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30"
                   : "bg-gray-800/50 text-gray-500 cursor-not-allowed border border-gray-700/50"
               )}
             >
@@ -461,7 +466,7 @@ ${aiAnalysis ? `
         onClick={() => setIsOpen(true)}
         className={cn(
           "fixed bottom-6 right-6 w-14 h-14 rounded-full",
-          "bg-gradient-to-r from-blue-500 to-purple-500",
+          "bg-gradient-to-r from-cyan-500 to-blue-600",
           "flex items-center justify-center shadow-lg z-40",
           "hover:shadow-xl transition-shadow"
         )}
@@ -479,7 +484,7 @@ ${aiAnalysis ? `
             className="fixed bottom-24 right-6 w-96 h-[600px] bg-gray-900 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden border border-gray-800"
           >
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4 border-b border-gray-800">
+            <div className="bg-gradient-to-r from-cyan-500/10 to-blue-600/10 p-4 border-b border-gray-800">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="relative">

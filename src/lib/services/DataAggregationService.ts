@@ -1,8 +1,10 @@
 // 📊 Data Aggregation Service - Real API integrations for DeFi routing
+// 🔥 HACKATHON OPTIMIZED: Prioritizes 1inch Fusion over CoinGecko for better hackathon performance
 // Integrates 1inch Fusion, CoinGecko, DeFiLlama, and other real data sources
 
 import { MarketConditions, RouteProposal, RouteStep } from '../agents/types';
 import { HttpConnectionManager } from './HttpConnectionManager';
+import { fusionFirstPricing, PricingResult } from './fusion-first-pricing';
 
 export interface TokenInfo {
   address: string;
@@ -398,12 +400,44 @@ export class DataAggregationService {
     }
   }
 
-  // ===== COINGECKO API INTEGRATION =====
+  // ===== 🔥 HACKATHON OPTIMIZED PRICING - 1INCH FUSION FIRST =====
 
   async getTokenPrices(tokenIdentifiers: string[]): Promise<Record<string, number>> {
+    console.log('🔥 HACKATHON: Using 1inch Fusion-first pricing strategy');
+    
+    const cacheKey = `hackathon-prices-${tokenIdentifiers.join(',')}`;
+    const cached = this.getFromCache(cacheKey);
+    if (cached) return cached as Record<string, number>;
+
+    try {
+      // Use fusion-first pricing for hackathon optimization
+      const pricingResult = await fusionFirstPricing.getTokenPrices(tokenIdentifiers, {
+        preferFusion: true,
+        fallbackToCoinGecko: true,
+        cacheTime: 20000 // 20 second cache for real-time hackathon demo
+      });
+
+      console.log('✅ HACKATHON pricing result:', {
+        source: pricingResult.source,
+        priceCount: Object.keys(pricingResult.prices).length,
+        confidence: pricingResult.confidence
+      });
+
+      this.setCache(cacheKey, pricingResult.prices, 20000);
+      return pricingResult.prices;
+    } catch (error) {
+      console.error('❌ Hackathon pricing failed, using fallback:', error);
+      return this.getFallbackPrices(tokenIdentifiers);
+    }
+  }
+
+  // Legacy CoinGecko method for backward compatibility (use sparingly in hackathon)
+  async getCoinGeckoTokenPrices(tokenIdentifiers: string[]): Promise<Record<string, number>> {
+    console.warn('⚠️ Using legacy CoinGecko pricing - consider using getTokenPrices() for hackathon optimization');
+    
     // Convert identifiers to CoinGecko IDs
     const geckoIds = tokenIdentifiers.map(id => this.getGeckoId(id));
-    const cacheKey = `prices-${geckoIds.join(',')}`;
+    const cacheKey = `legacy-prices-${geckoIds.join(',')}`;
     const cached = this.getFromCache(cacheKey);
     if (cached) return cached as Record<string, number>;
 
@@ -439,7 +473,7 @@ export class DataAggregationService {
       this.setCache(cacheKey, prices, this.DEFAULT_CACHE_TTL);
       return prices;
     } catch (error) {
-      console.error('Failed to get token prices:', error);
+      console.error('Failed to get legacy CoinGecko prices:', error);
       return this.getFallbackPrices(tokenIdentifiers);
     }
   }
@@ -543,7 +577,22 @@ export class DataAggregationService {
         const response = await this.optimizedFetch(url);
 
         if (response.ok) {
-          const data = await response.json();
+          let data;
+          try {
+            // Get response text first to handle malformed JSON
+            const responseText = await response.text();
+            
+            // Try progressive JSON repair strategies
+            data = this.parseWithJsonRepair(responseText, dexName);
+            
+            if (!data) {
+              console.warn(`❌ All JSON repair attempts failed for ${dexName}`);
+              return null;
+            }
+          } catch (jsonError) {
+            console.warn(`❌ JSON parsing error for ${dexName}:`, jsonError);
+            return null;
+          }
           
           // Normalize the key (remove suffixes for consistency)
           const normalizedKey = dexName.replace('-dex', '').replace('-exchange', '').replace('-network', '');
@@ -957,6 +1006,81 @@ export class DataAggregationService {
     }
     
     return advantages;
+  }
+
+  // ===== JSON REPAIR UTILITY =====
+
+  private parseWithJsonRepair(responseText: string, dexName: string): unknown | null {
+    const strategies = [
+      // Strategy 1: Parse as-is (maybe it's actually valid)
+      () => JSON.parse(responseText),
+      
+      // Strategy 2: Basic cleanup
+      () => {
+        const cleaned = responseText
+          .replace(/,\s*}/g, '}') // Remove trailing commas in objects
+          .replace(/,\s*]/g, ']') // Remove trailing commas in arrays
+          .replace(/\.\s*([,}\]])/g, '.0$1') // Fix unterminated decimals
+          .replace(/(\d+\.)\s*$/g, '$10'); // Fix unterminated decimals at end
+        
+        return JSON.parse(cleaned);
+      },
+      
+      // Strategy 3: More aggressive repair
+      () => {
+        let cleaned = responseText
+          .replace(/,\s*}/g, '}')
+          .replace(/,\s*]/g, ']')
+          .replace(/\.\s*([,}\]])/g, '.0$1')
+          .replace(/(\d+\.)\s*$/g, '$10')
+          .replace(/([{,]\s*\w+):/g, '$1":') // Add quotes to unquoted keys
+          .replace(/:\s*([^",{\[\d\-][^,}\]]*)/g, ':"$1"'); // Quote unquoted string values
+        
+        return JSON.parse(cleaned);
+      },
+      
+      // Strategy 4: Truncate at error position and try to close structures
+      () => {
+        // Find the approximate error position and truncate
+        const truncateAt = Math.min(responseText.length, 7045100); // Just before the error
+        let truncated = responseText.substring(0, truncateAt);
+        
+        // Try to close any open structures
+        const openBraces = (truncated.match(/{/g) || []).length;
+        const closeBraces = (truncated.match(/}/g) || []).length;
+        const openBrackets = (truncated.match(/\[/g) || []).length;
+        const closeBrackets = (truncated.match(/]/g) || []).length;
+        
+        // Add missing closing brackets/braces
+        truncated += ']'.repeat(Math.max(0, openBrackets - closeBrackets));
+        truncated += '}'.repeat(Math.max(0, openBraces - closeBraces));
+        
+        return JSON.parse(truncated);
+      },
+      
+      // Strategy 5: Last resort - extract just TVL value if possible
+      () => {
+        const tvlMatch = responseText.match(/"tvl"\s*:\s*([\d.]+)/);
+        if (tvlMatch) {
+          return { tvl: parseFloat(tvlMatch[1]) };
+        }
+        throw new Error('No TVL found');
+      }
+    ];
+
+    for (let i = 0; i < strategies.length; i++) {
+      try {
+        console.log(`🔧 Trying JSON repair strategy ${i + 1} for ${dexName}`);
+        const result = strategies[i]();
+        console.log(`✅ JSON repair strategy ${i + 1} succeeded for ${dexName}`);
+        return result;
+      } catch (error) {
+        console.log(`❌ JSON repair strategy ${i + 1} failed for ${dexName}:`, error instanceof Error ? error.message : error);
+        continue;
+      }
+    }
+
+    return null;
   }
 
   // ===== UTILITY METHODS =====

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const FUSION_API_CONFIG = {
-  baseUrl: process.env.NEXT_PUBLIC_1INCH_FUSION_API_URL || 'https://api.1inch.dev/fusion',
+const TOKENS_API_CONFIG = {
+  baseUrl: 'https://api.1inch.dev/swap/v6.0', // Use Aggregation API for tokens metadata
   apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || 'demo_api_key',
   timeout: 30000,
 };
@@ -16,18 +16,18 @@ export async function GET(
 ) {
   try {
     const { chainId } = await params;
-    console.log('🔥 1inch Fusion API Proxy - Received tokens request for chain:', chainId);
+    console.log('🔥 1inch Aggregation API - Received tokens request for chain:', chainId);
     
-    const response = await fetch(`${FUSION_API_CONFIG.baseUrl}/tokens/${chainId}`, {
+    const response = await fetch(`${TOKENS_API_CONFIG.baseUrl}/${chainId}/tokens`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${FUSION_API_CONFIG.apiKey}`,
-        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TOKENS_API_CONFIG.apiKey}`,
+        'Accept': 'application/json',
       },
-      signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      signal: AbortSignal.timeout(TOKENS_API_CONFIG.timeout),
     });
 
-    console.log('📊 1inch Tokens API Response:', response.status, response.statusText);
+    console.log('📊 1inch Aggregation Tokens API Response:', response.status, response.statusText);
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));

@@ -505,11 +505,31 @@ export class FusionAPIService {
     }
   }
 
-  // Get token prices
+  // Get token prices using 1inch Spot Price API with proper token metadata
   async getTokenPrices(tokenAddresses: string[]): Promise<Record<string, number>> {
     try {
-      // Use local API proxy to avoid CORS issues
-      const response = await fetch(`/api/1inch/fusion/prices?tokens=${tokenAddresses.join(',')}`, {
+      console.log('🔥 1inch Token Pricing - Step 1: Get token metadata');
+      
+      // Filter out non-Ethereum addresses and validate
+      const validAddresses = tokenAddresses.filter(addr => {
+        const isValid = addr.startsWith('0x') && addr.length === 42;
+        if (!isValid) {
+          console.warn(`⚠️ Invalid Ethereum address for 1inch: ${addr}`);
+        }
+        return isValid;
+      });
+
+      if (validAddresses.length === 0) {
+        console.warn('⚠️ No valid Ethereum addresses for 1inch API');
+        return {};
+      }
+
+      // Step 1: Get token metadata from 1inch Aggregation API
+      const tokensMetadata = await this.getTokensMetadata(1); // Ethereum mainnet
+      console.log('✅ Token metadata fetched from 1inch Aggregation API');
+
+      // Step 2: Get spot prices from 1inch
+      const response = await fetch(`/api/1inch/spot-price/1/${validAddresses.join(',')}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -526,10 +546,84 @@ export class FusionAPIService {
         });
       }
 
-      const data = await response.json();
-      return data.prices || {};
+      const spotData = await response.json();
+      console.log('✅ 1inch Spot Price API response:', spotData);
+      
+      // Step 3: Get real ETH price from CoinGecko for USD conversion
+      let ethPriceUSD = 3200; // Updated fallback
+      try {
+        const ethPriceResponse = await fetch('/api/coingecko/simple/price?ids=ethereum&vs_currencies=usd');
+        if (ethPriceResponse.ok) {
+          const ethPriceData = await ethPriceResponse.json();
+          if (ethPriceData.ethereum && ethPriceData.ethereum.usd) {
+            ethPriceUSD = ethPriceData.ethereum.usd;
+            console.log(`✅ Real ETH price from CoinGecko: $${ethPriceUSD.toLocaleString()}`);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to get real ETH price, using fallback:', ethPriceUSD);
+      }
+      
+      // Step 4: Convert 1inch ratios to USD prices using metadata
+      const convertedPrices: Record<string, number> = {};
+      const ethAddress = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      
+      console.log('🔥 1inch Token Analysis with Metadata:');
+      
+      for (const [address, priceWei] of Object.entries(spotData)) {
+        if (typeof priceWei === 'string') {
+          const addressLower = address.toLowerCase();
+          const tokenMeta = tokensMetadata.tokens?.[addressLower];
+          
+          // Convert wei to ETH ratio (divide by 1e18)
+          const priceRatioInEth = parseFloat(priceWei) / 1e18;
+          // Convert to USD using real ETH price
+          const priceInUSD = priceRatioInEth * ethPriceUSD;
+          
+          convertedPrices[address] = priceInUSD;
+          
+          // Enhanced logging with token metadata
+          const tokenSymbol = tokenMeta?.symbol || 'UNKNOWN';
+          const tokenName = tokenMeta?.name || 'Unknown Token';
+          
+          if (addressLower === '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599') {
+            console.log(`🏆 ${tokenSymbol} (${tokenName}): ${priceWei} wei = ${priceRatioInEth.toFixed(6)} ETH = $${priceInUSD.toLocaleString()} USD`);
+            console.log(`   → 1 ${tokenSymbol} = ${priceRatioInEth.toFixed(6)} ETH (${(priceInUSD/ethPriceUSD).toFixed(6)}x ETH)`);
+          } else if (addressLower === ethAddress) {
+            console.log(`🏆 ${tokenSymbol} (${tokenName}): ${priceWei} wei = ${priceRatioInEth.toFixed(6)} ETH = $${priceInUSD.toLocaleString()} USD`);
+          } else {
+            console.log(`💰 ${tokenSymbol}: ${priceWei} wei = ${priceRatioInEth.toFixed(6)} ETH = $${priceInUSD.toFixed(2)} USD`);
+          }
+        }
+      }
+      
+      console.log('🔄 Final USD prices with 1inch metadata:', convertedPrices);
+      return convertedPrices;
     } catch (error) {
+      console.error('❌ 1inch Token Pricing error:', error);
       throw createFusionAPIError(error);
+    }
+  }
+
+  // Get token metadata from 1inch Aggregation API
+  private async getTokensMetadata(chainId: number = 1): Promise<{ tokens: Record<string, { symbol: string; name: string; decimals: number; logoURI?: string }> }> {
+    try {
+      const response = await fetch(`/api/1inch/fusion/tokens/${chainId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Tokens metadata API error: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.warn('⚠️ Failed to get token metadata:', error);
+      return { tokens: {} };
     }
   }
 }
