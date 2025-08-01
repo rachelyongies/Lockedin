@@ -7,13 +7,11 @@ import {
   Zap, 
   Shield, 
   Activity,
-  ChevronRight,
   Sparkles,
   ArrowRight,
   Rocket,
   Award,
   Star,
-  Settings,
   CheckCircle,
   Wallet,
   ArrowUpDown,
@@ -29,9 +27,9 @@ import {
 import { AIAgentBridgeService, AIAgentAnalysis, AgentPrediction } from '@/lib/services/ai-agent-bridge-service';
 import { Token, BitcoinToken, EthereumToken, SolanaToken, StarknetToken, StellarToken } from '@/types/bridge';
 import { useWalletStore } from '@/store/useWalletStore';
-import { multiWalletManager } from '@/lib/wallets/multi-wallet-manager';
 import { cn } from '@/lib/utils/helpers';
 import { TradingCompanion } from '@/components/ai/TradingCompanion';
+import { UserPreferences } from '@/components/bridge/UserPreferences';
 import { PageWrapper } from '@/components/layout/PageWrapper';
 
 // AI Router Interface
@@ -45,6 +43,11 @@ interface AIRouterState {
   executionStatus: 'idle' | 'analyzing' | 'ready' | 'executing' | 'completed' | 'failed';
   activeAgents: string[];
   currentPhase: string;
+  
+  // User preferences for intelligent routing
+  userPreference: 'speed' | 'cost' | 'security' | 'balanced';
+  maxSlippage: number;
+  gasPreference: 'slow' | 'standard' | 'fast';
 }
 
 const AGENT_NAMES = {
@@ -92,6 +95,23 @@ const SUPPORTED_TOKENS: Token[] = [
     tags: ['native']
   } as EthereumToken,
   {
+    id: 'wbtc',
+    symbol: 'WBTC',
+    name: 'Wrapped Bitcoin',
+    network: 'ethereum',
+    chainId: 1,
+    address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+    decimals: 8,
+    logoUrl: '',
+    coingeckoId: 'wrapped-bitcoin',
+    isWrapped: true,
+    isNative: false,
+    verified: true,
+    displayPrecision: 8,
+    description: 'Wrapped Bitcoin on Ethereum',
+    tags: ['wrapped', 'bitcoin']
+  } as EthereumToken,
+  {
     id: 'usdt',
     symbol: 'USDT',
     name: 'Tether',
@@ -114,7 +134,7 @@ const SUPPORTED_TOKENS: Token[] = [
     name: 'USD Coin',
     network: 'ethereum',
     chainId: 1,
-    address: '0xa0b86a33e6c4b7c12a7a2a3c6e2b8b12e7c0cf5c2d',
+    address: '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C',
     decimals: 6,
     logoUrl: '',
     coingeckoId: 'usd-coin',
@@ -204,19 +224,24 @@ export default function IntelligentAIRouterPage() {
   }, [storeConnected, account, walletAddress, isConnected]);
   
   const [routerState, setRouterState] = useState<AIRouterState>({
-    fromToken: SUPPORTED_TOKENS[0], // BTC
-    toToken: SUPPORTED_TOKENS[1], // ETH
+    fromToken: SUPPORTED_TOKENS[2], // WBTC (valid ERC-20 for 1inch)
+    toToken: SUPPORTED_TOKENS[1], // ETH 
     amount: '0.5',
     isAnalyzing: false,
     aiResults: null,
     predictions: null,
     executionStatus: 'idle',
     activeAgents: [],
-    currentPhase: ''
+    currentPhase: '',
+    
+    // Default user preferences
+    userPreference: 'balanced',
+    maxSlippage: 0.5,
+    gasPreference: 'standard'
   });
 
   const [liveMetrics, setLiveMetrics] = useState(LIVE_AI_METRICS);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showPreferences, setShowPreferences] = useState(false);
 
   // Simulate live metrics updates
   useEffect(() => {
@@ -264,12 +289,17 @@ export default function IntelligentAIRouterPage() {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      // Get actual AI analysis (works without wallet connection)
+      // Get actual AI analysis with user preferences (works without wallet connection)
       const aiAnalysis = await agentService.analyzeRoute(
         routerState.fromToken,
         routerState.toToken,
         routerState.amount,
-        walletAddress // Optional - analysis works without wallet
+        walletAddress, // Optional - analysis works without wallet
+        {
+          userPreference: routerState.userPreference,
+          maxSlippage: routerState.maxSlippage,
+          gasPreference: routerState.gasPreference
+        }
       );
 
       // Get predictions
@@ -518,47 +548,43 @@ export default function IntelligentAIRouterPage() {
                 </div>
               </div>
 
-              {/* Advanced Settings */}
+              {/* User Preferences for AI Routing */}
               <div className="border-t border-gray-700 pt-4">
-                <button
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span>Advanced AI Settings</span>
-                  <ChevronRight className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
-                </button>
-                
-                <AnimatePresence>
-                  {showAdvanced && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="mt-4 space-y-3"
-                    >
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-gray-400">MEV Protection</label>
-                          <select className="w-full bg-gray-700/50 border border-gray-600 rounded-lg p-2 text-sm text-white">
-                            <option>Auto (Recommended)</option>
-                            <option>Maximum</option>
-                            <option>Standard</option>
-                            <option>Off</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs text-gray-400">Speed Priority</label>
-                          <select className="w-full bg-gray-700/50 border border-gray-600 rounded-lg p-2 text-sm text-white">
-                            <option>Balanced</option>
-                            <option>Fastest</option>
-                            <option>Cheapest</option>
-                          </select>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <UserPreferences
+                  userPreference={routerState.userPreference}
+                  onUserPreferenceChange={(preference) => 
+                    setRouterState(prev => ({ 
+                      ...prev, 
+                      userPreference: preference,
+                      aiResults: null, // Reset analysis when preferences change
+                      predictions: null,
+                      executionStatus: 'idle'
+                    }))
+                  }
+                  maxSlippage={routerState.maxSlippage}
+                  onMaxSlippageChange={(slippage) => 
+                    setRouterState(prev => ({ 
+                      ...prev, 
+                      maxSlippage: slippage,
+                      aiResults: null,
+                      predictions: null,
+                      executionStatus: 'idle'
+                    }))
+                  }
+                  gasPreference={routerState.gasPreference}
+                  onGasPreferenceChange={(gasPreference) => 
+                    setRouterState(prev => ({ 
+                      ...prev, 
+                      gasPreference,
+                      aiResults: null,
+                      predictions: null,
+                      executionStatus: 'idle'
+                    }))
+                  }
+                  isVisible={showPreferences}
+                  onToggleVisibility={() => setShowPreferences(!showPreferences)}
+                  disabled={routerState.isAnalyzing || routerState.executionStatus === 'executing'}
+                />
               </div>
 
               {/* Action Buttons */}
@@ -1067,14 +1093,24 @@ export default function IntelligentAIRouterPage() {
                 <TradingCompanion 
                   embedded={true}
                   currentRoute={routerState.aiResults?.routes[0] ? {
-                    id: routerState.aiResults.routes[0].id,
-                    fromToken: routerState.fromToken!,
-                    toToken: routerState.toToken!,
-                    amount: routerState.amount,
-                    estimatedOutput: routerState.aiResults.routes[0].estimatedOutput,
-                    fees: { network: { amountUSD: 0 }, protocol: { amountUSD: 0 } },
+                    from: routerState.fromToken!,
+                    to: routerState.toToken!,
+                    limits: {
+                      min: { raw: '0.001', bn: BigInt('1000000000000000'), decimals: 18, formatted: '0.001' },
+                      max: { raw: '1000', bn: BigInt('1000000000000000000000'), decimals: 18, formatted: '1000' }
+                    },
                     estimatedTime: { minutes: Math.round(routerState.aiResults.routes[0].estimatedTime / 60) },
-                    path: routerState.aiResults.routes[0].path
+                    fees: { 
+                      network: { amount: { raw: '0', bn: BigInt(0), decimals: 18, formatted: '0' }, amountUSD: 0 }, 
+                      protocol: { amount: { raw: '0', bn: BigInt(0), decimals: 18, formatted: '0' }, amountUSD: 0, percent: 0 },
+                      total: { amount: { raw: '0', bn: BigInt(0), decimals: 18, formatted: '0' }, amountUSD: 0 }
+                    },
+                    exchangeRate: parseFloat(routerState.aiResults.routes[0].estimatedOutput) / parseFloat(routerState.amount),
+                    inverseRate: parseFloat(routerState.amount) / parseFloat(routerState.aiResults.routes[0].estimatedOutput),
+                    priceImpact: parseFloat(routerState.aiResults.routes[0].priceImpact) || 0.005,
+                    available: true,
+                    isWrapping: false,
+                    requiresApproval: true
                   } : undefined}
                   fromToken={routerState.fromToken || undefined}
                   toToken={routerState.toToken || undefined}

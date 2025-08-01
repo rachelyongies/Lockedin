@@ -4,6 +4,7 @@ import { useWalletStore } from '@/store/useWalletStore';
 import { useDebounce } from '@/hooks/useDebounce';
 import { validateAmount, validateBalance } from '@/lib/utils/validation';
 import { Token, BridgeQuote } from '@/types/bridge';
+import { RouteGenerationOptions } from '@/lib/services/intelligent-route-generator';
 
 interface UseBridgeFormStateProps {
   onBridge?: (fromToken: Token, toToken: Token, amount: string) => Promise<void>;
@@ -32,6 +33,15 @@ interface BridgeFormState {
   quoteError: string | undefined;
   bridgeLoading: boolean;
   bridgeSuccess: boolean;
+  
+  // User preferences for intelligent routing
+  userPreference: 'speed' | 'cost' | 'security' | 'balanced';
+  setUserPreference: (preference: 'speed' | 'cost' | 'security' | 'balanced') => void;
+  maxSlippage: number;
+  setMaxSlippage: (slippage: number) => void;
+  gasPreference: 'slow' | 'standard' | 'fast';
+  setGasPreference: (preference: 'slow' | 'standard' | 'fast') => void;
+  
   handleSwapDirection: () => void;
   handleBridge: () => Promise<void>;
   handleInitiateSwap: () => Promise<void>;
@@ -111,6 +121,11 @@ export function useBridgeFormState({
   const [quote, setQuote] = useState<BridgeQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | undefined>();
+  
+  // User preferences for intelligent routing
+  const [userPreference, setUserPreference] = useState<'speed' | 'cost' | 'security' | 'balanced'>('balanced');
+  const [maxSlippage, setMaxSlippage] = useState(0.5); // 0.5% default
+  const [gasPreference, setGasPreference] = useState<'slow' | 'standard' | 'fast'>('standard');
   
   // Debounced amount for quote fetching
   const debouncedFromAmount = useDebounce(fromAmount, 500);
@@ -339,6 +354,15 @@ export function useBridgeFormState({
     quoteError,
     bridgeLoading,
     bridgeSuccess,
+    
+    // User preferences
+    userPreference,
+    setUserPreference,
+    maxSlippage,
+    setMaxSlippage,
+    gasPreference,
+    setGasPreference,
+    
     handleSwapDirection,
     handleBridge,
     handleInitiateSwap,

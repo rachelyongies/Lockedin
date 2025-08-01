@@ -1,7 +1,10 @@
 // HTTP Connection Manager for Performance Optimization
+import * as http from 'http';
+import * as https from 'https';
+
 export class HttpConnectionManager {
   private static instance: HttpConnectionManager;
-  private agents = new Map<string, any>();
+  private agents = new Map<string, http.Agent | https.Agent>();
   private defaultOptions = {
     keepAlive: true,
     maxSockets: 50,
@@ -15,9 +18,6 @@ export class HttpConnectionManager {
     // Initialize for both HTTP and HTTPS
     if (typeof window === 'undefined') {
       // Server-side only
-      const http = require('http');
-      const https = require('https');
-      
       this.agents.set('http:', new http.Agent(this.defaultOptions));
       this.agents.set('https:', new https.Agent(this.defaultOptions));
     }
@@ -61,7 +61,7 @@ export class HttpConnectionManager {
 
     const optimizedOptions: RequestInit = {
       ...options,
-      // @ts-ignore - Node.js specific
+      // @ts-expect-error - Node.js specific
       agent,
       headers: {
         'Connection': 'keep-alive',
@@ -88,14 +88,14 @@ export class HttpConnectionManager {
       return { environment: 'browser', connectionPooling: false };
     }
 
-    const stats: any = { environment: 'server', connectionPooling: true };
+    const stats: Record<string, unknown> = { environment: 'server', connectionPooling: true };
     
     for (const [protocol, agent] of this.agents) {
-      if (agent && typeof agent.getCurrentSocket === 'function') {
+      if (agent) {
         stats[protocol] = {
-          totalSocketCount: agent.totalSocketCount || 0,
-          freeSocketCount: Object.keys(agent.freeSockets || {}).length,
-          socketsCount: Object.keys(agent.sockets || {}).length
+          totalSocketCount: (agent as unknown as Record<string, unknown>).totalSocketCount as number || 0,
+          freeSocketCount: Object.keys((agent as unknown as Record<string, unknown>).freeSockets as Record<string, unknown> || {}).length,
+          socketsCount: Object.keys((agent as unknown as Record<string, unknown>).sockets as Record<string, unknown> || {}).length
         };
       }
     }
@@ -122,7 +122,6 @@ export class OptimizedApiClient {
   constructor(baseOptions: RequestInit = {}) {
     this.connectionManager = HttpConnectionManager.getInstance();
     this.baseOptions = {
-      timeout: 30000,
       ...baseOptions
     };
   }
@@ -136,7 +135,7 @@ export class OptimizedApiClient {
     });
   }
 
-  async post(url: string, data: any, options: RequestInit = {}): Promise<Response> {
+  async post(url: string, data: unknown, options: RequestInit = {}): Promise<Response> {
     const fetchFn = this.connectionManager.getOptimizedFetch();
     return fetchFn(url, {
       method: 'POST',

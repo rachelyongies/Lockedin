@@ -10,6 +10,8 @@ import { SecurityAgent } from '../agents/SecurityAgent';
 import { DataAggregationService } from './DataAggregationService';
 import { DecisionEngine } from './DecisionEngine';
 import { fusionAPI } from './1inch-fusion';
+import { oneInchAggregator, Comprehensive1inchAnalysis } from './1inch-api-aggregator';
+import { intelligentRouteGenerator, IntelligentRoute } from './intelligent-route-generator';
 import { 
   RouteProposal, 
   RiskAssessment, 
@@ -26,6 +28,7 @@ export interface AIAgentAnalysis {
   marketConditions: MarketConditions;
   confidence: number;
   insights: string[];
+  oneInchAnalysis?: Comprehensive1inchAnalysis;
 }
 
 export interface AgentPrediction {
@@ -151,7 +154,12 @@ export class AIAgentBridgeService {
     fromToken: Token,
     toToken: Token,
     amount: string,
-    walletAddress?: string
+    walletAddress?: string,
+    userPreferences?: {
+      userPreference?: 'speed' | 'cost' | 'security' | 'balanced';
+      maxSlippage?: number;
+      gasPreference?: 'slow' | 'standard' | 'fast';
+    }
   ): Promise<AIAgentAnalysis> {
     const startTime = Date.now();
     this.performanceMetrics.totalAnalyses++;
@@ -198,14 +206,23 @@ export class AIAgentBridgeService {
       
       const analysisStart = Date.now();
 
-      // Step 1: Generate routes and market conditions in parallel
-      // Pass original token objects, not addresses, for proper Fusion API integration
-      const [routes, marketConditions] = await Promise.all([
-        this.generateRealRoutes(fromToken, toToken, amount, walletAddress || '0x0000000000000000000000000000000000000000'),
-        this.dataService.getNetworkConditions()
+      // Step 1: Get comprehensive 1inch analysis in parallel with routes and market conditions
+      const [routes, marketConditions, oneInchAnalysis] = await Promise.all([
+        this.generateIntelligentRoutes(fromToken, toToken, amount, walletAddress, userPreferences),
+        this.dataService.getNetworkConditions(),
+        oneInchAggregator.getComprehensiveAnalysis(fromToken, toToken, amount, walletAddress)
       ]);
 
-      console.log(`⚡ Route generation completed in ${Date.now() - analysisStart}ms`);
+      console.log(`⚡ Route generation and 1inch analysis completed in ${Date.now() - analysisStart}ms`);
+      console.log(`🔍 1inch Analysis Results:`, {
+        fusionAvailable: oneInchAnalysis.quotes.fusion.available,
+        aggregationAvailable: oneInchAnalysis.quotes.aggregation.available,
+        recommendation: oneInchAnalysis.quotes.recommendation,
+        gasRecommendation: oneInchAnalysis.gas.recommendation,
+        liquiditySources: oneInchAnalysis.liquidity.totalSources,
+        pathsFound: oneInchAnalysis.paths.totalPaths,
+        overallConfidence: oneInchAnalysis.overall.confidence
+      });
 
       // Step 2: If we have routes, process risk assessments and execution strategy in parallel
       let riskAssessments: RiskAssessment[] = [];
@@ -215,8 +232,8 @@ export class AIAgentBridgeService {
         const [riskResults, execStrategy] = await Promise.all([
           // Parallel risk assessment for all routes
           Promise.all(routes.map(route => this.generateRealRiskAssessment(route))),
-          // Execution strategy for best route
-          this.generateRealExecutionStrategy(routes[0])
+          // Enhanced execution strategy using 1inch analysis
+          this.generateEnhancedExecutionStrategy(routes[0], oneInchAnalysis)
         ]);
         
         riskAssessments = riskResults;
@@ -227,8 +244,8 @@ export class AIAgentBridgeService {
 
       console.log(`⚡ Total analysis completed in ${Date.now() - analysisStart}ms`);
 
-      // Generate insights based on agent analysis
-      const insights = this.generateInsights(routes, riskAssessments, executionStrategy);
+      // Generate enhanced insights based on agent analysis and 1inch data
+      const insights = this.generateEnhancedInsights(routes, riskAssessments, executionStrategy, oneInchAnalysis);
 
       // Update performance metrics
       const responseTime = Date.now() - startTime;
@@ -241,8 +258,9 @@ export class AIAgentBridgeService {
         riskAssessments,
         executionStrategy,
         marketConditions,
-        confidence: this.calculateOverallConfidence(routes, riskAssessments, executionStrategy),
-        insights
+        confidence: this.calculateEnhancedConfidence(routes, riskAssessments, executionStrategy, oneInchAnalysis),
+        insights,
+        oneInchAnalysis
       };
     } catch (error) {
       console.error('🚨 AI Agent Analysis FAILED - Real Data Required:', {
@@ -582,8 +600,80 @@ export class AIAgentBridgeService {
     this.initialized = false;
   }
 
-  // Generate real route proposals using current market data
-  private async generateRealRoutes(
+  // Generate intelligent routes using comprehensive 1inch API data
+  private async generateIntelligentRoutes(
+    fromToken: Token, 
+    toToken: Token, 
+    amount: string, 
+    walletAddress?: string,
+    userPreferences?: {
+      userPreference?: 'speed' | 'cost' | 'security' | 'balanced';
+      maxSlippage?: number;
+      gasPreference?: 'slow' | 'standard' | 'fast';
+    }
+  ): Promise<RouteProposal[]> {
+    try {
+      console.log('🧠 AI Agent Bridge - Using Intelligent Route Generator');
+      console.log('📊 Intelligent routing parameters:', {
+        fromToken: fromToken.symbol,
+        toToken: toToken.symbol,
+        amount,
+        walletAddress: walletAddress?.slice(0, 6) + '...' + walletAddress?.slice(-4) || 'none',
+        strategy: 'comprehensive-1inch-analysis',
+        userPreferences: userPreferences || 'default'
+      });
+
+      // Generate intelligent routes using comprehensive 1inch API data with user preferences
+      const intelligentRoutes = await intelligentRouteGenerator.generateIntelligentRoutes(
+        fromToken,
+        toToken,
+        amount,
+        walletAddress,
+        {
+          userPreference: userPreferences?.userPreference || 'balanced',
+          maxSlippage: userPreferences?.maxSlippage || 0.01, // 1% default
+          gasPreference: userPreferences?.gasPreference || 'standard',
+          includeMultiHop: true
+        }
+      );
+
+      console.log('🎯 Intelligent Route Generator Results:', {
+        totalRoutes: intelligentRoutes.length,
+        sources: intelligentRoutes.map(r => r.source),
+        topRecommendation: intelligentRoutes[0]?.source || 'none',
+        confidence: intelligentRoutes[0]?.confidence || 0
+      });
+
+      // Convert IntelligentRoute to RouteProposal format
+      const routeProposals: RouteProposal[] = intelligentRoutes.map(route => ({
+        id: route.id,
+        fromToken: route.fromToken,
+        toToken: route.toToken,
+        amount: route.amount,
+        estimatedOutput: route.estimatedOutput,
+        path: route.path,
+        estimatedGas: route.estimatedGas,
+        estimatedTime: route.estimatedTime,
+        priceImpact: route.priceImpact,
+        confidence: route.confidence,
+        risks: route.risks,
+        advantages: route.advantages,
+        proposedBy: route.proposedBy
+      }));
+
+      console.log('✅ Intelligent routes converted to RouteProposals successfully');
+      return routeProposals;
+
+    } catch (error) {
+      console.error('❌ Intelligent Route Generator failed, falling back to legacy method:', error);
+      
+      // Fallback to legacy route generation
+      return this.generateLegacyRoutes(fromToken, toToken, amount, walletAddress || '0x0000000000000000000000000000000000000000');
+    }
+  }
+
+  // Legacy route generation method (kept as fallback)
+  private async generateLegacyRoutes(
     fromToken: Token, 
     toToken: Token, 
     amount: string, 
@@ -872,7 +962,7 @@ export class AIAgentBridgeService {
     return feeMap[protocol] || '0.003';
   }
 
-  private calculateRealGas(protocol: string, gasPrices: any): string {
+  private calculateRealGas(protocol: string, gasPrices: Record<string, unknown>): string {
     const baseGas = 150000;
     const protocolMultiplier: Record<string, number> = {
       'uniswap': 1.2,
@@ -1023,6 +1113,125 @@ export class AIAgentBridgeService {
     } else {
       return 'Optimal market conditions for execution';
     }
+  }
+
+  // Enhanced methods using 1inch API data
+  private async generateEnhancedExecutionStrategy(route: RouteProposal, oneInchAnalysis: Comprehensive1inchAnalysis): Promise<ExecutionStrategy> {
+    const baseStrategy = await this.generateRealExecutionStrategy(route);
+    
+    // Enhance with 1inch gas analysis
+    const gasStrategy = {
+      gasPrice: oneInchAnalysis.gas.current.fast > 0 ? oneInchAnalysis.gas.current.fast.toString() : baseStrategy.gasStrategy.gasPrice,
+      gasLimit: '200000',
+      strategy: oneInchAnalysis.gas.recommendation.includes('WAIT') ? 'safe' : 'fast' as 'fast' | 'standard' | 'safe' | 'custom',
+      maxFeePerGas: (oneInchAnalysis.gas.current.fast * 1.5).toString(),
+      estimatedCost: oneInchAnalysis.gas.current.standard.toString()
+    };
+
+    // Enhance with 1inch timing analysis
+    const timing = {
+      optimal: !oneInchAnalysis.gas.recommendation.includes('WAIT'),
+      delayRecommended: oneInchAnalysis.gas.recommendation.includes('WAIT') ? 900 : 0, // 15 minutes
+      reason: oneInchAnalysis.gas.recommendation + ' - ' + oneInchAnalysis.gas.trend
+    };
+
+    // Enhance MEV protection based on route recommendation
+    const mevProtection = {
+      enabled: oneInchAnalysis.quotes.recommendation === 'fusion',
+      strategy: oneInchAnalysis.quotes.recommendation === 'fusion' ? 'private-mempool' : 'sandwich-protection' as 'private-mempool' | 'commit-reveal' | 'sandwich-protection',
+      estimatedProtection: oneInchAnalysis.quotes.recommendation === 'fusion' ? 0.95 : 0.75
+    };
+
+    return {
+      ...baseStrategy,
+      gasStrategy,
+      timing,
+      mevProtection
+    };
+  }
+
+  private generateEnhancedInsights(
+    routes: RouteProposal[], 
+    riskAssessments: RiskAssessment[], 
+    executionStrategy: ExecutionStrategy,
+    oneInchAnalysis: Comprehensive1inchAnalysis
+  ): string[] {
+    const insights = this.generateInsights(routes, riskAssessments, executionStrategy);
+    
+    // Add 1inch-specific insights
+    const oneInchInsights: string[] = [];
+
+    // Quote comparison insights
+    if (oneInchAnalysis.quotes.fusion.available && oneInchAnalysis.quotes.aggregation.available) {
+      oneInchInsights.push(`1inch Analysis: ${oneInchAnalysis.quotes.recommendation} offers ${oneInchAnalysis.quotes.savings.percentage.toFixed(2)}% better rates`);
+    } else if (oneInchAnalysis.quotes.recommendation !== 'unavailable') {
+      oneInchInsights.push(`1inch ${oneInchAnalysis.quotes.recommendation} API available: ${oneInchAnalysis.quotes.reasoning}`);
+    }
+
+    // Gas insights
+    if (oneInchAnalysis.gas.recommendation) {
+      oneInchInsights.push(`Gas Analysis: ${oneInchAnalysis.gas.recommendation} (${oneInchAnalysis.gas.trend})`);
+    }
+
+    // Liquidity insights
+    if (oneInchAnalysis.liquidity.totalSources > 0) {
+      oneInchInsights.push(`Liquidity: ${oneInchAnalysis.liquidity.totalSources} DEX sources - ${oneInchAnalysis.liquidity.coverage.description}`);
+      if (oneInchAnalysis.liquidity.topSources.length > 0) {
+        const topDEXs = oneInchAnalysis.liquidity.topSources.slice(0, 3).map(s => s.title).join(', ');
+        oneInchInsights.push(`Top DEXs available: ${topDEXs}`);
+      }
+    }
+
+    // Path analysis insights
+    if (oneInchAnalysis.paths.totalPaths > 0) {
+      oneInchInsights.push(`Route Options: ${oneInchAnalysis.paths.totalPaths} paths found - ${oneInchAnalysis.paths.complexity.description}`);
+      if (oneInchAnalysis.paths.optimalPath) {
+        oneInchInsights.push(`Optimal Path: ${oneInchAnalysis.paths.optimalPath.reasoning}`);
+      }
+    }
+
+    // Overall recommendation
+    oneInchInsights.push(`1inch Confidence: ${(oneInchAnalysis.overall.confidence * 100).toFixed(0)}% - ${oneInchAnalysis.overall.recommendation}`);
+
+    return [...insights, ...oneInchInsights];
+  }
+
+  private calculateEnhancedConfidence(
+    routes: RouteProposal[], 
+    riskAssessments: RiskAssessment[], 
+    executionStrategy: ExecutionStrategy,
+    oneInchAnalysis: Comprehensive1inchAnalysis
+  ): number {
+    const baseConfidence = this.calculateOverallConfidence(routes, riskAssessments, executionStrategy);
+    const oneInchConfidence = oneInchAnalysis.overall.confidence;
+    
+    // Weighted average: 60% base analysis, 40% 1inch analysis
+    const enhancedConfidence = (baseConfidence * 0.6) + (oneInchConfidence * 0.4);
+    
+    // Apply additional bonuses/penalties
+    let adjustment = 0;
+    
+    // Bonus for having multiple quote sources
+    if (oneInchAnalysis.quotes.fusion.available && oneInchAnalysis.quotes.aggregation.available) {
+      adjustment += 0.1;
+    }
+    
+    // Bonus for good liquidity
+    if (oneInchAnalysis.liquidity.totalSources > 20) {
+      adjustment += 0.05;
+    }
+    
+    // Penalty for high gas prices
+    if (oneInchAnalysis.gas.recommendation.includes('WAIT')) {
+      adjustment -= 0.15;
+    }
+    
+    // Bonus for multiple routing paths
+    if (oneInchAnalysis.paths.totalPaths > 3) {
+      adjustment += 0.05;
+    }
+
+    return Math.max(0, Math.min(1, enhancedConfidence + adjustment));
   }
 }
 

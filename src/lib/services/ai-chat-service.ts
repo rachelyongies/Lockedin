@@ -1,6 +1,7 @@
 import { StorageManager, ChatMessage } from '@/lib/storage/storage-manager';
 import { BridgeRoute, Token } from '@/types/bridge';
 import { AIAgentAnalysis, AgentPrediction } from './ai-agent-bridge-service';
+import { Comprehensive1inchAnalysis } from './1inch-api-aggregator';
 
 export interface ChatContext {
   currentRoute?: BridgeRoute;
@@ -10,6 +11,7 @@ export interface ChatContext {
   executionStatus?: string;
   activeAgents?: string[];
   amount?: string;
+  oneInchAnalysis?: Comprehensive1inchAnalysis | null;
 }
 
 export class AIChatService {
@@ -54,17 +56,27 @@ export class AIChatService {
       // Build comprehensive context prompt
       const systemPrompt = this.buildComprehensiveSystemPrompt();
       
-      // Call ChatGPT with full context
+      // Get recent conversation history for context
+      const recentHistory = this.getChatHistory().slice(-6); // Last 6 messages (3 exchanges)
+      const conversationMessages = recentHistory.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+      
+      // Call ChatGPT with full context including conversation history
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [
             { role: 'system', content: systemPrompt },
+            ...conversationMessages, // Include conversation history
             { role: 'user', content: message }
           ],
-          temperature: 0.7,
-          max_tokens: 1000
+          temperature: 0.8, // Slightly higher for more natural conversation
+          max_tokens: 1200, // More tokens for detailed responses
+          presence_penalty: 0.1, // Encourage new topics
+          frequency_penalty: 0.1 // Reduce repetition
         })
       });
 
@@ -82,9 +94,18 @@ export class AIChatService {
   }
 
   private buildComprehensiveSystemPrompt(): string {
-    const { aiAnalysis, predictions, executionStatus, activeAgents, tokens, amount } = this.context;
+    const { aiAnalysis, predictions, executionStatus, activeAgents, tokens, amount, oneInchAnalysis } = this.context;
     
-    return `You are an expert DeFi trading assistant specializing in 1inch Fusion+ and cross-chain bridges. You help users understand complex AI routing decisions, gas optimization, and trading strategies.
+    return `You are Alex, an expert DeFi trading assistant and AI routing specialist. You have deep knowledge of 1inch Fusion+, cross-chain bridges, MEV protection, and gas optimization. You speak naturally and conversationally, like a knowledgeable trader who genuinely wants to help users succeed.
+
+PERSONALITY & COMMUNICATION STYLE:
+- Speak like a seasoned DeFi trader - confident but approachable
+- Use "I can see..." "Based on what I'm analyzing..." "Here's what's interesting..."
+- Be genuinely excited about good opportunities and honestly concerned about risks
+- Ask follow-up questions when appropriate to better understand user needs
+- Use technical terms when needed but always explain them simply
+- Show personality - be curious, thoughtful, and occasionally use appropriate trading slang
+- React naturally to the data - if something looks great, be enthusiastic; if risky, be cautious
 
 CURRENT TRADING CONTEXT:
 ${tokens && tokens.length >= 2 ? `
@@ -130,18 +151,98 @@ ${predictions ? `
 '• **PREDICTIONS FAILED** ❌ - Cannot generate ML predictions without real market data.' :
 '• No ML predictions available yet'}
 
-INSTRUCTIONS:
-- Be conversational and helpful, not robotic
-- Explain complex DeFi concepts in simple terms
-- Use the actual data above to provide specific, accurate answers
-- When users ask about routes, reference the real confidence scores and advantages
-- For gas questions, use the actual predicted gas costs
-- If no analysis is available, encourage them to run AI analysis first
-- Keep responses informative but concise
-- Use emojis sparingly and naturally
-- Focus on practical advice and actionable insights
+1INCH ROUTING ANALYSIS:
+${oneInchAnalysis ? `
+• **DATA SOURCE: LIVE 1INCH APIs** ✅
+• Fusion API Available: ${oneInchAnalysis.quotes.fusion.available ? 'Yes' : 'No'}
+• Aggregation API Available: ${oneInchAnalysis.quotes.aggregation.available ? 'Yes' : 'No'}
+• Recommended Route: ${oneInchAnalysis.quotes.recommendation.toUpperCase()}
+• Reasoning: ${oneInchAnalysis.quotes.reasoning}
 
-Remember: You have access to real AI analysis data, so provide specific insights based on the actual numbers and decisions made by the AI agents.`
+GAS CONDITIONS (1inch Tracker):
+• Current Gas Prices: Slow ${oneInchAnalysis.gas.current.slow} | Standard ${oneInchAnalysis.gas.current.standard} | Fast ${oneInchAnalysis.gas.current.fast} gwei
+• Base Fee: ${oneInchAnalysis.gas.current.baseFee} gwei
+• Gas Recommendation: ${oneInchAnalysis.gas.recommendation}
+• Price Trend: ${oneInchAnalysis.gas.trend}
+• Optimal Timing: ${oneInchAnalysis.gas.optimalTiming}
+
+LIQUIDITY ANALYSIS (1inch Sources):
+• Total DEX Sources: ${oneInchAnalysis.liquidity.totalSources}
+• Coverage Score: ${oneInchAnalysis.liquidity.coverage.score}/100 (${oneInchAnalysis.liquidity.coverage.description})
+${oneInchAnalysis.liquidity.topSources.length > 0 ? `• Top DEX Sources: ${oneInchAnalysis.liquidity.topSources.slice(0, 5).map(s => `${s.title} (${s.type})`).join(', ')}` : ''}
+${oneInchAnalysis.liquidity.recommendations.length > 0 ? `• Liquidity Recommendations:\n${oneInchAnalysis.liquidity.recommendations.map(rec => `  - ${rec}`).join('\n')}` : ''}
+
+ROUTING PATHS (1inch Analysis):
+• Total Paths Found: ${oneInchAnalysis.paths.totalPaths}
+• Path Complexity: ${oneInchAnalysis.paths.complexity.description} (Score: ${oneInchAnalysis.paths.complexity.score}/100)
+${oneInchAnalysis.paths.optimalPath ? `• Optimal Path: ${oneInchAnalysis.paths.optimalPath.reasoning}` : ''}
+${oneInchAnalysis.paths.recommendations.length > 0 ? `• Path Recommendations:\n${oneInchAnalysis.paths.recommendations.map(rec => `  - ${rec}`).join('\n')}` : ''}
+
+${oneInchAnalysis.approvals ? `
+TOKEN APPROVALS (1inch):
+• Token: ${oneInchAnalysis.approvals.tokenAddress}
+• Spender: ${oneInchAnalysis.approvals.spenderAddress}
+• Current Allowance: ${oneInchAnalysis.approvals.currentAllowance}
+• Needs Approval: ${oneInchAnalysis.approvals.needsApproval ? 'Yes' : 'No'}
+• Is Unlimited: ${oneInchAnalysis.approvals.isUnlimited ? 'Yes' : 'No'}
+• Recommended Action: ${oneInchAnalysis.approvals.recommendedAction}
+` : ''}
+
+OVERALL 1INCH ASSESSMENT:
+• Overall Confidence: ${(oneInchAnalysis.overall.confidence * 100).toFixed(1)}%
+• System Recommendation: ${oneInchAnalysis.overall.recommendation}
+• Optimal Strategy: ${oneInchAnalysis.overall.optimalStrategy.toUpperCase()}
+• Key Insights:
+${oneInchAnalysis.overall.reasoning.map(reason => `  - ${reason}`).join('\n')}
+
+${oneInchAnalysis.quotes.savings.percentage > 0 ? `
+POTENTIAL SAVINGS:
+• Amount Difference: ${oneInchAnalysis.quotes.savings.amount} tokens
+• Percentage Savings: ${oneInchAnalysis.quotes.savings.percentage.toFixed(3)}%
+` : ''}
+` : executionStatus === 'failed' ? 
+'• **1INCH ANALYSIS FAILED** ❌ - Cannot access 1inch APIs for routing analysis.' :
+'• No 1inch routing analysis available yet'}
+
+CONVERSATION GUIDELINES:
+
+🎯 ALWAYS START WITH CONTEXT:
+- Reference the specific data you're seeing: "Looking at your WBTC→ETH trade..."
+- Acknowledge the user's situation: "I can see you're working with a 0.5 WBTC swap..."
+- Show you understand the stakes: "With current gas at 45 gwei, timing matters here..."
+
+💡 BE NATURALLY CONVERSATIONAL:
+- Ask clarifying questions: "Are you looking to minimize fees or get the fastest execution?"
+- Share insights like a trader would: "Here's what I'm seeing in the market right now..."
+- Use natural transitions: "Actually, there's something interesting about this route..." 
+- Show genuine concern: "I'd be a bit cautious here because..." or excitement: "This is actually a great setup because..."
+
+📊 REFERENCE REAL DATA SPECIFICALLY:
+- "The AI is ${aiAnalysis?.routes[0]?.confidence ? (aiAnalysis.routes[0].confidence * 100).toFixed(1) + '% confident' : 'still analyzing'} in this route"
+- "Gas tracker shows ${oneInchAnalysis?.gas.current.standard || 'current'} gwei standard pricing"
+- "I'm seeing ${oneInchAnalysis?.liquidity.totalSources || 'multiple'} DEX sources with ${oneInchAnalysis?.liquidity.coverage.description?.toLowerCase() || 'good'} liquidity"
+
+⚡ ACTIONABLE INSIGHTS:
+- Always end with a clear next step or recommendation
+- Explain the "why" behind suggestions: "I'd suggest Fusion here because..."
+- Point out timing considerations: "With gas trends ${oneInchAnalysis?.gas.trend || 'stable'}, you might want to..."
+- Warn about potential issues before they happen
+
+🚫 NEVER:
+- Give generic responses that ignore the actual data
+- Be overly technical without explanation  
+- Make recommendations without referencing the analysis
+- Ignore user questions or change topics abruptly
+- Sound like a chatbot or use corporate speak
+
+💬 CONVERSATION STARTERS/RESPONSES:
+- "Based on what I'm analyzing here..." 
+- "Here's what's interesting about your route..."
+- "I notice the AI flagged something worth discussing..."
+- "The market conditions are actually pretty favorable for this..."
+- "Let me walk you through what I'm seeing..."
+
+Remember: You're not just answering questions - you're helping users make better trading decisions with real data and genuine insights.`
   }
 
   private generateFallbackResponse(message: string): Promise<string> {
@@ -157,22 +258,46 @@ Remember: You have access to real AI analysis data, so provide specific insights
   }
 
   private getContextualFallback(lowerMessage: string): string {
-    const { aiAnalysis, predictions, executionStatus } = this.context;
+    const { aiAnalysis, predictions, executionStatus, oneInchAnalysis } = this.context;
 
-    // Simple contextual fallbacks when ChatGPT is unavailable
+    // Conversational contextual fallbacks when main AI is unavailable
     if (lowerMessage.includes('route') && aiAnalysis?.routes?.[0]) {
-      return `The AI selected this route with ${(aiAnalysis.routes[0].confidence * 100).toFixed(1)}% confidence. It offers ${aiAnalysis.routes[0].advantages[0] || 'optimal execution'} and will take about ${Math.round(aiAnalysis.routes[0].estimatedTime / 60)} minutes.`;
+      return `Looking at your route, the AI is ${(aiAnalysis.routes[0].confidence * 100).toFixed(1)}% confident in this path. What I like about it is ${aiAnalysis.routes[0].advantages[0] || 'the optimal execution strategy'} - should take around ${Math.round(aiAnalysis.routes[0].estimatedTime / 60)} minutes. Want me to explain why the AI chose this particular route?`;
     }
     
     if (lowerMessage.includes('gas') && predictions) {
-      return `Based on AI analysis, gas is currently ${parseInt(predictions.predictedGasCost)} gwei with a ${(predictions.successProbability * 100).toFixed(1)}% success probability.`;
+      return `Here's what I'm seeing on gas: currently ${parseInt(predictions.predictedGasCost)} gwei with a ${(predictions.successProbability * 100).toFixed(1)}% success probability. ${oneInchAnalysis?.gas.trend === 'increasing' ? "Prices are trending up, so you might want to execute soon." : oneInchAnalysis?.gas.trend === 'decreasing' ? "Good news - gas is trending down, so timing is in your favor." : "Gas seems stable right now."}`;
     }
     
     if (lowerMessage.includes('slippage') && predictions) {
-      return `The AI recommends ${(predictions.optimalSlippage * 100).toFixed(3)}% slippage for optimal execution.`;
+      return `Based on current market conditions, I'd recommend ${(predictions.optimalSlippage * 100).toFixed(3)}% slippage. This gives you a good balance between protection and execution probability. Are you comfortable with that level, or do you prefer to be more conservative?`;
     }
 
-    return `I'm having trouble connecting to the full AI assistant right now, but I can see ${aiAnalysis ? `your analysis shows ${aiAnalysis.routes.length} routes with ${(aiAnalysis.routes[0]?.confidence * 100).toFixed(1)}% confidence` : 'you should run AI analysis first'}. Please try your question again or check your connection.`;
+    // Enhanced 1inch-specific responses
+    if (lowerMessage.includes('1inch') && oneInchAnalysis) {
+      return `Looking at the 1inch analysis, ${oneInchAnalysis.quotes.recommendation} is definitely the way to go here. I'm seeing ${oneInchAnalysis.liquidity.totalSources} DEX sources with ${oneInchAnalysis.liquidity.coverage.description.toLowerCase()} liquidity coverage. ${oneInchAnalysis.quotes.reasoning} What's your priority - speed or cost savings?`;
+    }
+
+    if (lowerMessage.includes('fusion') && oneInchAnalysis?.quotes.fusion.available) {
+      return `Great news! 1inch Fusion is available for this pair. ${oneInchAnalysis.quotes.reasoning} This typically means better pricing and MEV protection. Are you familiar with how Fusion works, or would you like me to explain the benefits?`;
+    }
+
+    if (lowerMessage.includes('liquidity') && oneInchAnalysis) {
+      const coverage = oneInchAnalysis.liquidity.coverage;
+      return `The liquidity situation looks ${coverage.score > 80 ? 'excellent' : coverage.score > 60 ? 'solid' : 'okay'} - I'm seeing ${oneInchAnalysis.liquidity.totalSources} DEX sources with ${coverage.description.toLowerCase()} coverage (${coverage.score}/100). ${coverage.score > 80 ? 'You should get great execution with minimal slippage.' : coverage.score > 60 ? 'Should be smooth execution, though watch your slippage settings.' : 'Might want to be a bit more careful with slippage here.'}`;
+    }
+
+    if ((lowerMessage.includes('dex') || lowerMessage.includes('source')) && oneInchAnalysis?.liquidity?.topSources && oneInchAnalysis.liquidity.topSources.length > 0) {
+      const topDEXs = oneInchAnalysis?.liquidity?.topSources?.slice(0, 3).map(s => s.title).join(', ') || '';
+      return `I'm seeing strong liquidity across ${topDEXs} as the top sources, with ${oneInchAnalysis?.liquidity?.totalSources || 0} total DEXs analyzed. The routing should be quite efficient. Are you curious about which specific DEX the AI will likely route through?`;
+    }
+
+    // Enhanced connection issue message
+    if (aiAnalysis) {
+      return `I'm having a temporary connection issue with the main AI, but I can still see your analysis locally. You've got ${aiAnalysis.routes.length} routes analyzed with ${(aiAnalysis.routes[0]?.confidence * 100).toFixed(1)}% confidence in the top choice. ${aiAnalysis.routes[0]?.advantages[0] ? `The main advantage is ${aiAnalysis.routes[0].advantages[0].toLowerCase()}.` : ''} Try asking again in a moment, or let me know if you want me to walk through what I can see right now.`;
+    }
+
+    return `I'm having trouble accessing the full analysis system right now. To get the most accurate insights, you'll want to run the AI analysis first - that's where I get all the juicy details about routing, gas optimization, and market conditions. Once that's done, I can give you much more specific guidance!`;
   }
 
   private buildSystemPrompt(): string {
@@ -199,8 +324,8 @@ Remember: You have access to real AI analysis data, so provide specific insights
     this.context.currentRoute = route;
     return `🚀 **Route Explanation:**
 
-**Your Bridge:** ${route.fromToken.symbol} → ${route.toToken.symbol}
-**Networks:** ${route.fromToken.network} → ${route.toToken.network}
+**Your Bridge:** ${route.from.symbol} → ${route.to.symbol}
+**Networks:** ${route.from.network} → ${route.to.network}
 
 **Why this route?**
 ✅ **Direct Path:** No unnecessary hops or intermediary tokens

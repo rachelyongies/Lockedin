@@ -452,14 +452,14 @@ export class RiskAssessmentAgent extends BaseAgent {
       // Convert CoinGecko data to audit report format
       const auditReport: AuditReport = {
         auditor: 'CoinGecko Community',
-        date: new Date(),
+        date: Date.now(),
         score: Math.round(finalScore * 10), // Convert 0-10 to 0-100
         criticalIssues: 0,
         highIssues: finalScore < 7 ? 1 : 0,
         mediumIssues: finalScore < 8 ? 2 : 1,
         lowIssues: 3,
         resolved: true,
-        url: data.links?.homepage?.[0] || `https://coingecko.com/coins/${coinId}`
+        reportUrl: data.links?.homepage?.[0] || `https://coingecko.com/coins/${coinId}`
       };
 
       console.log(`✅ Retrieved CoinGecko data for ${protocolName}: final score ${finalScore}`);
@@ -1126,7 +1126,7 @@ export class RiskAssessmentAgent extends BaseAgent {
         if (response.ok) {
           const data = await response.json();
           if (data.tvl) {
-            const tvlHistory = data.tvl.map((entry: any) => ({
+            const tvlHistory = data.tvl.map((entry: { date: number; totalLiquidityUSD: number }) => ({
               timestamp: entry.date,
               tvl: entry.totalLiquidityUSD
             }));
@@ -1560,14 +1560,14 @@ class ChainSecurityAPI {
       // Create audit report from CoinGecko data
       const report: AuditReport = {
         auditor: 'CoinGecko Analysis',
-        date: new Date(data.last_updated || Date.now()),
+        date: data.last_updated ? new Date(data.last_updated).getTime() : Date.now(),
         score: Math.round((data.public_interest_score || 50) * 2),
         criticalIssues: 0,
         highIssues: data.public_interest_score < 40 ? 1 : 0,
         mediumIssues: data.public_interest_score < 60 ? 2 : 1,
         lowIssues: 3,
         resolved: true,
-        url: data.links?.homepage?.[0] || `https://coingecko.com/coins/${coinId}`
+        reportUrl: data.links?.homepage?.[0] || `https://coingecko.com/coins/${coinId}`
       };
       
       console.log(`✅ Generated audit report for ${protocol} from CoinGecko data`);

@@ -7,7 +7,7 @@ export interface CacheEntry<T> {
 
 export class CacheService {
   private static instance: CacheService;
-  private cache = new Map<string, CacheEntry<any>>();
+  private cache = new Map<string, CacheEntry<unknown>>();
   private maxSize = 1000; // Maximum cache entries
   private cleanupInterval: NodeJS.Timeout;
 
@@ -36,7 +36,7 @@ export class CacheService {
       return null;
     }
 
-    return entry.data;
+    return entry.data as T;
   }
 
   // Set cached data with TTL
@@ -44,7 +44,7 @@ export class CacheService {
     // Implement LRU eviction if cache is full
     if (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value;
-      this.cache.delete(oldestKey);
+      if (oldestKey) this.cache.delete(oldestKey);
     }
 
     this.cache.set(key, {

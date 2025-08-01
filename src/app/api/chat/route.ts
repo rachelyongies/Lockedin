@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, temperature, max_tokens } = await request.json();
+    const { messages, temperature, max_tokens, presence_penalty, frequency_penalty } = await request.json();
 
     const openaiApiKey = process.env.OPENAI_API_KEY;
     
@@ -25,6 +25,8 @@ export async function POST(request: NextRequest) {
         messages,
         temperature: temperature || 0.7,
         max_tokens: max_tokens || 1000,
+        presence_penalty: presence_penalty || 0,
+        frequency_penalty: frequency_penalty || 0,
       }),
     });
 

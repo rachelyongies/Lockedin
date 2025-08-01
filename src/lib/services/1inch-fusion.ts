@@ -246,7 +246,7 @@ function toWei(amount: string, decimals: number = 18): string {
 // Convert our token to 1inch token address
 function getTokenAddress(token: Token): string {
   // Handle native ETH - always use the correct 1inch address
-  if (token.symbol === 'ETH' || token.address === '0x0000000000000000000000000000000000000000') {
+  if (token.symbol === 'ETH' || ('address' in token && token.address === '0x0000000000000000000000000000000000000000')) {
     return TOKEN_ADDRESS_MAP['ETH'];
   }
   

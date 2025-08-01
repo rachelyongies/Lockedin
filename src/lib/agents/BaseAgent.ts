@@ -551,8 +551,8 @@ export abstract class BaseAgent extends EventEmitter {
     }
     
     // More lenient success rate check - only flag if we have data and it's poor
-    if (this.metrics.totalMessages > 5 && this.metrics.successRate < 0.7) {
-      issues.push(`Low success rate: ${(this.metrics.successRate * 100).toFixed(1)}% (${this.metrics.totalMessages} messages)`);
+    if (this.metrics.tasksCompleted > 5 && this.metrics.successRate < 0.7) {
+      issues.push(`Low success rate: ${(this.metrics.successRate * 100).toFixed(1)}% (${this.metrics.tasksCompleted} tasks)`);
     }
     
     if (this.circuitBreaker.isOpen) {
@@ -583,7 +583,7 @@ export abstract class BaseAgent extends EventEmitter {
         status: this.status,
         circuitBreakerOpen: this.circuitBreaker.isOpen,
         successRate: this.metrics.successRate,
-        totalMessages: this.metrics.totalMessages,
+        totalTasks: this.metrics.tasksCompleted,
         lastActivity: new Date(this.metrics.lastActivity).toISOString(),
         activeTasks: this.activeTasks.size,
         issues
@@ -628,7 +628,7 @@ export abstract class BaseAgent extends EventEmitter {
     // 1. Status is ACTIVE
     // 2. Circuit breaker is closed
     // 3. Either no failures recorded OR success rate > 0.7 (more lenient)
-    const hasGoodSuccessRate = this.metrics.totalMessages === 0 || this.metrics.successRate > 0.7;
+    const hasGoodSuccessRate = this.metrics.tasksCompleted === 0 || this.metrics.successRate > 0.7;
     
     return this.status === AgentStatus.ACTIVE && 
            !this.circuitBreaker.isOpen &&

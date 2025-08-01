@@ -1317,7 +1317,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
         const response = await ApiClients.defillama.get(`https://yields.llama.fi/pools`);
         if (response.ok) {
           const allPools = await response.json();
-          const protocolPools = allPools.data?.filter((pool: any) => 
+          const protocolPools = allPools.data?.filter((pool: { project: string; chain: string }) => 
             pool.project === protocolId && 
             pool.chain === this.getDefiLlamaChainName(chainId)
           ) || [];

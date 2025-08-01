@@ -86,7 +86,7 @@ export function TradingCompanion({
     setChatHistory(prev => [...prev, newUserMessage]);
 
     try {
-      // Send message with full context including AI analysis
+      // Send message with full context including AI analysis and 1inch data
       const response = await chatService.sendMessage(userMessage, {
         currentRoute,
         tokens: fromToken && toToken ? [fromToken, toToken] : undefined,
@@ -94,7 +94,8 @@ export function TradingCompanion({
         predictions,
         executionStatus,
         activeAgents,
-        amount
+        amount,
+        oneInchAnalysis: aiAnalysis?.oneInchAnalysis || null
       });
 
       // Add AI response to UI

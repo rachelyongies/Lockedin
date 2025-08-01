@@ -6,6 +6,7 @@ import { TokenCard } from './TokenCard';
 import { SwapButton } from './SwapButton';
 import { BridgeDetails } from '../BridgeDetails';
 import { ActionButton } from '../ActionButton';
+import { UserPreferences } from '../UserPreferences';
 import { useBridgeFormState } from './useBridgeFormState';
 import { TransactionMonitor } from '../TransactionFlow/TransactionMonitor';
 import { cn } from '@/lib/utils/helpers';
@@ -82,6 +83,15 @@ export function BridgeForm({
     quoteError,
     bridgeLoading,
     bridgeSuccess,
+    
+    // User preferences
+    userPreference,
+    setUserPreference,
+    maxSlippage,
+    setMaxSlippage,
+    gasPreference,
+    setGasPreference,
+    
     handleSwapDirection,
     handleBridge,
     handleInitiateSwap,
@@ -91,6 +101,7 @@ export function BridgeForm({
 
   // UI state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showPreferences, setShowPreferences] = useState(false);
   
 
   // Handle token selection
@@ -235,6 +246,21 @@ export function BridgeForm({
               loading={quoteLoading}
               data-testid="bridge-to-card"
             />
+
+            {/* User Preferences */}
+            <div className="flex justify-end">
+              <UserPreferences
+                userPreference={userPreference}
+                onUserPreferenceChange={setUserPreference}
+                maxSlippage={maxSlippage}
+                onMaxSlippageChange={setMaxSlippage}
+                gasPreference={gasPreference}
+                onGasPreferenceChange={setGasPreference}
+                isVisible={showPreferences}
+                onToggleVisibility={() => setShowPreferences(!showPreferences)}
+                disabled={bridgeLoading}
+              />
+            </div>
 
             {/* Timelock Input */}
             <div className="space-y-2">

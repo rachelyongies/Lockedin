@@ -506,7 +506,6 @@ export class DataAggregationService {
         const url = `${this.DEFILLAMA_BASE_URL}/protocol/${dexName}`;
         
         const response = await fetch(url, {
-          timeout: 8000, // Reduced timeout
           headers: {
             'Accept': 'application/json',
             'User-Agent': 'UniteDefi/1.0'
