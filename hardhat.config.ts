@@ -14,12 +14,25 @@ const config: HardhatUserConfig = {
     }
   },
   networks: {
+    ethereum: {
+      url: process.env.ETHEREUM_RPC_URL,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 1,
+      timeout: 60000,
+      gas: 2100000,
+      gasPrice: 20000000000 // 20 gwei
+    },
+    polygon: {
+      url: process.env.POLYGON_RPC_URL,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 137,
+      timeout: 60000,
+      gas: 2100000,
+      gasPrice: 30000000000 // 30 gwei
+    },
     sepolia: {
       url: process.env.NEXT_PUBLIC_ETH_RPC_URL || "https://eth-sepolia.g.alchemy.com/public",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [
-        // Test account - NEVER use for mainnet
-        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-      ],
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 11155111,
       timeout: 60000,
       gas: 2100000,
