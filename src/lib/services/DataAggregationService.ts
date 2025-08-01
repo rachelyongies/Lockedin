@@ -2,6 +2,7 @@
 // Integrates 1inch Fusion, CoinGecko, DeFiLlama, and other real data sources
 
 import { MarketConditions, RouteProposal, RouteStep } from '../agents/types';
+import { HttpConnectionManager } from './HttpConnectionManager';
 
 export interface TokenInfo {
   address: string;
@@ -112,6 +113,8 @@ export class DataAggregationService {
   private readonly COINGECKO_BASE_URL = '/api/coingecko';
   private readonly DEFILLAMA_BASE_URL = 'https://api.llama.fi';
   
+  private httpManager: HttpConnectionManager;
+  
   private apiKeys: {
     oneInch?: string;
     coinGecko?: string;
@@ -146,7 +149,39 @@ export class DataAggregationService {
     alchemy?: string;
   } = {}) {
     this.apiKeys = apiKeys;
+    this.httpManager = HttpConnectionManager.getInstance();
     this.initializeTokenMetadata();
+  }
+
+  // Helper method for optimized fetch with error handling
+  private async optimizedFetch(url: string, options: RequestInit = {}): Promise<Response> {
+    const optimizedFetch = this.httpManager.getOptimizedFetch();
+    
+    try {
+      return await optimizedFetch(url, {
+        ...options,
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'UniteDefi/1.0',
+          ...options.headers
+        }
+      });
+    } catch (error) {
+      // Handle HTTP/2 protocol errors by falling back to regular fetch
+      if (error instanceof Error && error.message.includes('HTTP2_PROTOCOL_ERROR')) {
+        console.warn(`HTTP/2 error for ${url}, falling back to HTTP/1.1:`, error.message);
+        return await fetch(url, {
+          ...options,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'UniteDefi/1.0',
+            'Connection': 'keep-alive',
+            ...options.headers
+          }
+        });
+      }
+      throw error;
+    }
   }
 
   // Initialize token metadata mapping
@@ -505,12 +540,7 @@ export class DataAggregationService {
       try {
         const url = `${this.DEFILLAMA_BASE_URL}/protocol/${dexName}`;
         
-        const response = await fetch(url, {
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'UniteDefi/1.0'
-          }
-        });
+        const response = await this.optimizedFetch(url);
 
         if (response.ok) {
           const data = await response.json();

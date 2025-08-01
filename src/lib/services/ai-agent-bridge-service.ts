@@ -115,7 +115,7 @@ export class AIAgentBridgeService {
         dependencies: [],
         maxConcurrentTasks: 5,
         timeout: 15000
-      }, this.dataService, undefined); // API keys should be handled server-side only
+      }, this.dataService, process.env.DUNE_API_KEY); // Pass the API key from environment
 
       const executionStrategyAgent = new ExecutionStrategyAgent(this.dataService);
 

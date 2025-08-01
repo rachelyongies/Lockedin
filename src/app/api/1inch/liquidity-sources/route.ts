@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, getCachedResponse, setCachedResponse, getClientId, performCleanup } from '@/lib/utils/rate-limit-cache';
 
 const LIQUIDITY_SOURCES_API_CONFIG = {
   baseUrl: 'https://api.1inch.dev/swap/v6.0',
@@ -6,13 +7,49 @@ const LIQUIDITY_SOURCES_API_CONFIG = {
   timeout: 30000,
 };
 
+function getCacheKey(chainId: string): string {
+  return `liquidity_sources_${chainId}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const chainId = searchParams.get('chainId') || '1';
     
+    // Perform periodic cleanup
+    performCleanup();
+    
+    // Get client ID for rate limiting
+    const clientId = getClientId(request);
+    
+    // Check rate limiting
+    const rateLimitResult = checkRateLimit(clientId);
+    if (rateLimitResult.isLimited) {
+      console.log('⚠️ Rate limit exceeded for client:', clientId);
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please wait before making more requests.' },
+        { 
+          status: 429, 
+          headers: { 
+            'Retry-After': rateLimitResult.retryAfter?.toString() || '60',
+            'X-RateLimit-Limit': '15',
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': (Date.now() + (rateLimitResult.retryAfter || 60) * 1000).toString()
+          } 
+        }
+      );
+    }
+    
     console.log('🔥 1inch Liquidity Sources API - Request');
     console.log('📋 Chain ID:', chainId);
+    
+    // Check cache first
+    const cacheKey = getCacheKey(chainId);
+    const cachedResponse = getCachedResponse(cacheKey);
+    if (cachedResponse) {
+      console.log('📦 Returning cached liquidity sources data');
+      return NextResponse.json(cachedResponse);
+    }
 
     const endpoint = `${LIQUIDITY_SOURCES_API_CONFIG.baseUrl}/${chainId}/liquidity-sources`;
     console.log('🎯 1inch Liquidity Sources API endpoint:', endpoint);
@@ -51,6 +88,9 @@ export async function GET(request: NextRequest) {
       },
       timestamp: Date.now()
     };
+    
+    // Cache the response
+    setCachedResponse(cacheKey, enhancedData);
 
     return NextResponse.json(enhancedData);
   } catch (error) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, getCachedResponse, setCachedResponse, getClientId, performCleanup } from '@/lib/utils/rate-limit-cache';
 
 const GAS_TRACKER_API_CONFIG = {
   baseUrl: 'https://api.1inch.dev/gas-price/v1.2',
@@ -6,13 +7,48 @@ const GAS_TRACKER_API_CONFIG = {
   timeout: 30000,
 };
 
+function getCacheKey(chainId: string): string {
+  return `gas_tracker_${chainId}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const chainId = searchParams.get('chainId') || '1';
     
+    // Perform periodic cleanup
+    performCleanup();
+    
+    // Get client ID for rate limiting
+    const clientId = getClientId(request);
+    
+    // Check rate limiting
+    const rateLimitResult = checkRateLimit(clientId);
+    if (rateLimitResult.isLimited) {
+      console.log('⚠️ Rate limit exceeded for client:', clientId);
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please wait before making more requests.' },
+        { 
+          status: 429, 
+          headers: { 
+            'Retry-After': rateLimitResult.retryAfter?.toString() || '60',
+            'X-RateLimit-Limit': '15',
+            'X-RateLimit-Remaining': '0'
+          } 
+        }
+      );
+    }
+    
     console.log('🔥 1inch Gas Tracker API - Request');
     console.log('📋 Chain ID:', chainId);
+    
+    // Check cache first
+    const cacheKey = getCacheKey(chainId);
+    const cachedResponse = getCachedResponse(cacheKey);
+    if (cachedResponse) {
+      console.log('📦 Returning cached gas tracker data');
+      return NextResponse.json(cachedResponse);
+    }
 
     const endpoint = `${GAS_TRACKER_API_CONFIG.baseUrl}/${chainId}`;
     console.log('🎯 1inch Gas Tracker API endpoint:', endpoint);
@@ -39,6 +75,7 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
     console.log('✅ 1inch Gas Tracker API Success - Gas data received');
+    console.log('📊 Raw gas data from 1inch:', JSON.stringify(data, null, 2));
 
     // Enhance response with additional analysis
     const enhancedData = {
@@ -50,6 +87,9 @@ export async function GET(request: NextRequest) {
       },
       timestamp: Date.now()
     };
+    
+    // Cache the response
+    setCachedResponse(cacheKey, enhancedData);
 
     return NextResponse.json(enhancedData);
   } catch (error) {

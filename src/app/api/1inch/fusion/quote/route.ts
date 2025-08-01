@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
       
       // Fix native ETH address for aggregation API fallback
       const srcToken = body.fromTokenAddress === '0x0000000000000000000000000000000000000000' 
-        ? '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE' 
+        ? '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' 
         : body.fromTokenAddress;
       const dstToken = body.toTokenAddress === '0x0000000000000000000000000000000000000000' 
-        ? '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE' 
+        ? '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' 
         : body.toTokenAddress;
       
       const queryParams = new URLSearchParams({

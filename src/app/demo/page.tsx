@@ -83,7 +83,7 @@ const SUPPORTED_TOKENS: Token[] = [
     name: 'Ethereum',
     network: 'ethereum',
     chainId: 1,
-    address: '0x0000000000000000000000000000000000000000',
+    address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
     decimals: 18,
     logoUrl: '',
     coingeckoId: 'ethereum',
@@ -841,7 +841,7 @@ export default function IntelligentAIRouterPage() {
                       </div>
                     </h3>
                     <div className="flex items-center justify-between">
-                      {routerState.aiResults.routes[0].path.map((step: { protocol: string; fee: string }, index: number) => (
+                      {routerState.aiResults.routes[0].path?.map((step: { protocol: string; fee: string }, index: number) => (
                         <React.Fragment key={index}>
                           <div className="text-center flex-1">
                             <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mb-2 mx-auto">

@@ -225,7 +225,7 @@ async function fetchWithRetry(
 // Token address mapping for 1inch
 const TOKEN_ADDRESS_MAP: Record<string, string> = {
   // Ethereum Mainnet - Use the correct native ETH address for 1inch
-  'ETH': '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE',
+  'ETH': '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
   'WETH': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   'WBTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
   'USDC': '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C',

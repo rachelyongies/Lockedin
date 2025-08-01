@@ -15,7 +15,7 @@ export class TokenValidationService {
   // Supported tokens for 1inch APIs (Ethereum mainnet only)
   private readonly SUPPORTED_TOKENS = {
     'ETH': {
-      address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE',
+      address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
       decimals: 18,
       network: 'ethereum'
     },

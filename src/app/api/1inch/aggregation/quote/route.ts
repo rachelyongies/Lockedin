@@ -1,5 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Helper to fetch current gas prices from 1inch gas tracker
+async function getCurrentGasPrice(preset: string | null, chainId: string): Promise<string> {
+  try {
+    const response = await fetch(`http://localhost:3000/api/1inch/gas-tracker?chainId=${chainId}`);
+    if (!response.ok) {
+      throw new Error('Gas tracker failed');
+    }
+    
+    const gasData = await response.json();
+    console.log('📊 Fetched gas data for price:', { preset, gasData });
+    
+    // Map presets to 1inch gas tracker response
+    switch (preset) {
+      case 'fast':
+      case 'high':
+        return gasData.high?.maxFeePerGas || '896184789';
+      case 'standard':
+      case 'medium':
+        return gasData.medium?.maxFeePerGas || '895829892';
+      case 'slow':
+      case 'low':
+        return gasData.low?.maxFeePerGas || '895711593';
+      case 'instant':
+        return gasData.instant?.maxFeePerGas || '1792369578';
+      default:
+        // If it's already a number string, validate and return it
+        if (preset) {
+          const numericPrice = parseInt(preset);
+          if (!isNaN(numericPrice) && numericPrice >= 0) {
+            return preset;
+          }
+        }
+        // Default to medium
+        return gasData.medium?.maxFeePerGas || '895829892';
+    }
+  } catch (error) {
+    console.error('Failed to fetch gas price, using fallback:', error);
+    // Fallback values if gas tracker fails
+    switch (preset) {
+      case 'fast':
+      case 'high':
+        return '896184789';
+      case 'standard':
+      case 'medium':
+        return '895829892';
+      case 'slow':
+      case 'low':
+        return '895711593';
+      case 'instant':
+        return '1792369578';
+      default:
+        return '895829892'; // medium fallback
+    }
+  }
+}
+
+// Helper to normalize token addresses for 1inch
+function normalizeTokenAddress(address: string): string {
+  // Convert zero address to 1inch native ETH format
+  if (address === '0x0000000000000000000000000000000000000000') {
+    return '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  }
+  // Convert mixed case ETH address to lowercase
+  if (address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') {
+    return '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  }
+  return address;
+}
+
 const AGGREGATION_API_CONFIG = {
   baseUrl: 'https://api.1inch.dev/swap/v6.0',
   apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || 'demo_api_key',
@@ -26,13 +95,22 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Normalize token addresses
+    const normalizedSrc = normalizeTokenAddress(src);
+    const normalizedDst = normalizeTokenAddress(dst);
+    
+    // Process gas price
+    const rawGasPrice = searchParams.get('gasPrice');
+    const processedGasPrice = await getCurrentGasPrice(rawGasPrice, chainId);
+    console.log('⛽ Gas price processing:', { raw: rawGasPrice, processed: processedGasPrice });
+    
     // Build query parameters for 1inch API
     const apiParams = new URLSearchParams({
-      src,
-      dst,
+      src: normalizedSrc,
+      dst: normalizedDst,
       amount,
       fee: searchParams.get('fee') || '0',
-      gasPrice: searchParams.get('gasPrice') || 'fast',
+      gasPrice: processedGasPrice,
       complexityLevel: searchParams.get('complexityLevel') || '0',
       connectorTokens: searchParams.get('connectorTokens') || '',
       gasLimit: searchParams.get('gasLimit') || '750000',
@@ -87,13 +165,24 @@ export async function POST(request: NextRequest) {
 
     const chainId = body.chainId || 1;
 
+    // Normalize token addresses
+    const srcAddress = body.src || body.fromTokenAddress;
+    const dstAddress = body.dst || body.toTokenAddress;
+    const normalizedSrc = normalizeTokenAddress(srcAddress);
+    const normalizedDst = normalizeTokenAddress(dstAddress);
+    
+    // Process gas price
+    const rawGasPrice = body.gasPrice;
+    const processedGasPrice = await getCurrentGasPrice(rawGasPrice, chainId.toString());
+    console.log('⛽ Gas price processing (POST):', { raw: rawGasPrice, processed: processedGasPrice });
+    
     // Build query parameters from POST body
     const apiParams = new URLSearchParams({
-      src: body.src || body.fromTokenAddress,
-      dst: body.dst || body.toTokenAddress,
+      src: normalizedSrc,
+      dst: normalizedDst,
       amount: body.amount,
       fee: body.fee || '0',
-      gasPrice: body.gasPrice || 'fast',
+      gasPrice: processedGasPrice,
       complexityLevel: body.complexityLevel || '0',
       connectorTokens: body.connectorTokens || '',
       gasLimit: body.gasLimit || '750000',

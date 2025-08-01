@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       toTokenAddress,
     });
 
-    const endpoint = `${PATHS_API_CONFIG.baseUrl}/${chainId}/quote/finding-paths?${apiParams}`;
+    const endpoint = `${PATHS_API_CONFIG.baseUrl}/${chainId}/liquidity-sources`;
     console.log('🎯 1inch Paths API endpoint:', endpoint);
 
     const response = await fetch(endpoint, {
@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       toTokenAddress,
     });
 
-    const endpoint = `${PATHS_API_CONFIG.baseUrl}/${chainId}/quote/finding-paths?${apiParams}`;
+    const endpoint = `${PATHS_API_CONFIG.baseUrl}/${chainId}/liquidity-sources`;
     console.log('🎯 1inch Paths API endpoint:', endpoint);
 
     const response = await fetch(endpoint, {
