@@ -1,29 +1,29 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { createOneInchService, EscrowFactoryOrder } from '@/lib/services/1inch-fusion';
+import { FusionAPIService } from '@/lib/services/1inch-fusion';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 
 export default function OneInchEscrowTest() {
-  const [escrowOrders, setEscrowOrders] = useState<EscrowFactoryOrder[]>([]);
+  const [escrowOrders, setEscrowOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number>(1);
 
-  const oneInchService = createOneInchService();
+  const oneInchService = FusionAPIService.getInstance();
 
   const fetchEscrowOrders = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      console.log('🔍 Fetching escrow factory orders for chain:', chainId);
-      const orders = await oneInchService.getEscrowFactoryOrders(chainId);
-      setEscrowOrders(orders);
-      console.log('✅ Escrow orders fetched:', orders);
+      console.log('🔍 Fetching supported tokens for chain:', chainId);
+      const tokens = await oneInchService.getSupportedTokens(chainId);
+      setEscrowOrders(tokens.slice(0, 10)); // Show first 10 tokens as example
+      console.log('✅ Tokens fetched:', tokens);
     } catch (err) {
-      console.error('❌ Error fetching escrow orders:', err);
+      console.error('❌ Error fetching tokens:', err);
       setError(err instanceof Error ? err.message : 'Unknown error occurred');
     } finally {
       setLoading(false);
@@ -33,13 +33,12 @@ export default function OneInchEscrowTest() {
   const testQuote = async () => {
     try {
       console.log('🔍 Testing 1inch quote...');
-      const quote = await oneInchService.getQuote({
-        fromTokenAddress: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEe', // ETH
-        toTokenAddress: '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C', // USDC
-        amount: '1000000000000000000', // 1 ETH in wei
-        walletAddress: '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6',
-        chainId: 1
-      });
+      const quote = await oneInchService.getQuote(
+        { symbol: 'ETH', name: 'Ethereum', decimals: 18, address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEe' },
+        { symbol: 'USDC', name: 'USD Coin', decimals: 6, address: '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C' },
+        '1000000000000000000', // 1 ETH in wei
+        '0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6'
+      );
       console.log('✅ Quote received:', quote);
     } catch (err) {
       console.error('❌ Quote error:', err);
@@ -48,21 +47,24 @@ export default function OneInchEscrowTest() {
 
   const testActiveOrders = async () => {
     try {
-      console.log('🔍 Testing active orders...');
-      const orders = await oneInchService.getActiveOrders(chainId);
-      console.log('✅ Active orders:', orders);
+      console.log('🔍 Testing supported tokens...');
+      const tokens = await oneInchService.getSupportedTokens(chainId);
+      console.log('✅ Supported tokens:', tokens);
     } catch (err) {
-      console.error('❌ Active orders error:', err);
+      console.error('❌ Tokens error:', err);
     }
   };
 
   const testTokens = async () => {
     try {
-      console.log('🔍 Testing tokens...');
-      const tokens = await oneInchService.getTokens(chainId);
-      console.log('✅ Tokens:', tokens);
+      console.log('🔍 Testing token prices...');
+      const prices = await oneInchService.getTokenPrices([
+        '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEe',
+        '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C'
+      ]);
+      console.log('✅ Token prices:', prices);
     } catch (err) {
-      console.error('❌ Tokens error:', err);
+      console.error('❌ Token prices error:', err);
     }
   };
 
@@ -75,10 +77,10 @@ export default function OneInchEscrowTest() {
     <div className="max-w-6xl mx-auto p-6 space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-bold text-white mb-2">
-          1inch Fusion+ Escrow Factory Test
+          1inch Fusion+ API Test
         </h1>
         <p className="text-gray-400">
-          Test the 1inch Fusion+ API integration with escrow factory orders
+          Test the 1inch Fusion+ API integration with quotes, tokens, and prices
         </p>
       </div>
 

@@ -102,6 +102,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const getNavItems = useCallback(() => {
       const baseItems = [
         { href: '/', label: 'Bridge', emoji: '🌉' },
+        { href: '/wbtc-bridge', label: 'WBTC Bridge', emoji: '₿' },
+        { href: '/live-bridge', label: 'Live HTLC', emoji: '🔒' },
         { href: '/multi-wallet', label: 'Multi-Wallet', emoji: '👛' },
         { href: '/demo', label: 'AI Demo', emoji: '🚀' },
         { href: '/transactions', label: 'Transactions', emoji: '📊' },

@@ -46,6 +46,9 @@ next-env.d.ts
 /artifacts
 /typechain-types
 
+# Foundry
+/broadcast
+
 # Shell scripts with sensitive data
 setup-env.sh
 

@@ -44,7 +44,7 @@ export default function LiveBridgePage() {
                 </div>
                 <h3 className="font-semibold mb-2">Refund (Optional)</h3>
                 <p className="text-sm text-gray-600">
-                  If the swap isn't completed within the timelock, you can refund your tokens.
+                  If the swap isn&apos;t completed within the timelock, you can refund your tokens.
                 </p>
               </div>
             </div>

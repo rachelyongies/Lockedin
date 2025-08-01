@@ -1,8 +1,8 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
 // 1inch Fusion+ API Configuration
-const FUSION_PLUS_BASE = 'https://api.1inch.dev/fusion-plus';
-const FUSION_SDK_BASE = 'https://api.1inch.dev/fusion-plus/sdk';
+const FUSION_PLUS_BASE = '/api/1inch'; // Use Next.js API proxy
+const FUSION_SDK_BASE = '/api/1inch'; // Use Next.js API proxy
 
 // Types based on 1inch Fusion+ documentation
 export interface FusionPlusOrder {
@@ -225,9 +225,7 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/swap-api/active-orders
    */
   async getActiveOrders(chainId: number): Promise<FusionPlusOrder[]> {
-    const response = await this.httpClient.get('/orders/v1.0/order/active', {
-      params: { chainId }
-    });
+    const response = await axios.get(`${FUSION_PLUS_BASE}?path=/fusion-plus/orders/v1.0/order/active&chainId=${chainId}`);
     return response.data;
   }
 
@@ -236,10 +234,8 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/swap-api/escrow-factory
    */
   async getEscrowFactoryAddress(chainId: number): Promise<string> {
-    const response = await this.httpClient.get('/orders/v1.0/escrow-factory', {
-      params: { chainId }
-    });
-    return response.data.escrowFactoryAddress;
+    const response = await axios.get(`${FUSION_PLUS_BASE}?path=/fusion-plus/orders/v1.0/order/escrow&chainId=${chainId}`);
+    return response.data.address; // Changed from escrowFactoryAddress to address
   }
 
   /**
@@ -247,10 +243,7 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/swap-api/escrow-factory-orders
    */
   async getEscrowFactoryOrders(chainId: number): Promise<FusionPlusOrder[]> {
-    const response = await this.httpClient.get('/orders/v1.0/order/escrow', {
-      params: { chainId },
-      paramsSerializer: { indexes: null }
-    });
+    const response = await axios.get(`${FUSION_PLUS_BASE}?path=/fusion-plus/orders/v1.0/order/escrow&chainId=${chainId}`);
     return response.data;
   }
 
@@ -261,9 +254,8 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/fusion-plus-sdk/for-integrators/auction-salt
    */
   async generateAuctionSalt(request: AuctionSaltRequest): Promise<string> {
-    const response = await axios.post(`${FUSION_SDK_BASE}/auction-salt`, request, {
+    const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-salt`, request, {
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       }
     });
@@ -275,9 +267,8 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/fusion-plus-sdk/for-integrators/auction-suffix
    */
   async generateAuctionSuffix(request: AuctionSuffixRequest): Promise<string> {
-    const response = await axios.post(`${FUSION_SDK_BASE}/auction-suffix`, request, {
+    const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-suffix`, request, {
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       }
     });
@@ -289,9 +280,8 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/fusion-plus-sdk/for-resolvers/auction-calculator
    */
   async calculateAuctionParameters(request: AuctionCalculatorRequest): Promise<AuctionCalculatorResponse> {
-    const response = await axios.post(`${FUSION_SDK_BASE}/auction-calculator`, request, {
+    const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-calculator`, request, {
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       }
     });
@@ -303,13 +293,12 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/fusion-plus-sdk/for-resolvers/auction-calculator
    */
   async calculateAuctionRate(salt: string, suffix: string): Promise<string> {
-    const response = await axios.post(`${FUSION_SDK_BASE}/auction-calculator/rate`, {
+    const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-calculator/rate`, {
       salt,
       suffix,
       timestamp: Math.floor(Date.now() / 1000)
     }, {
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       }
     });
@@ -321,9 +310,8 @@ export class OneInchFusionPlusSDK {
    * @see https://portal.1inch.dev/documentation/fusion-plus/fusion-plus-sdk/for-resolvers/resolver-order
    */
   async createResolverOrder(request: ResolverOrderRequest): Promise<ResolverOrderResponse> {
-    const response = await axios.post(`${FUSION_SDK_BASE}/resolver-order`, request, {
+    const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/resolver-order`, request, {
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json'
       }
     });
@@ -498,7 +486,11 @@ export class OneInchFusionPlusSDK {
 
 // Factory function
 export function createOneInchFusionPlusSDK(apiKey?: string): OneInchFusionPlusSDK {
-  const key = apiKey || process.env.NEXT_PUBLIC_1INCH_API_KEY || '2eVY4oCPnCaDCEBoqIcXd888V5G2CYgA';
+  const key = apiKey || process.env.NEXT_PUBLIC_1INCH_API_KEY;
+  
+  if (!key) {
+    throw new Error('1inch API key not found. Please set NEXT_PUBLIC_1INCH_API_KEY environment variable.');
+  }
   return new OneInchFusionPlusSDK(key);
 }
 

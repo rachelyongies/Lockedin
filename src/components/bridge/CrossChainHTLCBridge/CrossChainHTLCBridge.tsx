@@ -2,11 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { 
-  createFusionPlusCrossChainSDK, 
+  createOneInchFusionSDK, 
   CrossChainSwapRequest, 
   CrossChainSwapResult,
   HTLCEscrow 
-} from '@/lib/services/fusion-plus-cross-chain-sdk';
+} from '@/lib/services/1inch-fusion-sdk';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
@@ -43,9 +43,9 @@ export default function CrossChainHTLCBridge() {
     // Initialize SDK
     const initSDK = async () => {
       try {
-        const fusionSDK = createFusionPlusCrossChainSDK();
+        const fusionSDK = createOneInchFusionSDK();
         setSdk(fusionSDK);
-        console.log('✅ Fusion+ Cross-Chain SDK initialized');
+        console.log('✅ 1inch Fusion+ SDK initialized');
       } catch (err) {
         console.error('❌ Failed to initialize SDK:', err);
         setError('Failed to initialize SDK');
@@ -174,6 +174,25 @@ export default function CrossChainHTLCBridge() {
     }
   };
 
+  const testWorkingEndpoint = async () => {
+    try {
+      setLoading(true);
+      console.log('🧪 Testing working cURL endpoint...');
+      
+      // Test the exact endpoint from the working cURL
+      const response = await fetch('/api/1inch?path=/fusion-plus/orders/v1.0/order/escrow&chainId=1');
+      const data = await response.json();
+      
+      console.log('✅ Working endpoint response:', data);
+      alert(`Working endpoint test successful!\nResponse: ${JSON.stringify(data, null, 2)}`);
+    } catch (err) {
+      console.error('❌ Working endpoint test failed:', err);
+      setError('Working endpoint test failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const isHTLCExpired = swapResult ? sdk?.isHTLCExpired(swapResult.htlcEscrow) : false;
   const timeUntilExpiry = swapResult ? sdk?.getTimeUntilExpiry(swapResult.htlcEscrow) : 0;
 
@@ -194,7 +213,7 @@ export default function CrossChainHTLCBridge() {
         <div className="flex items-center gap-4">
           <div className={`w-3 h-3 rounded-full ${sdk ? 'bg-green-500' : 'bg-red-500'}`}></div>
           <span className="text-white">
-            {sdk ? '✅ Fusion+ Cross-Chain SDK Ready' : '❌ SDK Not Initialized'}
+            {sdk ? '✅ 1inch Fusion+ SDK Ready' : '❌ SDK Not Initialized'}
           </span>
         </div>
       </Card>
@@ -226,6 +245,16 @@ export default function CrossChainHTLCBridge() {
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             🪙 Get Supported Tokens
+          </Button>
+        </div>
+
+        <div className="mb-4">
+          <Button
+            onClick={testWorkingEndpoint}
+            disabled={loading}
+            className="bg-orange-600 hover:bg-orange-700 text-white"
+          >
+            🧪 Test Working cURL Endpoint
           </Button>
         </div>
 

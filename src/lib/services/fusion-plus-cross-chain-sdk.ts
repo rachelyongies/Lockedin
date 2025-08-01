@@ -3,7 +3,6 @@ import { ethers } from 'ethers';
 
 // 1inch Fusion+ API Configuration
 const FUSION_PLUS_BASE = '/api/1inch'; // Use Next.js API proxy
-const FUSION_SDK_BASE = '/api/1inch'; // Use Next.js API proxy
 
 // Types based on 1inch Fusion+ documentation
 export interface FusionPlusOrder {
@@ -23,69 +22,6 @@ export interface FusionPlusOrder {
   expiresAt: number;
   chainId: number;
   nonEVMChain?: string;
-}
-
-export interface AuctionSaltRequest {
-  maker: string;
-  makerAsset: string;
-  takerAsset: string;
-  makerAmount: string;
-  chainId: number;
-}
-
-export interface AuctionSuffixRequest {
-  maker: string;
-  makerAsset: string;
-  takerAsset: string;
-  makerAmount: string;
-  chainId: number;
-  timelock: number;
-}
-
-export interface AuctionCalculatorRequest {
-  maker: string;
-  makerAsset: string;
-  takerAsset: string;
-  makerAmount: string;
-  salt: string;
-  suffix: string;
-  chainId: number;
-}
-
-export interface AuctionCalculatorResponse {
-  currentRate: string;
-  startTime: number;
-  endTime: number;
-  initialRate: string;
-  finalRate: string;
-}
-
-export interface ResolverOrderRequest {
-  orderHash: string;
-  secret: string;
-  rate: string;
-  chainId: number;
-}
-
-export interface ResolverOrderResponse {
-  orderId: string;
-  txHash?: string;
-  status: string;
-}
-
-export interface CreateOrderRequest {
-  maker: string;
-  makerAsset: string;
-  takerAsset: string;
-  makerAmount: string;
-  takerAmount: string;
-  secretHash: string;
-  timelock: number;
-  auctionSalt: string;
-  auctionSuffix: string;
-  chainId: number;
-  nonEVMChain?: string;
-  orderType?: 'htlc' | 'regular';
 }
 
 export interface CrossChainSwapRequest {
@@ -108,7 +44,7 @@ export interface HTLCEscrow {
   destinationChain: string;
   sourceEscrowAddress: string;
   destinationEscrowAddress: string;
-  destinationOrderHash?: string; // Add missing property
+  destinationOrderHash?: string;
   status: 'pending' | 'locked' | 'completed' | 'expired' | 'refunded';
   createdAt: number;
   expiresAt: number;
@@ -117,7 +53,7 @@ export interface HTLCEscrow {
 export interface CrossChainSwapResult {
   htlcEscrow: HTLCEscrow;
   sourceOrder: FusionPlusOrder;
-  destinationOrder?: FusionPlusOrder; // For non-EVM chains
+  destinationOrder?: FusionPlusOrder;
   sourceTxHash: string;
   destinationTxHash?: string;
 }
@@ -125,8 +61,6 @@ export interface CrossChainSwapResult {
 export class FusionPlusCrossChainSDK {
   private apiKey: string;
   private httpClient: AxiosInstance;
-  private wsConnection: WebSocket | null = null;
-  private messageHandlers: Map<string, (message: any) => void> = new Map();
 
   constructor(apiKey: string) {
     this.apiKey = apiKey;
@@ -138,7 +72,6 @@ export class FusionPlusCrossChainSDK {
       }
     });
 
-    // Add request/response interceptors for logging
     this.setupInterceptors();
   }
 
@@ -166,153 +99,114 @@ export class FusionPlusCrossChainSDK {
     );
   }
 
-  // ===== CORE FUSION+ API ENDPOINTS =====
-
   /**
-   * Generate auction salt using Fusion+ SDK
-   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/auction-salt
+   * Get active orders using 1inch Fusion+ API
+   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/get-active-orders
    */
-  async generateAuctionSalt(request: AuctionSaltRequest): Promise<string> {
+  async getActiveOrders(chainId: number, page: number = 1, limit: number = 10): Promise<FusionPlusOrder[]> {
     try {
-      const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-salt`, request, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      return response.data.salt;
+      const response = await this.httpClient.get(`?path=/fusion-plus/orders/v1.0/order/active&chainId=${chainId}&page=${page}&limit=${limit}`);
+      return response.data.orders || [];
     } catch (error) {
-      console.error('❌ Failed to generate auction salt:', error);
-      throw new Error(`Failed to generate auction salt: ${error}`);
+      console.error('❌ Failed to get active orders:', error);
+      throw new Error(`Failed to get active orders: ${error}`);
     }
   }
 
   /**
-   * Generate auction suffix using Fusion+ SDK
-   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/auction-suffix
+   * Get orders by maker using 1inch Fusion+ API
+   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/get-orders-by-maker
    */
-  async generateAuctionSuffix(request: AuctionSuffixRequest): Promise<string> {
+  async getOrdersByMaker(makerAddress: string, chainId: number, page: number = 1, limit: number = 10): Promise<FusionPlusOrder[]> {
     try {
-      const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-suffix`, request, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      return response.data.suffix;
+      const response = await this.httpClient.get(`?path=/fusion-plus/orders/v1.0/order/by-maker&maker=${makerAddress}&chainId=${chainId}&page=${page}&limit=${limit}`);
+      return response.data.orders || [];
     } catch (error) {
-      console.error('❌ Failed to generate auction suffix:', error);
-      throw new Error(`Failed to generate auction suffix: ${error}`);
+      console.error('❌ Failed to get orders by maker:', error);
+      throw new Error(`Failed to get orders by maker: ${error}`);
     }
   }
 
   /**
-   * Calculate auction parameters using Fusion+ SDK
-   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-resolvers/auction-calculator
+   * Get quote for cross-chain swap using 1inch Fusion+ API
+   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/get-quote
    */
-  async calculateAuctionParameters(request: AuctionCalculatorRequest): Promise<AuctionCalculatorResponse> {
+  async getQuote(params: {
+    srcChainId: number;
+    dstChainId: number;
+    srcTokenAddress: string;
+    dstTokenAddress: string;
+    amount: string;
+    walletAddress: string;
+  }): Promise<any> {
     try {
-      const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-calculator`, request, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = await this.httpClient.post(`?path=/fusion-plus/quote`, params);
       return response.data;
     } catch (error) {
-      console.error('❌ Failed to calculate auction parameters:', error);
-      throw new Error(`Failed to calculate auction parameters: ${error}`);
+      console.error('❌ Failed to get quote:', error);
+      throw new Error(`Failed to get quote: ${error}`);
     }
   }
 
   /**
-   * Calculate current auction rate
+   * Create order using 1inch Fusion+ API
+   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/create-order
    */
-  async calculateAuctionRate(salt: string, suffix: string): Promise<string> {
-    try {
-      const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/auction-calculator/rate`, {
-        salt,
-        suffix,
-        timestamp: Math.floor(Date.now() / 1000)
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      return response.data.currentRate;
-    } catch (error) {
-      console.error('❌ Failed to calculate auction rate:', error);
-      throw new Error(`Failed to calculate auction rate: ${error}`);
-    }
-  }
-
-  /**
-   * Create resolver order (submit secret)
-   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/when-and-how-to-submit-secrets
-   */
-  async createResolverOrder(request: ResolverOrderRequest): Promise<ResolverOrderResponse> {
-    try {
-      const response = await axios.post(`${FUSION_SDK_BASE}?path=/fusion-plus/sdk/resolver-order`, request, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      return response.data;
-    } catch (error) {
-      console.error('❌ Failed to create resolver order:', error);
-      throw new Error(`Failed to create resolver order: ${error}`);
-    }
-  }
-
-  /**
-   * Create HTLC order
-   */
-  async createHTLCOrder(params: {
-    maker: string;
-    makerAsset: string;
-    takerAsset: string;
-    makerAmount: string;
-    takerAmount: string;
+  async createOrder(params: {
+    quote: any;
+    walletAddress: string;
     secretHash: string;
-    timelock: number;
-    auctionSalt: string;
-    auctionSuffix: string;
-    chainId: number;
-    nonEVMChainId?: string;
+    secretHashes: string[];
+    fee: { takingFeeBps: number; takingFeeReceiver: string };
   }): Promise<FusionPlusOrder> {
     try {
-      const response = await this.httpClient.post(`?path=/orders/v1.0/order`, {
-        ...params,
-        orderType: 'htlc',
-        nonEVMChain: params.nonEVMChainId
+      const response = await this.httpClient.post(`?path=/fusion-plus/orders/v1.0/order`, params);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to create order:', error);
+      throw new Error(`Failed to create order: ${error}`);
+    }
+  }
+
+  /**
+   * Submit order to relayer using 1inch Fusion+ API
+   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/submit-order
+   */
+  async submitOrder(order: FusionPlusOrder): Promise<{ orderId: string; txHash?: string }> {
+    try {
+      const response = await this.httpClient.post(`?path=/fusion-plus/orders/v1.0/order/submit`, order);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Failed to submit order:', error);
+      throw new Error(`Failed to submit order: ${error}`);
+    }
+  }
+
+  /**
+   * Submit secret for order using 1inch Fusion+ API
+   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/when-and-how-to-submit-secrets
+   */
+  async submitSecret(orderHash: string, secret: string, chainId: number): Promise<{ txHash: string }> {
+    try {
+      const response = await this.httpClient.post(`?path=/fusion-plus/orders/v1.0/order/submit-secret`, {
+        orderHash,
+        secret,
+        chainId
       });
       return response.data;
     } catch (error) {
-      console.error('❌ Failed to create HTLC order:', error);
-      throw new Error(`Failed to create HTLC order: ${error}`);
+      console.error('❌ Failed to submit secret:', error);
+      throw new Error(`Failed to submit secret: ${error}`);
     }
   }
 
   /**
-   * Get order by hash
-   */
-  async getOrderByHash(orderHash: string, chainId: number): Promise<FusionPlusOrder | null> {
-    try {
-      const response = await this.httpClient.get(`?path=/orders/v1.0/order/${orderHash}&chainId=${chainId}`);
-      return response.data;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
-      }
-      console.error('❌ Failed to get order by hash:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get escrow factory address
+   * Get escrow factory address using 1inch Fusion+ API
    */
   async getEscrowFactoryAddress(chainId: number): Promise<string> {
     try {
-      const response = await this.httpClient.get(`?path=/orders/v1.0/escrow-factory&chainId=${chainId}`);
-      return response.data.escrowFactoryAddress;
+      const response = await this.httpClient.get(`?path=/fusion-plus/orders/v1.0/order/escrow&chainId=${chainId}`);
+      return response.data.address;
     } catch (error) {
       console.error('❌ Failed to get escrow factory address:', error);
       throw new Error(`Failed to get escrow factory address: ${error}`);
@@ -320,73 +214,45 @@ export class FusionPlusCrossChainSDK {
   }
 
   /**
-   * Get active escrow factory orders
-   */
-  async getEscrowFactoryOrders(chainId: number): Promise<FusionPlusOrder[]> {
-    try {
-      const response = await this.httpClient.get(`?path=/orders/v1.0/order/escrow&chainId=${chainId}`);
-      return response.data;
-    } catch (error) {
-      console.error('❌ Failed to get escrow factory orders:', error);
-      throw new Error(`Failed to get escrow factory orders: ${error}`);
-    }
-  }
-
-  // ===== CROSS-CHAIN ORCHESTRATION =====
-
-  /**
-   * Create cross-chain HTLC swap with escrows on both chains
+   * Create cross-chain HTLC swap following 1inch Fusion+ protocol
+   * This implements the step-by-step process from the instructions
    */
   async createCrossChainSwap(request: CrossChainSwapRequest): Promise<CrossChainSwapResult> {
     console.log('🔄 Creating cross-chain swap:', request);
 
-    // Step 1: Generate secret and hash for HTLC
+    // Step 1: Generate secret and hash for HTLC (as per instructions)
     const secret = ethers.randomBytes(32);
     const secretHash = ethers.keccak256(secret);
 
     // Step 2: Calculate timelock (default 1 hour)
     const timelock = Math.floor(Date.now() / 1000) + (request.timelock || 3600);
 
-    // Step 3: Create source chain escrow (Ethereum)
-    const sourceChainId = request.fromChain === 'ethereum' ? 1 : 11155111; // Mainnet for ETH, Sepolia for testing
-    const sourceEscrowAddress = await this.getEscrowFactoryAddress(sourceChainId);
-
-    // Generate auction data for source chain
-    const sourceAuctionSalt = await this.generateAuctionSalt({
-      maker: request.userAddress,
-      makerAsset: request.fromToken,
-      takerAsset: request.toToken,
-      makerAmount: (parseFloat(request.amount) * 1e18).toString(),
-      chainId: sourceChainId
+    // Step 3: Get quote for source chain
+    const sourceChainId = request.fromChain === 'ethereum' ? 1 : 11155111;
+    const quote = await this.getQuote({
+      srcChainId: sourceChainId,
+      dstChainId: request.toChain === 'ethereum' ? 1 : 0, // 0 for Bitcoin
+      srcTokenAddress: request.fromToken,
+      dstTokenAddress: request.toToken,
+      amount: (parseFloat(request.amount) * 1e18).toString(),
+      walletAddress: request.userAddress
     });
 
-    const sourceAuctionSuffix = await this.generateAuctionSuffix({
-      maker: request.userAddress,
-      makerAsset: request.fromToken,
-      takerAsset: request.toToken,
-      makerAmount: (parseFloat(request.amount) * 1e18).toString(),
-      chainId: sourceChainId,
-      timelock
-    });
-
-    // Create source HTLC order
-    const sourceOrder = await this.createHTLCOrder({
-      maker: request.userAddress,
-      makerAsset: request.fromToken,
-      takerAsset: request.toToken,
-      makerAmount: (parseFloat(request.amount) * 1e18).toString(),
-      takerAmount: '0', // Will be calculated by auction
+    // Step 4: Create order on source chain
+    const sourceOrder = await this.createOrder({
+      quote,
+      walletAddress: request.userAddress,
       secretHash,
-      timelock,
-      auctionSalt: sourceAuctionSalt,
-      auctionSuffix: sourceAuctionSuffix,
-      chainId: sourceChainId,
-      nonEVMChainId: request.toChain
+      secretHashes: [secretHash],
+      fee: { takingFeeBps: 100, takingFeeReceiver: '0x0000000000000000000000000000000000000000' }
     });
 
-    console.log('✅ Source HTLC order created:', sourceOrder.orderHash);
+    // Step 5: Submit order to relayer
+    const submittedOrder = await this.submitOrder(sourceOrder);
 
-    // Step 4: Create destination chain escrow (Bitcoin or Ethereum)
+    console.log('✅ Source order created and submitted:', submittedOrder);
+
+    // Step 6: Create destination chain order if needed
     let destinationOrder: FusionPlusOrder | undefined;
     let destinationTxHash: string | undefined;
 
@@ -396,50 +262,38 @@ export class FusionPlusCrossChainSDK {
       destinationOrder = {
         ...sourceOrder,
         orderHash: `btc-${sourceOrder.orderHash}`,
-        chainId: 0, // Bitcoin chain ID
+        chainId: 0,
         nonEVMChain: 'bitcoin'
       };
       destinationTxHash = `btc-tx-${Date.now()}`;
     } else {
-      // For Ethereum destination, create another HTLC order
-      const destChainId = 1; // Mainnet for ETH
-      const destEscrowAddress = await this.getEscrowFactoryAddress(destChainId);
-
-      const destAuctionSalt = await this.generateAuctionSalt({
-        maker: request.recipientAddress || request.userAddress,
-        makerAsset: request.toToken,
-        takerAsset: request.fromToken,
-        makerAmount: '0', // Will be calculated by auction
-        chainId: destChainId
+      // For Ethereum destination, create another order
+      const destQuote = await this.getQuote({
+        srcChainId: request.toChain === 'ethereum' ? 1 : 0,
+        dstChainId: sourceChainId,
+        srcTokenAddress: request.toToken,
+        dstTokenAddress: request.fromToken,
+        amount: '0', // Will be calculated by auction
+        walletAddress: request.recipientAddress || request.userAddress
       });
 
-      const destAuctionSuffix = await this.generateAuctionSuffix({
-        maker: request.recipientAddress || request.userAddress,
-        makerAsset: request.toToken,
-        takerAsset: request.fromToken,
-        makerAmount: '0', // Will be calculated by auction
-        chainId: destChainId,
-        timelock
-      });
-
-      destinationOrder = await this.createHTLCOrder({
-        maker: request.recipientAddress || request.userAddress,
-        makerAsset: request.toToken,
-        takerAsset: request.fromToken,
-        makerAmount: '0', // Will be calculated by auction
-        takerAmount: (parseFloat(request.amount) * 1e18).toString(),
+      destinationOrder = await this.createOrder({
+        quote: destQuote,
+        walletAddress: request.recipientAddress || request.userAddress,
         secretHash,
-        timelock,
-        auctionSalt: destAuctionSalt,
-        auctionSuffix: destAuctionSuffix,
-        chainId: destChainId,
-        nonEVMChainId: request.fromChain
+        secretHashes: [secretHash],
+        fee: { takingFeeBps: 100, takingFeeReceiver: '0x0000000000000000000000000000000000000000' }
       });
 
-      destinationTxHash = destinationOrder.orderHash;
+      const destSubmittedOrder = await this.submitOrder(destinationOrder);
+      destinationTxHash = destSubmittedOrder.txHash;
     }
 
-    // Step 5: Create HTLC escrow record
+    // Step 7: Get escrow factory addresses
+    const sourceEscrowAddress = await this.getEscrowFactoryAddress(sourceChainId);
+    const destinationEscrowAddress = destinationOrder?.escrowAddress || 'bitcoin-escrow';
+
+    // Step 8: Create HTLC escrow record
     const htlcEscrow: HTLCEscrow = {
       orderHash: sourceOrder.orderHash,
       secretHash,
@@ -447,8 +301,9 @@ export class FusionPlusCrossChainSDK {
       timelock,
       sourceChain: request.fromChain,
       destinationChain: request.toChain,
-      sourceEscrowAddress: sourceEscrowAddress,
-      destinationEscrowAddress: destinationOrder.escrowAddress || 'bitcoin-escrow',
+      sourceEscrowAddress,
+      destinationEscrowAddress,
+      destinationOrderHash: destinationOrder?.orderHash,
       status: 'pending',
       createdAt: Date.now(),
       expiresAt: timelock * 1000
@@ -460,42 +315,28 @@ export class FusionPlusCrossChainSDK {
       htlcEscrow,
       sourceOrder,
       destinationOrder,
-      sourceTxHash: sourceOrder.orderHash,
+      sourceTxHash: submittedOrder.txHash || sourceOrder.orderHash,
       destinationTxHash
     };
   }
 
   /**
-   * Execute HTLC by submitting secret
-   * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/when-and-how-to-submit-secrets
+   * Execute HTLC by submitting secret (following 1inch instructions)
    */
   async executeHTLC(htlcEscrow: HTLCEscrow): Promise<{ sourceTxHash: string; destinationTxHash?: string }> {
     console.log('🚀 Executing HTLC:', htlcEscrow.orderHash);
 
     try {
-      // Step 1: Get source order details
-      const sourceOrder = await this.getOrderByHash(htlcEscrow.orderHash, 1);
-      if (!sourceOrder) {
-        throw new Error('Source order not found');
-      }
-
-      // Step 2: Calculate current auction rate for source
-      const sourceRate = await this.calculateAuctionRate(
-        sourceOrder.auctionSalt,
-        sourceOrder.auctionSuffix
+      // Step 1: Submit secret to source chain
+      const sourceTxHash = await this.submitSecret(
+        htlcEscrow.orderHash,
+        htlcEscrow.secret,
+        1 // Ethereum mainnet
       );
 
-      // Step 3: Submit secret to source chain
-      const sourceResolverOrder = await this.createResolverOrder({
-        orderHash: htlcEscrow.orderHash,
-        secret: htlcEscrow.secret,
-        rate: sourceRate,
-        chainId: sourceOrder.chainId
-      });
+      console.log('✅ Source HTLC executed:', sourceTxHash);
 
-      console.log('✅ Source HTLC executed:', sourceResolverOrder);
-
-      // Step 4: Execute destination HTLC if it exists
+      // Step 2: Execute destination HTLC if it exists
       let destinationTxHash: string | undefined;
 
       if (htlcEscrow.destinationChain === 'bitcoin') {
@@ -503,31 +344,21 @@ export class FusionPlusCrossChainSDK {
         destinationTxHash = `btc-execute-${Date.now()}`;
         console.log('✅ Bitcoin HTLC executed (simulated):', destinationTxHash);
       } else if (htlcEscrow.destinationOrderHash) {
-        // For Ethereum destination, execute the destination HTLC
-        const destOrder = await this.getOrderByHash(htlcEscrow.destinationOrderHash, 1);
-        if (destOrder) {
-          const destRate = await this.calculateAuctionRate(
-            destOrder.auctionSalt,
-            destOrder.auctionSuffix
-          );
-
-          const destResolverOrder = await this.createResolverOrder({
-            orderHash: htlcEscrow.destinationOrderHash,
-            secret: htlcEscrow.secret,
-            rate: destRate,
-            chainId: destOrder.chainId
-          });
-
-          destinationTxHash = destResolverOrder.txHash || destResolverOrder.orderId;
-          console.log('✅ Destination HTLC executed:', destResolverOrder);
-        }
+        // For Ethereum destination, submit secret
+        const destTxHash = await this.submitSecret(
+          htlcEscrow.destinationOrderHash,
+          htlcEscrow.secret,
+          1
+        );
+        destinationTxHash = destTxHash.txHash;
+        console.log('✅ Destination HTLC executed:', destTxHash);
       }
 
-      // Step 5: Update HTLC status
+      // Step 3: Update HTLC status
       htlcEscrow.status = 'completed';
 
       return {
-        sourceTxHash: sourceResolverOrder.txHash || sourceResolverOrder.orderId,
+        sourceTxHash: sourceTxHash.txHash,
         destinationTxHash
       };
     } catch (error) {
@@ -564,98 +395,11 @@ export class FusionPlusCrossChainSDK {
     }
   }
 
-  // ===== UTILITY METHODS =====
-
-  /**
-   * Get active orders
-   */
-  async getActiveOrders(chainId: number): Promise<FusionPlusOrder[]> {
-    try {
-      const response = await this.httpClient.get(`?path=/orders/v1.0/order/active&chainId=${chainId}`);
-      return response.data;
-    } catch (error) {
-      console.error('❌ Failed to get active orders:', error);
-      throw new Error(`Failed to get active orders: ${error}`);
-    }
-  }
-
-  /**
-   * Connect to WebSocket for real-time updates
-   */
-  connectWebSocket(chainId: number, onMessage?: (message: any) => void): void {
-    if (this.wsConnection) {
-      this.wsConnection.close();
-    }
-
-    const wsUrl = `wss://api.1inch.dev/fusion-plus/ws?chainId=${chainId}`;
-    this.wsConnection = new WebSocket(wsUrl);
-
-    this.wsConnection.onopen = () => {
-      console.log('🔌 Connected to 1inch Fusion+ WebSocket');
-      
-      // Send authentication
-      this.wsConnection?.send(JSON.stringify({
-        type: 'auth',
-        apiKey: this.apiKey
-      }));
-    };
-
-    this.wsConnection.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        console.log('📨 WebSocket message:', message);
-        
-        if (onMessage) {
-          onMessage(message);
-        }
-        
-        // Call registered handlers
-        const handler = this.messageHandlers.get(message.type);
-        if (handler) {
-          handler(message);
-        }
-      } catch (error) {
-        console.error('❌ Failed to parse WebSocket message:', error);
-      }
-    };
-
-    this.wsConnection.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
-    };
-
-    this.wsConnection.onclose = () => {
-      console.log('🔌 Disconnected from 1inch Fusion+ WebSocket');
-    };
-  }
-
-  /**
-   * Register message handler
-   */
-  onMessage(type: string, handler: (message: any) => void): void {
-    this.messageHandlers.set(type, handler);
-  }
-
-  /**
-   * Disconnect WebSocket
-   */
-  disconnectWebSocket(): void {
-    if (this.wsConnection) {
-      this.wsConnection.close();
-      this.wsConnection = null;
-    }
-    this.messageHandlers.clear();
-  }
-
-  /**
-   * Check if HTLC is expired
-   */
+  // Utility methods
   isHTLCExpired(htlcEscrow: HTLCEscrow): boolean {
     return Date.now() > htlcEscrow.expiresAt;
   }
 
-  /**
-   * Get time until HTLC expires (in seconds)
-   */
   getTimeUntilExpiry(htlcEscrow: HTLCEscrow): number {
     return Math.max(0, (htlcEscrow.expiresAt - Date.now()) / 1000);
   }
@@ -663,12 +407,10 @@ export class FusionPlusCrossChainSDK {
 
 // Factory function
 export function createFusionPlusCrossChainSDK(apiKey?: string): FusionPlusCrossChainSDK {
-  // Get API key from environment or use a valid test key
-  const key = apiKey || process.env.NEXT_PUBLIC_1INCH_API_KEY || '2eVY4oCPnCaDCEBoqIcXd888V5G2CYgA';
+  const key = apiKey || process.env.NEXT_PUBLIC_1INCH_API_KEY;
   
-  // Validate API key format
-  if (!key || key === '2eVY4oCPnCaDCEBoqIcXd888V5G2CYgA') {
-    console.warn('⚠️ Using default API key. Please set NEXT_PUBLIC_1INCH_API_KEY environment variable for production use.');
+  if (!key) {
+    throw new Error('1inch API key not found. Please set NEXT_PUBLIC_1INCH_API_KEY environment variable.');
   }
   
   return new FusionPlusCrossChainSDK(key);
