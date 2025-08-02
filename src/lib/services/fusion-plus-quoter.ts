@@ -14,21 +14,67 @@ export interface FusionPlusQuoteParams {
 }
 
 export interface FusionPlusQuoteResponse {
-  dstTokenAmount: string;
-  srcTokenAmount: string;
-  dstChainTokenOut: string;
-  dstChainTokenOutAmount: string;
-  priceImpact: string;
-  feeToken: string;
-  feeAmount: string;
-  prices: {
-    srcTokenPrice: string;
-    dstTokenPrice: string;
-  };
-  estimatedGas: string;
-  whitelist: any[];
-  settlementAddress: string;
   quoteId: string;
+  srcTokenAmount: string;
+  dstTokenAmount: string;
+  presets: {
+    fast: PresetConfig;
+    medium: PresetConfig;
+    slow: PresetConfig;
+  };
+  timeLocks: {
+    srcWithdrawal: number;
+    srcPublicWithdrawal: number;
+    srcCancellation: number;
+    srcPublicCancellation: number;
+    dstWithdrawal: number;
+    dstPublicWithdrawal: number;
+    dstCancellation: number;
+  };
+  srcEscrowFactory: string;
+  dstEscrowFactory: string;
+  srcSafetyDeposit: string;
+  dstSafetyDeposit: string;
+  whitelist: string[];
+  recommendedPreset: 'fast' | 'medium' | 'slow';
+  prices: {
+    usd: {
+      srcToken: string;
+      dstToken: string;
+    };
+  };
+  volume: {
+    usd: {
+      srcToken: string;
+      dstToken: string;
+    };
+  };
+  priceImpactPercent: number;
+  autoK: number;
+  k: number;
+  mxK: number;
+}
+
+export interface PresetConfig {
+  auctionDuration: number;
+  startAuctionIn: number;
+  initialRateBump: number;
+  auctionStartAmount: string;
+  startAmount: string;
+  auctionEndAmount: string;
+  exclusiveResolver: string | null;
+  costInDstToken: string;
+  points: Array<{
+    delay: number;
+    coefficient: number;
+  }>;
+  allowPartialFills: boolean;
+  allowMultipleFills: boolean;
+  gasCost: {
+    gasBumpEstimate: number;
+    gasPriceEstimate: string;
+  };
+  secretsCount: number;
 }
 
 export class FusionPlusQuoterService {
@@ -40,7 +86,7 @@ export class FusionPlusQuoterService {
   }
 
   /**
-   * Get a cross-chain quote from 1inch Fusion+ API
+   * Get a cross-chain quote from 1inch Fusion+ API via server endpoint
    */
   async getQuote(params: FusionPlusQuoteParams): Promise<FusionPlusQuoteResponse> {
     try {
@@ -53,23 +99,27 @@ export class FusionPlusQuoterService {
         amount: params.amount,
         walletAddress: params.walletAddress,
         enableEstimate: (params.enableEstimate ?? true).toString(),
-        fee: (params.fee ?? 100).toString(), // Default 1% fee
         isPermit2: (params.isPermit2 ?? false).toString(),
       });
+
+      // Only add fee parameter if it's greater than 0 to avoid "cannot use fee without source" error
+      if (params.fee && params.fee > 0) {
+        queryParams.append('fee', params.fee.toString());
+      }
 
       // Add permit if provided
       if (params.permit) {
         queryParams.append('permit', params.permit);
       }
 
-      const url = `${this.baseUrl}/quote/receive?${queryParams.toString()}`;
+      // Use server-side API route to avoid CORS and API key exposure
+      const url = `/api/1inch/fusion-quote?${queryParams.toString()}`;
       
-      console.log('🔄 Making 1inch Fusion+ quote request:', url);
+      console.log('🔄 Making 1inch Fusion+ quote request via server:', url);
 
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
@@ -108,7 +158,7 @@ export class FusionPlusQuoterService {
       amount: ethers.parseEther(ethAmount).toString(), // Convert ETH to wei
       walletAddress,
       enableEstimate: true,
-      fee: 100, // 1% fee
+      // Remove fee to avoid "cannot use fee without source" error
       isPermit2: false
     };
 
@@ -130,7 +180,7 @@ export class FusionPlusQuoterService {
       amount: ethers.parseUnits(usdcAmount, 6).toString(), // USDC has 6 decimals
       walletAddress,
       enableEstimate: true,
-      fee: 50, // 0.5% fee
+      // Remove fee to avoid "cannot use fee without source" error
       isPermit2: false
     };
 
@@ -147,12 +197,12 @@ export class FusionPlusQuoterService {
     const params: FusionPlusQuoteParams = {
       srcChain: 11155111, // Sepolia
       dstChain: 11155111, // Sepolia (same chain)
-      srcTokenAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', // ETH
+      srcTokenAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', // ETH
       dstTokenAddress: '0x29f2D40B0605204364af54EC677bD022dA425d03', // WBTC Sepolia
       amount: ethers.parseEther(ethAmount).toString(),
       walletAddress,
       enableEstimate: true,
-      fee: 100, // 1% fee
+      // Remove fee to avoid "cannot use fee without source" error
       isPermit2: false
     };
 

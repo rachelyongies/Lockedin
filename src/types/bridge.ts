@@ -211,6 +211,57 @@ export interface BridgeQuote {
   minimumReceived: string;
   priceImpact: string;
   expiresAt: number; // Timestamp when quote expires
+  
+  // HTLC-specific fields
+  secretHash?: string;
+  timelock?: number;
+  isAtomicSwap?: boolean;
+  contractAddress?: string;
+  
+  // 1inch Fusion+ specific fields
+  fusionQuoteId?: string;
+  fusionPreset?: 'fast' | 'medium' | 'slow';
+  fusionData?: {
+    // Raw response data
+    srcTokenAmount: string;
+    dstTokenAmount: string;
+    presets: any; // Full presets object from API
+    srcEscrowFactory: string;
+    dstEscrowFactory: string;
+    srcSafetyDeposit: string;
+    dstSafetyDeposit: string;
+    whitelist: string[];
+    timeLocks: {
+      srcWithdrawal: number;
+      srcPublicWithdrawal: number;
+      srcCancellation: number;
+      srcPublicCancellation: number;
+      dstWithdrawal: number;
+      dstPublicWithdrawal: number;
+      dstCancellation: number;
+    };
+    auctionDuration: number;
+    secretsCount: number;
+    // Market data
+    prices?: {
+      usd: {
+        srcToken: string;
+        dstToken: string;
+      };
+    };
+    volume?: {
+      usd: {
+        srcToken: string;
+        dstToken: string;
+      };
+    };
+    autoK?: number;
+    k?: number;
+    mxK?: number;
+  };
+  
+  // Fallback indicator
+  isFallback?: boolean;
 }
 
 // Bridge Route with derived formatters

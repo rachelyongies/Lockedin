@@ -346,7 +346,7 @@ export class HTLCContractService {
           amount: ethers.parseUnits(amount, fromToken.decimals).toString(),
           walletAddress,
           enableEstimate: true,
-          fee: 100, // 1% fee in bps
+          // Remove fee parameter to avoid "cannot use fee without source" error
           isPermit2: false
         });
 
@@ -354,32 +354,59 @@ export class HTLCContractService {
         const toAmount = ethers.formatUnits(fusionQuote.dstTokenAmount, 8); // WBTC has 8 decimals
         const exchangeRate = (parseFloat(toAmount) / parseFloat(amount)).toString();
 
+        // Get recommended preset for timing estimates
+        const recommendedPreset = fusionQuote.presets[fusionQuote.recommendedPreset];
+        const estimatedTimeMinutes = Math.ceil(recommendedPreset.auctionDuration / 60);
+
         console.log('✅ Real 1inch quote received:', {
           fromAmount: amount,
           toAmount,
           exchangeRate,
-          priceImpact: fusionQuote.priceImpact
+          priceImpact: fusionQuote.priceImpactPercent,
+          recommendedPreset: fusionQuote.recommendedPreset,
+          estimatedTime: `${estimatedTimeMinutes} minutes`
         });
 
         return {
-          id: fusionQuote.quoteId || ethers.keccak256(ethers.toUtf8Bytes(`htlc-${Date.now()}`)),
+          id: fusionQuote.quoteId,
           fromToken,
           toToken,
           fromAmount: amount,
           toAmount,
           exchangeRate,
-          networkFee: ethers.formatEther(fusionQuote.estimatedGas || '21000'),
+          networkFee: ethers.formatEther(recommendedPreset.gasCost.gasPriceEstimate || '21000'),
           protocolFee: '0.05', // 0.05% from your contract
-          totalFee: ethers.formatEther(fusionQuote.feeAmount || '0'),
-          estimatedTime: '15-30 minutes',
-          minimumReceived: toAmount,
-          priceImpact: fusionQuote.priceImpact || '0.1',
+          totalFee: ethers.formatUnits(recommendedPreset.costInDstToken, 8), // Cost in destination token
+          estimatedTime: `${estimatedTimeMinutes} minutes`,
+          minimumReceived: ethers.formatUnits(recommendedPreset.auctionEndAmount, 8), // Minimum at auction end
+          priceImpact: fusionQuote.priceImpactPercent.toString(),
           expiresAt: Date.now() + 300000, // 5 minutes
           secretHash: secretData.secretHash,
           timelock,
           isAtomicSwap: true,
           contractAddress: this.getContractAddress(this.network),
-          fusionQuoteId: fusionQuote.quoteId
+          fusionQuoteId: fusionQuote.quoteId,
+          // Additional 1inch Fusion+ specific data
+          fusionPreset: fusionQuote.recommendedPreset,
+          fusionData: {
+            // Pass the complete raw response for detailed display
+            srcTokenAmount: fusionQuote.srcTokenAmount,
+            dstTokenAmount: fusionQuote.dstTokenAmount,
+            presets: fusionQuote.presets,
+            srcEscrowFactory: fusionQuote.srcEscrowFactory,
+            dstEscrowFactory: fusionQuote.dstEscrowFactory,
+            srcSafetyDeposit: fusionQuote.srcSafetyDeposit,
+            dstSafetyDeposit: fusionQuote.dstSafetyDeposit,
+            whitelist: fusionQuote.whitelist,
+            timeLocks: fusionQuote.timeLocks,
+            auctionDuration: recommendedPreset.auctionDuration,
+            secretsCount: recommendedPreset.secretsCount,
+            prices: fusionQuote.prices,
+            volume: fusionQuote.volume,
+            autoK: fusionQuote.autoK,
+            k: fusionQuote.k,
+            mxK: fusionQuote.mxK
+          }
         };
       } else {
         console.log('⚠️ No 1inch API key - using fallback quote');

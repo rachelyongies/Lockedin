@@ -9,12 +9,16 @@ import {
   ExternalLink,
   CheckCircle,
   AlertTriangle,
-  Clock
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  Info
 } from 'lucide-react';
 
 import { createAtomicHTLCSwapServiceWithContracts, AtomicSwapParams, AtomicSwapState } from '@/lib/services/atomic-htlc-eth-btc-with-contracts';
 import { Token, createAmount } from '@/types/bridge';
 import { CROSS_CHAIN_NETWORKS, NetworkKey, getSupportedCrossChainPairs } from '@/config/cross-chain-tokens';
+import { useToast, getErrorDetails } from '@/components/ui/Toast';
 
 const ETH_TOKEN: Token = {
   id: 'eth',
@@ -67,6 +71,7 @@ export default function FusionAtomicBridgePage() {
   const [quote, setQuote] = useState<any>(null);
   const [sourceChain, setSourceChain] = useState<NetworkKey>('ethereum');
   const [destinationChain, setDestinationChain] = useState<NetworkKey>('polygon');
+  const [showDetailedQuote, setShowDetailedQuote] = useState(false);
 
   // Initialize atomic swap service with YOUR contracts + 1inch API
   const atomicSwapService = createAtomicHTLCSwapServiceWithContracts(
@@ -531,10 +536,26 @@ export default function FusionAtomicBridgePage() {
             animate={{ opacity: 1, scale: 1 }}
             className="card-base space-y-4"
           >
-            <h3 className="text-xl font-bold flex items-center space-x-2">
-              <CheckCircle className="w-6 h-6 text-success" />
-              <span>Quote Ready</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold flex items-center space-x-2">
+                <CheckCircle className="w-6 h-6 text-success" />
+                <span>Real 1inch Fusion+ Quote</span>
+                {quote.fusionPreset && (
+                  <span className="text-sm px-2 py-1 rounded bg-primary-500/20 text-primary-300">
+                    {quote.fusionPreset.toUpperCase()}
+                  </span>
+                )}
+              </h3>
+              <button
+                onClick={() => setShowDetailedQuote(!showDetailedQuote)}
+                className="flex items-center space-x-1 text-sm text-primary-400 hover:text-primary-300"
+              >
+                <span>{showDetailedQuote ? 'Hide' : 'Show'} Details</span>
+                {showDetailedQuote ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+            
+            {/* Basic Quote Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div className="space-y-2">
                 <div className="flex justify-between">
@@ -549,6 +570,12 @@ export default function FusionAtomicBridgePage() {
                   <span>Exchange Rate:</span>
                   <span>1 ETH = {parseFloat(quote.exchangeRate).toFixed(8)} BTC</span>
                 </div>
+                <div className="flex justify-between">
+                  <span>Price Impact:</span>
+                  <span className={`${parseFloat(quote.priceImpact) > 1 ? 'text-warning' : 'text-success'}`}>
+                    {parseFloat(quote.priceImpact).toFixed(3)}%
+                  </span>
+                </div>
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between">
@@ -560,11 +587,232 @@ export default function FusionAtomicBridgePage() {
                   <span>{quote.estimatedTime}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span>Minimum Received:</span>
+                  <span>{parseFloat(quote.minimumReceived).toFixed(8)} BTC</span>
+                </div>
+                <div className="flex justify-between">
                   <span>Expires:</span>
                   <span>{new Date(quote.expiresAt).toLocaleTimeString()}</span>
                 </div>
               </div>
             </div>
+
+            {/* Detailed Quote Info */}
+            <AnimatePresence>
+              {showDetailedQuote && quote.fusionData && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-4"
+                >
+                  {/* Raw Response Data */}
+                  <div className="p-4 rounded-lg bg-background-secondary border border-border-color">
+                    <h4 className="text-lg font-semibold mb-3 flex items-center space-x-2">
+                      <Info className="w-5 h-5 text-primary-400" />
+                      <span>Complete 1inch Fusion+ Response</span>
+                    </h4>
+                    
+                    {/* Quote Metadata */}
+                    <div className="mb-4">
+                      <h5 className="text-md font-semibold text-primary-300 mb-2">Quote Metadata</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                        <div className="flex justify-between">
+                          <span>Quote ID:</span>
+                          <span className="font-mono text-primary-400">{quote.fusionQuoteId}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Recommended Preset:</span>
+                          <span className="font-medium">{quote.fusionPreset}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Source Token Amount:</span>
+                          <span className="font-mono">{quote.fusionData?.srcTokenAmount || 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Destination Token Amount:</span>
+                          <span className="font-mono">{quote.fusionData?.dstTokenAmount || 'N/A'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Auction Presets */}
+                    <div className="mb-4">
+                      <h5 className="text-md font-semibold text-primary-300 mb-2">Auction Presets</h5>
+                      <div className="space-y-3">
+                        {quote.fusionData?.presets && Object.entries(quote.fusionData.presets).map(([presetName, preset]: [string, any]) => (
+                          <div key={presetName} className="p-3 rounded bg-background-dark/50 border border-border-color/50">
+                            <div className="flex items-center justify-between mb-2">
+                              <h6 className="font-semibold text-sm capitalize">{presetName}</h6>
+                              {presetName === quote.fusionPreset && (
+                                <span className="text-xs px-2 py-1 rounded bg-success/20 text-success">Recommended</span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                              <div className="flex justify-between">
+                                <span>Duration:</span>
+                                <span>{preset.auctionDuration}s ({Math.ceil(preset.auctionDuration / 60)}m)</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Start Amount:</span>
+                                <span className="font-mono">{preset.startAmount}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>End Amount:</span>
+                                <span className="font-mono">{preset.auctionEndAmount}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Cost in Dst:</span>
+                                <span className="font-mono">{preset.costInDstToken}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Gas Price:</span>
+                                <span>{preset.gasCost.gasPriceEstimate} gwei</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Secrets:</span>
+                                <span>{preset.secretsCount}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Partial Fills:</span>
+                                <span>{preset.allowPartialFills ? '✅' : '❌'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Multiple Fills:</span>
+                                <span>{preset.allowMultipleFills ? '✅' : '❌'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Rate Bump:</span>
+                                <span>{preset.initialRateBump}</span>
+                              </div>
+                            </div>
+                            {preset.points && preset.points.length > 0 && (
+                              <div className="mt-2">
+                                <span className="text-xs text-text-secondary">Auction Points:</span>
+                                <div className="flex space-x-2 text-xs">
+                                  {preset.points.map((point: any, idx: number) => (
+                                    <span key={idx} className="font-mono bg-background-dark px-1 rounded">
+                                      {point.delay}s: {point.coefficient}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Time Locks */}
+                    <div className="mb-4">
+                      <h5 className="text-md font-semibold text-primary-300 mb-2">Time Locks (seconds)</h5>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        {quote.fusionData?.timeLocks && Object.entries(quote.fusionData.timeLocks).map(([key, value]: [string, any]) => (
+                          <div key={key} className="flex justify-between">
+                            <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                            <span className="font-mono">{value}s</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Escrow and Safety */}
+                    <div className="mb-4">
+                      <h5 className="text-md font-semibold text-primary-300 mb-2">Escrow & Safety</h5>
+                      <div className="grid grid-cols-1 gap-2 text-xs">
+                        <div className="flex justify-between">
+                          <span>Source Escrow Factory:</span>
+                          <span className="font-mono text-primary-400">{quote.fusionData?.srcEscrowFactory}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Destination Escrow Factory:</span>
+                          <span className="font-mono text-primary-400">{quote.fusionData?.dstEscrowFactory}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Source Safety Deposit:</span>
+                          <span className="font-mono">{quote.fusionData?.srcSafetyDeposit}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Destination Safety Deposit:</span>
+                          <span className="font-mono">{quote.fusionData?.dstSafetyDeposit}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Whitelist */}
+                    <div className="mb-4">
+                      <h5 className="text-md font-semibold text-primary-300 mb-2">Whitelisted Resolvers ({quote.fusionData?.whitelist?.length || 0})</h5>
+                      <div className="space-y-1">
+                        {quote.fusionData?.whitelist?.map((address: string, idx: number) => (
+                          <div key={idx} className="text-xs font-mono text-primary-400 bg-background-dark/50 p-2 rounded">
+                            {address}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Pricing Info */}
+                    <div className="mb-4">
+                      <h5 className="text-md font-semibold text-primary-300 mb-2">Market Data</h5>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                        {quote.fusionData?.prices && (
+                          <>
+                            <div className="flex justify-between">
+                              <span>ETH Price:</span>
+                              <span className="font-mono">${parseFloat(quote.fusionData.prices.usd.srcToken).toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>WBTC Price:</span>
+                              <span className="font-mono">${parseFloat(quote.fusionData.prices.usd.dstToken).toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        {quote.fusionData?.volume && (
+                          <>
+                            <div className="flex justify-between">
+                              <span>ETH Volume:</span>
+                              <span className="font-mono">${quote.fusionData.volume.usd.srcToken}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>WBTC Volume:</span>
+                              <span className="font-mono">${quote.fusionData.volume.usd.dstToken}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex justify-between">
+                          <span>Price Impact:</span>
+                          <span className={`font-mono ${parseFloat(quote.priceImpact) > 1 ? 'text-warning' : 'text-success'}`}>
+                            {parseFloat(quote.priceImpact).toFixed(3)}%
+                          </span>
+                        </div>
+                        {quote.fusionData?.autoK && (
+                          <>
+                            <div className="flex justify-between">
+                              <span>Auto K:</span>
+                              <span className="font-mono">{quote.fusionData.autoK}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>K:</span>
+                              <span className="font-mono">{quote.fusionData.k}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Max K:</span>
+                              <span className="font-mono">{quote.fusionData.mxK}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {quote.isFallback && (
+              <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 text-warning text-sm">
+                ⚠️ Using simulated quote - 1inch API unavailable
+              </div>
+            )}
           </motion.div>
         )}
 
