@@ -101,8 +101,8 @@ export async function GET(
     console.log('✅ 1inch Spot Price API Success - Prices retrieved');
     console.log('📊 Price data:', data);
 
-    // Cache the response for 30 seconds
-    setCachedResponse(cacheKey, data, 30000);
+    // Cache the response for 5 minutes (default cache duration)
+    setCachedResponse(cacheKey, data);
 
     return NextResponse.json(data);
   } catch (error) {

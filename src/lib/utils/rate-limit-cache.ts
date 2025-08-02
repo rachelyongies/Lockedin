@@ -1,7 +1,7 @@
 // Shared rate limiting and caching utilities for 1inch API endpoints
 
 // In-memory cache for API responses
-const cache = new Map<string, { data: any; timestamp: number }>();
+const cache = new Map<string, { data: Record<string, unknown>; timestamp: number }>();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 // Rate limiting
@@ -32,7 +32,7 @@ export function checkRateLimit(clientId: string): RateLimitResult {
   return { isLimited: false };
 }
 
-export function getCachedResponse(key: string): any | null {
+export function getCachedResponse(key: string): Record<string, unknown> | null {
   const cached = cache.get(key);
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
     return { ...cached.data, cached: true };
@@ -46,7 +46,7 @@ export function getCachedResponse(key: string): any | null {
   return null;
 }
 
-export function setCachedResponse(key: string, data: any): void {
+export function setCachedResponse(key: string, data: Record<string, unknown>): void {
   cache.set(key, { data: { ...data, cached: false }, timestamp: Date.now() });
 }
 

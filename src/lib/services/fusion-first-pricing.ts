@@ -118,7 +118,7 @@ class FusionFirstPricingService {
     
     // Override with 1inch Fusion prices (higher priority for hackathon)
     for (const [token, price] of Object.entries(fusionPrices)) {
-      if (price > 0) {
+      if (typeof price === 'number' && price > 0) {
         mergedPrices[token] = price;
       }
     }
@@ -206,11 +206,11 @@ class FusionFirstPricingService {
           return geckoToAddress;
         }
         
-        // Convert symbol to address
-        return tokenValidationService.getTokenAddress(token) || token;
+        // Just return the token as-is since it's a string (likely symbol or address)
+        return token;
       } else {
         // It's a Token object
-        return tokenValidationService.getTokenAddress(token.symbol) || 
+        return tokenValidationService.getTokenAddress(token) || 
                ('address' in token ? token.address || '' : '');
       }
     }).filter(addr => addr.length > 0);

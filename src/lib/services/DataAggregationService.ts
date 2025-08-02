@@ -597,11 +597,12 @@ export class DataAggregationService {
           // Normalize the key (remove suffixes for consistency)
           const normalizedKey = dexName.replace('-dex', '').replace('-exchange', '').replace('-network', '');
           
-          if (data && typeof data.tvl === 'number' && data.tvl > 0) {
-            return { key: normalizedKey, tvl: data.tvl, source: 'direct' };
-          } else if (data && data.currentChainTvls) {
+          const dataRecord = data as Record<string, unknown>;
+          if (data && typeof dataRecord.tvl === 'number' && dataRecord.tvl > 0) {
+            return { key: normalizedKey, tvl: dataRecord.tvl, source: 'direct' };
+          } else if (data && dataRecord.currentChainTvls) {
             // Handle different response format
-            const totalTvl = Object.values(data.currentChainTvls).reduce((sum: number, val: unknown) => {
+            const totalTvl = Object.values(dataRecord.currentChainTvls as Record<string, unknown>).reduce((sum: number, val: unknown) => {
               return sum + (typeof val === 'number' ? val : 0);
             }, 0);
             
@@ -1028,7 +1029,7 @@ export class DataAggregationService {
       
       // Strategy 3: More aggressive repair
       () => {
-        let cleaned = responseText
+        const cleaned = responseText
           .replace(/,\s*}/g, '}')
           .replace(/,\s*]/g, ']')
           .replace(/\.\s*([,}\]])/g, '.0$1')

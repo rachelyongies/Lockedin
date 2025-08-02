@@ -102,8 +102,8 @@ export class StorageManager {
     });
   }
 
-  // Get storage size estimation
-  private getStorageSize(): number {
+  // Get session storage size estimation
+  private getSessionStorageSize(): number {
     let totalSize = 0;
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i);
@@ -153,7 +153,7 @@ export class StorageManager {
       const serializedData = this.safeStringify(data);
       
       // Check if this would exceed our size limit
-      const estimatedSize = this.getStorageSize() + key.length + serializedData.length;
+      const estimatedSize = this.getSessionStorageSize() + key.length + serializedData.length;
       if (estimatedSize > this.MAX_STORAGE_SIZE) {
         console.warn('Storage size approaching limit, cleaning up old data');
         this.clearOldSessionData();

@@ -513,10 +513,10 @@ export class MarketIntelligenceAgent extends BaseAgent {
           'pancakeswap': 300000000
         },
         trends: {
-          '1inch': { direction: 'up', strength: 0.9, confidence: 0.95 }, // Strong positive trend for 1inch
-          'uniswap': { direction: 'stable', strength: 0.6, confidence: 0.8 },
-          'sushiswap': { direction: 'down', strength: 0.3, confidence: 0.7 },
-          'curve': { direction: 'up', strength: 0.4, confidence: 0.75 }
+          '1inch': { direction: 'up', strength: 0.9, duration: 60, volumeConfirmation: true, recentSpikes: [], momentum: 0.8 },
+          'uniswap': { direction: 'sideways', strength: 0.6, duration: 30, volumeConfirmation: false, recentSpikes: [], momentum: 0.1 },
+          'sushiswap': { direction: 'down', strength: 0.3, duration: 45, volumeConfirmation: true, recentSpikes: [], momentum: -0.4 },
+          'curve': { direction: 'up', strength: 0.4, duration: 40, volumeConfirmation: false, recentSpikes: [], momentum: 0.3 }
         }
       };
     }
