@@ -422,6 +422,9 @@ export class FusionAwarePathfinder {
     let currentAmount = parseFloat(params.amountIn);
     let totalImpliedCost = 0;
 
+    console.log('🧮 Route Discovery Agent - Starting price impact calculation');
+    console.log(`📊 Initial amount: ${currentAmount}, Path length: ${path.length}`);
+
     for (let i = 1; i < path.length; i++) {
       const pathStep = path[i];
       if (!pathStep.edge) continue;
@@ -437,11 +440,19 @@ export class FusionAwarePathfinder {
         stepOutput = fusionQuote.toAmount;
         stepGas = fusionQuote.gasEstimate;
         totalImpliedCost += fusionQuote.impliedCost;
+        console.log(`🔥 Step ${i} - Using Fusion quote:`);
+        console.log(`   Input: ${currentAmount} → Output: ${stepOutput}`);
+        console.log(`   Implied cost: ${fusionQuote.impliedCost} (Total so far: ${totalImpliedCost})`);
+        console.log(`   Gas estimate: ${stepGas}`);
       } else {
         // Fall back to traditional calculation
         const slippage = edge.slippage.calculateSlippage(currentAmount, edge.liquidity);
         const stepOutputNum = currentAmount * (1 - slippage - edge.fee);
         stepOutput = stepOutputNum.toString();
+        console.log(`⚙️ Step ${i} - Using traditional calculation:`);
+        console.log(`   Input: ${currentAmount} → Output: ${stepOutput}`);
+        console.log(`   Slippage: ${(slippage * 100).toFixed(4)}%, Fee: ${(edge.fee * 100).toFixed(2)}%`);
+        console.log(`   Price impact for this step: ${((currentAmount - stepOutputNum) / currentAmount * 100).toFixed(4)}%`);
         stepGas = edge.realTimeGasEstimate || edge.gasEstimate;
       }
 
@@ -464,6 +475,15 @@ export class FusionAwarePathfinder {
     const baseConfidence = Math.max(0.3, 1 - (steps.length * 0.1));
     const confidence = baseConfidence * (0.7 + fusionCompatibilityRatio * 0.3);
 
+    const finalPriceImpact = (totalImpliedCost * 100).toFixed(4);
+    console.log('🎯 Route Discovery Agent - Final price impact calculation:');
+    console.log(`   Total implied cost: ${totalImpliedCost}`);
+    console.log(`   Final price impact: ${finalPriceImpact}%`);
+    console.log(`   Initial amount: ${params.amountIn} → Final output: ${currentAmount}`);
+    console.log(`   Overall efficiency: ${((parseFloat(params.amountIn) - currentAmount) / parseFloat(params.amountIn) * 100).toFixed(4)}%`);
+    console.log(`   Route confidence: ${(confidence * 100).toFixed(2)}%`);
+    console.log(`   Fusion compatibility: ${fusionCompatibleSteps.length}/${steps.length} steps (${(fusionCompatibilityRatio * 100).toFixed(1)}%)`);
+
     return {
       id: `fusion-optimized-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       fromToken: params.fromToken,
@@ -473,7 +493,7 @@ export class FusionAwarePathfinder {
       estimatedGas: totalGas.toString(),
       estimatedTime: steps.length * 12, // Faster with Fusion
       estimatedOutput: currentAmount.toString(),
-      priceImpact: (totalImpliedCost * 100).toFixed(4),
+      priceImpact: finalPriceImpact,
       confidence,
       risks: this.assessFusionOptimizedRisks(path),
       advantages: this.identifyFusionAdvantages(path),
@@ -593,6 +613,8 @@ export class RouteDiscoveryAgent extends BaseAgent {
     this.routingGraph = this.initializeEmptyGraph();
     this.fusionPathfinder = new FusionAwarePathfinder(dataService);
     this.routeCache = new Map();
+    
+    console.log('🔧 RouteDiscoveryAgent constructor completed - ready for price impact calculations!');
   }
 
   async initialize(): Promise<void> {

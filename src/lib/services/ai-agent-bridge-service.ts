@@ -450,18 +450,28 @@ export class AIAgentBridgeService {
   }
 
   private calculateOptimalSlippage(conditions: MarketConditions, amount: number): number {
-    const baseSlippage = 0.005; // 0.5%
+    const baseSlippage = 0.003; // 0.3% base (more realistic)
     
-    // Volatility adjustment
-    const volatilityAdjustment = conditions.volatility.overall * 0.02;
+    // Volatility adjustment (reduced from 2% to 0.5% max)
+    const volatilityAdjustment = conditions.volatility.overall * 0.005;
     
-    // Liquidity adjustment
-    const liquidityAdjustment = (1 - conditions.liquidity.overall) * 0.015;
+    // Liquidity adjustment (reduced from 1.5% to 0.5% max)
+    const liquidityAdjustment = (1 - conditions.liquidity.overall) * 0.005;
     
-    // Amount adjustment
-    const amountAdjustment = Math.min(0.01, amount / 1000000);
+    // Amount adjustment (scaled better for typical amounts)
+    const amountAdjustment = Math.min(0.003, amount / 5000000); // 0.3% max for very large trades
     
-    return Math.min(0.05, baseSlippage + volatilityAdjustment + liquidityAdjustment + amountAdjustment);
+    const totalSlippage = baseSlippage + volatilityAdjustment + liquidityAdjustment + amountAdjustment;
+    
+    console.log('🎯 Slippage calculation breakdown:');
+    console.log(`   Base: ${(baseSlippage * 100).toFixed(2)}%`);
+    console.log(`   Volatility adj: ${(volatilityAdjustment * 100).toFixed(2)}% (volatility: ${(conditions.volatility.overall * 100).toFixed(1)}%)`);
+    console.log(`   Liquidity adj: ${(liquidityAdjustment * 100).toFixed(2)}% (liquidity: ${(conditions.liquidity.overall * 100).toFixed(1)}%)`);
+    console.log(`   Amount adj: ${(amountAdjustment * 100).toFixed(2)}% (amount: $${amount.toFixed(2)})`);
+    console.log(`   Total: ${(totalSlippage * 100).toFixed(2)}%`);
+    
+    // More realistic max of 1.5% instead of 5%
+    return Math.min(0.015, totalSlippage);
   }
 
   private calculateSuccessProbability(conditions: MarketConditions): number {
@@ -702,11 +712,16 @@ export class AIAgentBridgeService {
       const routes: RouteProposal[] = [];
       
       // Check if we should try Fusion API first (real wallet address provided)
-      const shouldTryFusionAPI = fromAddress && fromAddress !== '0x0000000000000000000000000000000000000000';
+      // ORIGINAL APPROACH (now fallback): const shouldTryFusionAPI = fromAddress && fromAddress !== '0x0000000000000000000000000000000000000000';
+      
+      // NEW APPROACH: Always try Fusion first, regardless of wallet
+      const shouldTryFusionAPI = true;
       
       console.log('🔄 AI Agent Bridge - Route generation strategy:', {
         strategy: shouldTryFusionAPI ? 'FUSION_API_FIRST' : 'FALLBACK_ONLY',
-        reason: shouldTryFusionAPI ? 'Real wallet address provided' : 'No wallet or demo mode'
+        reason: 'Always prioritize 1inch Fusion for best execution',
+        walletAddress: fromAddress?.slice(0, 6) + '...' + fromAddress?.slice(-4),
+        // originalLogic: fromAddress && fromAddress !== '0x0000000000000000000000000000000000000000' ? 'Would use Fusion' : 'Would use DEX'
       });
 
       if (shouldTryFusionAPI) {
@@ -826,6 +841,13 @@ export class AIAgentBridgeService {
     const marketConditions = await this.dataService.getNetworkConditions();
     const gasPrices = await this.dataService.getGasPrices();
     
+    console.log('⛽ Gas prices from data service:', {
+      ethereum: gasPrices.ethereum,
+      gasPriceInGwei: gasPrices.ethereum.standard,
+      gasPriceInWei: gasPrices.ethereum.standard * 1e9,
+      strategy: marketConditions.networkCongestion.ethereum > 0.7 ? 'fast' : 'standard'
+    });
+    
     return {
       routeId: route.id,
       timing: {
@@ -839,7 +861,7 @@ export class AIAgentBridgeService {
         estimatedProtection: 0.9
       },
       gasStrategy: {
-        gasPrice: gasPrices.ethereum.standard.toString(),
+        gasPrice: (gasPrices.ethereum.standard * 1e9).toString(), // Convert gwei to wei
         gasLimit: route.estimatedGas,
         strategy: marketConditions.networkCongestion.ethereum > 0.7 ? 'fast' : 'standard'
       },
