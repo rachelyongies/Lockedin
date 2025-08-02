@@ -58,13 +58,14 @@ export class AtomicHTLCSwapServiceWithContracts {
   constructor(
     ethereumRpcUrl: string,
     network: string = 'sepolia',
-    bitcoinNetwork: 'mainnet' | 'testnet' = 'testnet'
+    bitcoinNetwork: 'mainnet' | 'testnet' = 'testnet',
+    apiKey?: string
   ) {
     this.network = network;
     this.ethProvider = new ethers.JsonRpcProvider(ethereumRpcUrl);
     
-    // Initialize YOUR HTLC contract service
-    this.htlcContractService = new HTLCContractService(this.ethProvider, network);
+    // Initialize YOUR HTLC contract service with 1inch API for real quotes
+    this.htlcContractService = new HTLCContractService(this.ethProvider, network, apiKey);
     this.btcHTLCService = new BitcoinHTLCService(bitcoinNetwork);
   }
 
@@ -89,7 +90,9 @@ export class AtomicHTLCSwapServiceWithContracts {
     fromToken: Token,
     toToken: Token,
     amount: string,
-    walletAddress: string
+    walletAddress: string,
+    srcChain?: any,
+    dstChain?: any
   ): Promise<BridgeQuote> {
     try {
       await this.initialize();
@@ -100,7 +103,9 @@ export class AtomicHTLCSwapServiceWithContracts {
         fromToken,
         toToken,
         amount,
-        walletAddress
+        walletAddress,
+        srcChain,
+        dstChain
       );
       
       return quote;
@@ -527,7 +532,8 @@ export class AtomicHTLCSwapServiceWithContracts {
 export function createAtomicHTLCSwapServiceWithContracts(
   ethereumRpcUrl: string,
   network: string = 'sepolia',
-  bitcoinNetwork: 'mainnet' | 'testnet' = 'testnet'
+  bitcoinNetwork: 'mainnet' | 'testnet' = 'testnet',
+  apiKey?: string
 ): AtomicHTLCSwapServiceWithContracts {
-  return new AtomicHTLCSwapServiceWithContracts(ethereumRpcUrl, network, bitcoinNetwork);
+  return new AtomicHTLCSwapServiceWithContracts(ethereumRpcUrl, network, bitcoinNetwork, apiKey);
 }

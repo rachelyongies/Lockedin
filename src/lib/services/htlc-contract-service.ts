@@ -1,6 +1,8 @@
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESSES, getNetworkConfig } from '@/config/contracts';
 import { Token, BridgeQuote, Amount, createAmount } from '@/types/bridge';
+import { FusionPlusQuoterService } from './fusion-plus-quoter';
+import { CROSS_CHAIN_NETWORKS, NetworkKey, getWBTCAddress, getNativeTokenAddress } from '@/config/cross-chain-tokens';
 
 // Your HTLC1inchEscrow ABI (essential functions)
 const HTLC_ABI = [
@@ -50,13 +52,19 @@ export class HTLCContractService {
   private contract: ethers.Contract;
   private provider: ethers.Provider;
   private network: string;
+  private fusionQuoter?: FusionPlusQuoterService;
 
-  constructor(provider: ethers.Provider, network: string = 'sepolia') {
+  constructor(provider: ethers.Provider, network: string = 'sepolia', apiKey?: string) {
     this.provider = provider;
     this.network = network;
     
     const contractAddress = this.getContractAddress(network);
     this.contract = new ethers.Contract(contractAddress, HTLC_ABI, provider);
+    
+    // Initialize 1inch Fusion+ quoter if API key is available
+    if (apiKey || process.env.NEXT_PUBLIC_1INCH_API_KEY) {
+      this.fusionQuoter = new FusionPlusQuoterService(apiKey || process.env.NEXT_PUBLIC_1INCH_API_KEY!);
+    }
   }
 
   private getContractAddress(network: string): string {
@@ -299,52 +307,122 @@ export class HTLCContractService {
   }
 
   /**
-   * Generate quote for atomic swap using your contracts
+   * Generate quote for atomic swap using REAL 1inch Fusion+ API
    */
   async generateQuote(
     fromToken: Token,
     toToken: Token,
     amount: string,
-    walletAddress: string
+    walletAddress: string,
+    srcChain?: NetworkKey,
+    dstChain?: NetworkKey
   ): Promise<BridgeQuote> {
-    // For your contracts, we'll create a simple quote
-    // In production, you could integrate with price oracles
-    
     const secretData = this.generateSecretData();
     const timelock = Math.floor(Date.now() / 1000) + (24 * 60 * 60); // 24 hours
     
-    // Simple rate calculation (you can enhance this)
-    const rate = fromToken.symbol === 'ETH' && toToken.symbol === 'BTC' ? 0.000025 : 40000;
-    const toAmount = fromToken.symbol === 'ETH' 
-      ? (parseFloat(amount) * rate).toFixed(8)
-      : (parseFloat(amount) / rate).toFixed(6);
+    try {
+      if (this.fusionQuoter) {
+        console.log('🔄 Getting REAL quote from 1inch Fusion+ API...');
+        
+        // Use selected chains or default to Ethereum → Polygon for cross-chain quotes
+        const sourceChain = srcChain || 'ethereum';
+        const destinationChain = dstChain || 'polygon';
+        
+        const srcChainId = CROSS_CHAIN_NETWORKS[sourceChain].chainId;
+        const dstChainId = CROSS_CHAIN_NETWORKS[destinationChain].chainId;
+        
+        // Get native token address for source chain and WBTC for destination
+        const srcTokenAddress = getNativeTokenAddress(sourceChain);
+        const dstTokenAddress = getWBTCAddress(destinationChain);
+        
+        console.log(`🌉 Cross-chain quote: ${sourceChain} (${srcChainId}) → ${destinationChain} (${dstChainId})`);
+        console.log(`📍 Tokens: ${srcTokenAddress} → ${dstTokenAddress}`);
+          
+        const fusionQuote = await this.fusionQuoter.getQuote({
+          srcChain: srcChainId,
+          dstChain: dstChainId, // Real cross-chain quote
+          srcTokenAddress,
+          dstTokenAddress,
+          amount: ethers.parseUnits(amount, fromToken.decimals).toString(),
+          walletAddress,
+          enableEstimate: true,
+          fee: 100, // 1% fee in bps
+          isPermit2: false
+        });
 
-    return {
-      id: ethers.keccak256(ethers.toUtf8Bytes(`htlc-${Date.now()}`)),
-      fromToken,
-      toToken,
-      fromAmount: amount,
-      toAmount,
-      exchangeRate: rate.toString(),
-      networkFee: '0.001',
-      protocolFee: '0.05', // 0.05% from your contract
-      totalFee: '0.001',
-      estimatedTime: '15-30 minutes',
-      minimumReceived: toAmount,
-      priceImpact: '0.1',
-      expiresAt: Date.now() + 300000, // 5 minutes
-      secretHash: secretData.secretHash,
-      timelock,
-      isAtomicSwap: true,
-      contractAddress: this.getContractAddress(this.network)
-    };
+        // Convert WBTC amount to display amount
+        const toAmount = ethers.formatUnits(fusionQuote.dstTokenAmount, 8); // WBTC has 8 decimals
+        const exchangeRate = (parseFloat(toAmount) / parseFloat(amount)).toString();
+
+        console.log('✅ Real 1inch quote received:', {
+          fromAmount: amount,
+          toAmount,
+          exchangeRate,
+          priceImpact: fusionQuote.priceImpact
+        });
+
+        return {
+          id: fusionQuote.quoteId || ethers.keccak256(ethers.toUtf8Bytes(`htlc-${Date.now()}`)),
+          fromToken,
+          toToken,
+          fromAmount: amount,
+          toAmount,
+          exchangeRate,
+          networkFee: ethers.formatEther(fusionQuote.estimatedGas || '21000'),
+          protocolFee: '0.05', // 0.05% from your contract
+          totalFee: ethers.formatEther(fusionQuote.feeAmount || '0'),
+          estimatedTime: '15-30 minutes',
+          minimumReceived: toAmount,
+          priceImpact: fusionQuote.priceImpact || '0.1',
+          expiresAt: Date.now() + 300000, // 5 minutes
+          secretHash: secretData.secretHash,
+          timelock,
+          isAtomicSwap: true,
+          contractAddress: this.getContractAddress(this.network),
+          fusionQuoteId: fusionQuote.quoteId
+        };
+      } else {
+        console.log('⚠️ No 1inch API key - using fallback quote');
+        throw new Error('No Fusion+ API available');
+      }
+    } catch (error) {
+      console.error('❌ 1inch Fusion+ quote failed, using fallback:', error);
+      
+      // Fallback to simulated quote if API fails
+      const rate = fromToken.symbol === 'ETH' && toToken.symbol === 'BTC' ? 0.000025 : 40000;
+      const toAmount = fromToken.symbol === 'ETH' 
+        ? (parseFloat(amount) * rate).toFixed(8)
+        : (parseFloat(amount) / rate).toFixed(6);
+
+      return {
+        id: ethers.keccak256(ethers.toUtf8Bytes(`htlc-fallback-${Date.now()}`)),
+        fromToken,
+        toToken,
+        fromAmount: amount,
+        toAmount,
+        exchangeRate: rate.toString(),
+        networkFee: '0.001',
+        protocolFee: '0.05',
+        totalFee: '0.001',
+        estimatedTime: '15-30 minutes (simulated)',
+        minimumReceived: toAmount,
+        priceImpact: '0.1',
+        expiresAt: Date.now() + 300000,
+        secretHash: secretData.secretHash,
+        timelock,
+        isAtomicSwap: true,
+        contractAddress: this.getContractAddress(this.network),
+        isFallback: true
+      };
+    }
   }
 }
 
 // Factory function
 export function createHTLCContractService(
   provider: ethers.Provider,
-  network: string = 'sepolia'
+  network: string = 'sepolia',
+  apiKey?: string
 ): HTLCContractService {
-  return new HTLCContractService(provider, network);
+  return new HTLCContractService(provider, network, apiKey);
 }
