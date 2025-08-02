@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@1inch/fusion-sdk": "^2.3.5",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-slot": "^1.2.3",
     "@solana/wallet-adapter-base": "^0.9.27",

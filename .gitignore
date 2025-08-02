@@ -41,5 +41,16 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Hardhat
+/cache
+/artifacts
+/typechain-types
+
+# Foundry
+/broadcast
+
+# Shell scripts with sensitive data
+setup-env.sh
+
 #md
 *.md

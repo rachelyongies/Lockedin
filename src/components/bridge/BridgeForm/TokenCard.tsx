@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { formatAmountInput } from '@/lib/utils/validation';
 import { Token } from '@/types/bridge';
 import { ALL_TOKENS } from '@/config/tokens';
+import { useWalletStore, useTokenBalances } from '@/store/useWalletStore';
 
 interface TokenCardProps {
   label: 'From' | 'To';
@@ -67,9 +68,48 @@ const TokenCard: React.FC<TokenCardProps> = ({
   className,
   'aria-invalid': ariaInvalid,
 }) => {
-  // Mock balance - in real app this would come from wallet state
-  const mockBalance = '10.5234';
-  const mockBalanceUSD = '$21,534.67';
+  // Get real wallet balances
+  const { account, isConnected } = useWalletStore();
+  const { balances } = useTokenBalances();
+  
+  // Get balance for the selected token
+  const getTokenBalance = (token: Token | null): { balance: string; usdValue: number } => {
+    if (!token || !isConnected || !account) {
+      return { balance: '0', usdValue: 0 };
+    }
+    
+    // Use the balances from useTokenBalances hook
+    const tokenBalanceData = balances[token.symbol];
+    const tokenBalance = tokenBalanceData?.formattedBalance || '0';
+    const usdValue = tokenBalanceData?.usdValue || 0;
+    
+    return { 
+      balance: tokenBalance, 
+      usdValue 
+    };
+  };
+
+  // Check if user has sufficient balance
+  const hasSufficientBalance = (amount: string): boolean => {
+    if (!token || !isConnected) return false;
+    const balanceNum = parseFloat(tokenBalance);
+    const amountNum = parseFloat(amount);
+    return !isNaN(balanceNum) && !isNaN(amountNum) && balanceNum >= amountNum;
+  };
+  
+  const { balance: tokenBalance, usdValue } = getTokenBalance(token);
+  const balanceUSD = usdValue > 0 ? `$${usdValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00';
+
+  // Debug logging to help identify the issue
+  if (token && isConnected) {
+    console.log('🔍 TokenCard Debug:', {
+      tokenSymbol: token.symbol,
+      balances: balances,
+      tokenBalance,
+      isConnected,
+      accountAddress: account?.address
+    });
+  }
 
   // Consistent formatting helper - MUST be before early return
   const formatAmount = useCallback((value: string | number): string => {
@@ -79,9 +119,9 @@ const TokenCard: React.FC<TokenCardProps> = ({
 
   // Handle max button click
   const handleMaxClick = useCallback(() => {
-    if (disabled || readOnly || !showMaxButton) return;
-    onAmountChange(formatAmount(mockBalance));
-  }, [disabled, readOnly, showMaxButton, mockBalance, onAmountChange, formatAmount]);
+    if (disabled || readOnly || !showMaxButton || !isConnected) return;
+    onAmountChange(formatAmount(tokenBalance));
+  }, [disabled, readOnly, showMaxButton, isConnected, tokenBalance, onAmountChange, formatAmount]);
 
   // Handle amount input change with formatting
   const handleAmountChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,11 +133,11 @@ const TokenCard: React.FC<TokenCardProps> = ({
   // Percentage buttons for quick selection
   const percentageButtons = [25, 50, 75, 100];
   const handlePercentageClick = useCallback((percentage: number) => {
-    if (disabled || readOnly) return;
-    const balanceNum = parseFloat(mockBalance);
+    if (disabled || readOnly || !isConnected) return;
+    const balanceNum = parseFloat(tokenBalance);
     const percentAmount = (balanceNum * percentage) / 100;
     onAmountChange(formatAmount(percentAmount));
-  }, [disabled, readOnly, mockBalance, onAmountChange, formatAmount]);
+  }, [disabled, readOnly, isConnected, tokenBalance, onAmountChange, formatAmount]);
 
   // Early return for empty state - MUST be after all hooks
   if (!token && !loading) {
@@ -119,12 +159,24 @@ const TokenCard: React.FC<TokenCardProps> = ({
           <h3 className="text-sm font-medium text-text-secondary">
             {label}
           </h3>
-          {showBalance && token && (
-            <div className="text-xs text-text-tertiary text-right">
-              <div>Balance: {mockBalance} {token.symbol}</div>
-              <div className="text-text-quaternary">{mockBalanceUSD}</div>
-            </div>
-          )}
+                      {showBalance && token && (
+              <div className="text-xs text-text-tertiary text-right">
+                <div className={cn(
+                  "Balance:",
+                  hasSufficientBalance(amount) ? "text-green-400" : "text-red-400"
+                )}>
+                  {isConnected ? `${tokenBalance} ${token.symbol}` : 'Connect wallet'}
+                </div>
+                <div className="text-text-quaternary">
+                  {isConnected ? balanceUSD : 'Balance not available'}
+                </div>
+                {amount && isConnected && !hasSufficientBalance(amount) && (
+                  <div className="text-red-400 text-xs mt-1">
+                    ⚠️ Insufficient balance
+                  </div>
+                )}
+              </div>
+            )}
         </div>
       </CardHeader>
 
@@ -194,7 +246,7 @@ const TokenCard: React.FC<TokenCardProps> = ({
                   size="sm"
                   onClick={handleMaxClick}
                   className="absolute right-3 top-1/2 -translate-y-1/2 h-6 px-2 text-xs font-medium text-primary-400 hover:text-primary-300 hover:bg-primary-500/10"
-                  aria-label={`Set maximum available balance: ${mockBalance} ${token?.symbol}`}
+                  aria-label={`Set maximum available balance: ${tokenBalance} ${token?.symbol}`}
                 >
                   MAX
                 </Button>

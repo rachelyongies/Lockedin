@@ -479,10 +479,33 @@ export default function MultiWalletPage() {
             console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (raw hex: ${balanceHex})`);
           }
         } else {
-          // ERC20 token balance - you would need to call the token contract
-          // For now, we'll use a mock balance
-          balance = (Math.random() * 100).toFixed(4);
-          console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (mock)`);
+          // ERC20 token balance - fetch from contract
+          try {
+            const provider = multiWalletManager.getWalletProvider(walletName);
+            if (provider && (provider as unknown as { request?: (params: { method: string; params: string[] }) => Promise<string> }).request) {
+              // Get token address from config
+              const tokenConfig = ETHEREUM_TOKENS[wallet.chainId]?.find(t => t.symbol === tokenSymbol);
+              if (tokenConfig && 'address' in tokenConfig) {
+                const tokenContract = new (window as any).ethers.Contract(
+                  tokenConfig.address,
+                  ['function balanceOf(address) view returns (uint256)'],
+                  provider
+                );
+                const tokenBalance = await tokenContract.balanceOf(wallet.address);
+                balance = (parseInt(tokenBalance, 16) / Math.pow(10, tokenConfig.decimals || 18)).toString();
+                console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (real)`);
+              } else {
+                balance = '0';
+                console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (token config not found)`);
+              }
+            } else {
+              balance = '0';
+              console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (provider not available)`);
+            }
+          } catch (error) {
+            balance = '0';
+            console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (error: ${error})`);
+          }
         }
       } else if (wallet.type === 'solana') {
         // For Solana wallets, fetch SPL token balance
@@ -494,9 +517,9 @@ export default function MultiWalletPage() {
             balance = (balanceData.value / Math.pow(10, 9)).toString();
             console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (raw lamports: ${balanceData.value})`);
           } else {
-            // SPL token balance - for now, use mock
-            balance = (Math.random() * 50).toFixed(4);
-            console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (mock SPL token)`);
+            // SPL token balance - for now, use mock (would need SPL token program integration)
+            balance = '0';
+            console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (SPL token - not implemented yet)`);
           }
         }
       }
