@@ -49,7 +49,8 @@ export class IntelligentRouteGenerator {
       fromToken, 
       toToken, 
       amount, 
-      walletAddress
+      walletAddress,
+      undefined // Let aggregator auto-detect chainId from token
     );
 
     console.log('📊 1inch Analysis Complete:', {
@@ -451,21 +452,12 @@ export class IntelligentRouteGenerator {
       const { fusionFirstPricing } = await import('./fusion-first-pricing');
       
       // Get real prices for the tokens
-      // Convert token symbols to their corresponding addresses for 1inch API
-      const symbolToAddress = (symbol: string): string => {
-        const mapping: Record<string, string> = {
-          'ETH': '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-          'WETH': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-          'WBTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
-          'BTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
-          'USDC': '0xA0b86a33E6441b8C4F27eAD9083C756Cc2',
-          'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-          'DAI': '0x6B175474E89094C44Da98b954EedeAC495271d0F'
-        };
-        return mapping[symbol.toUpperCase()] || symbol;
+      // Use token validation service to get proper addresses for the detected network
+      const getTokenAddress = (token: Token): string => {
+        return tokenValidationService.getTokenAddress(token);
       };
       
-      const tokenIdentifiers = [symbolToAddress(fromToken.symbol), symbolToAddress(toToken.symbol)];
+      const tokenIdentifiers = [getTokenAddress(fromToken), getTokenAddress(toToken)];
       const pricingResult = await fusionFirstPricing.getTokenPrices(tokenIdentifiers, {
         preferFusion: true,
         fallbackToCoinGecko: true

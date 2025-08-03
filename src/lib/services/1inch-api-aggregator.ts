@@ -162,11 +162,13 @@ export class OneInchAPIAggregator {
     fromToken: Token,
     toToken: Token,
     amount: string,
-    walletAddress?: string
+    walletAddress?: string,
+    chainId?: number
   ): Promise<Comprehensive1inchAnalysis> {
     console.log('🔥 1inch API Aggregator - Starting comprehensive analysis');
     
-    const chainId = 1; // Ethereum mainnet
+    // Auto-detect chainId from token or default to Ethereum mainnet
+    const targetChainId = chainId || this.detectChainIdFromToken(fromToken) || 1;
     
     // Validate token pair first
     const validation = tokenValidationService.validateTokenPair(fromToken, toToken);
@@ -204,11 +206,11 @@ export class OneInchAPIAggregator {
 
     // Run all API calls in parallel for maximum performance
     const [quotes, gas, liquidity, paths, approvals] = await Promise.allSettled([
-      this.getQuoteComparison(fromTokenAddress, toTokenAddress, amountInWei, walletAddress),
-      this.getGasAnalysis(chainId),
-      this.getLiquidityAnalysis(chainId),
-      this.getPathAnalysis(fromTokenAddress, toTokenAddress, chainId),
-      walletAddress ? this.getApprovalStatus(fromTokenAddress, walletAddress, chainId) : null
+      this.getQuoteComparison(fromTokenAddress, toTokenAddress, amountInWei, walletAddress, targetChainId),
+      this.getGasAnalysis(targetChainId),
+      this.getLiquidityAnalysis(targetChainId),
+      this.getPathAnalysis(fromTokenAddress, toTokenAddress, targetChainId),
+      walletAddress ? this.getApprovalStatus(fromTokenAddress, walletAddress, targetChainId) : null
     ]);
 
     const quotesResult = quotes.status === 'fulfilled' ? quotes.value : this.getEmptyQuoteComparison();
@@ -231,15 +233,39 @@ export class OneInchAPIAggregator {
     };
   }
 
+  private detectChainIdFromToken(token: Token): number | null {
+    // Map network names to chainIds for supported 1inch networks
+    if (token.network === 'ethereum') {
+      return (token as any).chainId || 1; // Default to mainnet
+    }
+    if (token.network === 'polygon') {
+      return 137;
+    }
+    if (token.network === 'arbitrum') {
+      return 42161;
+    }
+    if (token.network === 'bsc') {
+      return 56;
+    }
+    
+    // For multi-chain tokens, check if they have explicit chainId
+    if ('chainId' in token && typeof token.chainId === 'number') {
+      return token.chainId;
+    }
+    
+    return null; // Unknown network
+  }
+
   private async getQuoteComparison(
     fromTokenAddress: string,
     toTokenAddress: string,
     amount: string,
-    walletAddress?: string
+    walletAddress?: string,
+    chainId: number = 1
   ): Promise<OneInchQuoteComparison> {
     const [fusionResult, aggregationResult] = await Promise.allSettled([
-      this.getFusionQuote(fromTokenAddress, toTokenAddress, amount, walletAddress),
-      this.getAggregationQuote(fromTokenAddress, toTokenAddress, amount)
+      this.getFusionQuote(fromTokenAddress, toTokenAddress, amount, walletAddress, chainId),
+      this.getAggregationQuote(fromTokenAddress, toTokenAddress, amount, chainId)
     ]);
 
     const fusion = fusionResult.status === 'fulfilled' ? 
@@ -264,12 +290,13 @@ export class OneInchAPIAggregator {
     };
   }
 
-  private async getFusionQuote(fromTokenAddress: string, toTokenAddress: string, amount: string, walletAddress?: string): Promise<Record<string, unknown>> {
+  private async getFusionQuote(fromTokenAddress: string, toTokenAddress: string, amount: string, walletAddress?: string, chainId: number = 1): Promise<Record<string, unknown>> {
     const cacheKey = this.generateCacheKey('fusion_quote', {
       fromTokenAddress,
       toTokenAddress,
       amount,
-      walletAddress: walletAddress || '0x0000000000000000000000000000000000000000'
+      walletAddress: walletAddress || '0x0000000000000000000000000000000000000000',
+      chainId
     });
 
     return this.cachedApiCall(cacheKey, async () => {
@@ -284,7 +311,8 @@ export class OneInchAPIAggregator {
           source: 'ai-router-comparison',
           enableEstimate: true,
           complexityLevel: 'medium',
-          allowPartialFill: false
+          allowPartialFill: false,
+          chainId
         })
       });
 
@@ -297,11 +325,12 @@ export class OneInchAPIAggregator {
     }, this.QUOTE_CACHE_TTL);
   }
 
-  private async getAggregationQuote(fromTokenAddress: string, toTokenAddress: string, amount: string): Promise<Record<string, unknown>> {
+  private async getAggregationQuote(fromTokenAddress: string, toTokenAddress: string, amount: string, chainId: number = 1): Promise<Record<string, unknown>> {
     const cacheKey = this.generateCacheKey('aggregation_quote', {
       src: fromTokenAddress,
       dst: toTokenAddress,
-      amount
+      amount,
+      chainId
     });
 
     return this.cachedApiCall(cacheKey, async () => {
@@ -316,7 +345,8 @@ export class OneInchAPIAggregator {
           gasPrice: 'fast',
           complexityLevel: '0',
           mainRouteParts: '10',
-          parts: '50'
+          parts: '50',
+          chainId
         })
       });
 
