@@ -89,6 +89,7 @@ export default function MultiWalletPage() {
 
     if (detectedWallets.length === 0) {
       addToast({
+        title: 'Wallet Detection',
         message: '❌ No wallets detected. Please install MetaMask, Phantom, or other supported wallets.',
         type: 'error'
       });
@@ -97,6 +98,7 @@ export default function MultiWalletPage() {
     }
 
     addToast({
+      title: 'Auto-Connection',
       message: `🔄 Auto-connecting ${detectedWallets.length} detected wallets...`,
       type: 'info'
     });
@@ -104,10 +106,11 @@ export default function MultiWalletPage() {
     // Connect wallets one by one to ensure proper prompts
     for (const wallet of detectedWallets) {
       try {
-        addToast({
-          message: `🔗 Connecting ${wallet.name}...`,
-          type: 'info'
-        });
+              addToast({
+        title: 'Wallet Connection',
+        message: `🔗 Connecting ${wallet.name}...`,
+        type: 'info'
+      });
 
         // Try to connect to the first available chain for each wallet
         const chainId = wallet.chainIds[0];
@@ -119,6 +122,7 @@ export default function MultiWalletPage() {
 
         if (result.success) {
           addToast({
+            title: 'Connection Success',
             message: `✅ ${wallet.name} connected successfully!`,
             type: 'success'
           });
@@ -129,12 +133,14 @@ export default function MultiWalletPage() {
           }, 1000);
         } else {
           addToast({
+            title: 'Connection Failed',
             message: `❌ Failed to connect ${wallet.name}: ${result.error}`,
             type: 'error'
           });
         }
       } catch (error) {
         addToast({
+          title: 'Connection Error',
           message: `❌ Error connecting ${wallet.name}: ${error instanceof Error ? error.message : 'Unknown error'}`,
           type: 'error'
         });
@@ -147,6 +153,7 @@ export default function MultiWalletPage() {
     await updateWalletStates();
 
     addToast({
+      title: 'Auto-Connection Complete',
       message: '🎉 Auto-connection completed! Check your connected wallets below.',
       type: 'success'
     });
@@ -173,11 +180,13 @@ export default function MultiWalletPage() {
 
       if (detected.length > 0) {
         addToast({
+          title: 'Wallet Detection',
           message: `🔍 Detected ${detected.length} wallet(s): ${detected.join(', ')}`,
           type: 'info'
         });
       } else {
         addToast({
+          title: 'No Wallets Found',
           message: '❌ No wallets detected. Please install MetaMask, Phantom, or other supported wallets.',
           type: 'warning'
         });
@@ -185,6 +194,7 @@ export default function MultiWalletPage() {
     } catch (error) {
       console.error('Error in detectAvailableWallets:', error);
       addToast({
+        title: 'Detection Error',
         message: '⚠️ Error detecting wallets. Please refresh the page.',
         type: 'error'
       });
@@ -205,6 +215,7 @@ export default function MultiWalletPage() {
           const result = await multiWalletManager.connectWallet('MetaMask', parseInt(chainId, 16));
           if (result.success) {
             addToast({
+              title: 'MetaMask Import',
               message: `✅ Imported existing MetaMask connection`,
               type: 'success'
             });
@@ -220,6 +231,7 @@ export default function MultiWalletPage() {
           const result = await multiWalletManager.connectWallet('Phantom', 101); // Default to mainnet
           if (result.success) {
             addToast({
+              title: 'Phantom Import',
               message: `✅ Imported existing Phantom connection`,
               type: 'success'
             });
@@ -319,12 +331,12 @@ export default function MultiWalletPage() {
       }
 
       if (success) {
-        addToast({ message: `🔌 ${walletName} disconnected`, type: 'info' });
+        addToast({ title: 'Wallet Disconnected', message: `🔌 ${walletName} disconnected`, type: 'info' });
         // Refresh wallet states after disconnect
         await updateWalletStates();
       }
     } catch (error) {
-      addToast({ message: `❌ Disconnect error: ${error}`, type: 'error' });
+      addToast({ title: 'Disconnect Error', message: `❌ Disconnect error: ${error}`, type: 'error' });
     }
   };
 
@@ -336,6 +348,7 @@ export default function MultiWalletPage() {
     if (!wallet || wallet.status !== 'ready') {
       // Wallet not connected, try to connect it
       addToast({
+        title: 'Connecting Wallet',
         message: `🔗 Connecting ${walletName} to fetch ${assetSymbol} balance...`,
         type: 'info'
       });
@@ -347,6 +360,7 @@ export default function MultiWalletPage() {
           const result = await multiWalletManager.connectWallet(walletName, walletConfig.chainIds[0]);
           if (result.success) {
             addToast({
+              title: 'Connection Success',
               message: `✅ ${walletName} connected successfully!`,
               type: 'success'
             });
@@ -354,6 +368,7 @@ export default function MultiWalletPage() {
             await updateWalletStates();
           } else {
             addToast({
+              title: 'Connection Failed',
               message: `❌ Failed to connect ${walletName}: ${result.error}`,
               type: 'error'
             });
@@ -362,6 +377,7 @@ export default function MultiWalletPage() {
         }
       } catch (error) {
         addToast({
+          title: 'Connection Error',
           message: `❌ Connection error: ${error}`,
           type: 'error'
         });
@@ -380,6 +396,7 @@ export default function MultiWalletPage() {
     await fetchTokenBalance(walletName, assetSymbol);
 
     addToast({
+      title: 'Asset Switched',
       message: `🔄 Switched to ${assetSymbol} for ${walletName}`,
       type: 'info'
     });
@@ -403,6 +420,7 @@ export default function MultiWalletPage() {
         setSelectedWalletToConnect('');
 
         addToast({
+          title: 'Connecting Wallet',
           message: `🔗 Connecting ${selectedWalletToConnect}...`,
           type: 'info'
         });
@@ -427,18 +445,21 @@ export default function MultiWalletPage() {
 
             if (result.success) {
               addToast({
+                title: 'Connection Success',
                 message: `✅ ${selectedWalletToConnect} connected successfully!`,
                 type: 'success'
               });
               await updateWalletStates();
             } else {
               addToast({
+                title: 'Connection Failed',
                 message: `❌ Failed to connect ${selectedWalletToConnect}: ${result.error}`,
                 type: 'error'
               });
             }
           } catch (error) {
             addToast({
+              title: 'Connection Error',
               message: `❌ Connection error: ${error}`,
               type: 'error'
             });
@@ -447,6 +468,7 @@ export default function MultiWalletPage() {
       }
     } catch (error) {
       addToast({
+        title: 'Connection Error',
         message: `❌ Connection error: ${error}`,
         type: 'error'
       });
@@ -479,10 +501,33 @@ export default function MultiWalletPage() {
             console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (raw hex: ${balanceHex})`);
           }
         } else {
-          // ERC20 token balance - you would need to call the token contract
-          // For now, we'll use a mock balance
-          balance = (Math.random() * 100).toFixed(4);
-          console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (mock)`);
+          // ERC20 token balance - fetch from contract
+          try {
+            const provider = multiWalletManager.getWalletProvider(walletName);
+            if (provider && (provider as unknown as { request?: (params: { method: string; params: string[] }) => Promise<string> }).request) {
+              // Get token address from config
+              const tokenConfig = ETHEREUM_TOKENS[wallet.chainId]?.find(t => t.symbol === tokenSymbol);
+              if (tokenConfig && 'address' in tokenConfig) {
+                const tokenContract = new (window as any).ethers.Contract(
+                  tokenConfig.address,
+                  ['function balanceOf(address) view returns (uint256)'],
+                  provider
+                );
+                const tokenBalance = await tokenContract.balanceOf(wallet.address);
+                balance = (parseInt(tokenBalance, 16) / Math.pow(10, tokenConfig.decimals || 18)).toString();
+                console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (real)`);
+              } else {
+                balance = '0';
+                console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (token config not found)`);
+              }
+            } else {
+              balance = '0';
+              console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (provider not available)`);
+            }
+          } catch (error) {
+            balance = '0';
+            console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (error: ${error})`);
+          }
         }
       } else if (wallet.type === 'solana') {
         // For Solana wallets, fetch SPL token balance
@@ -494,9 +539,9 @@ export default function MultiWalletPage() {
             balance = (balanceData.value / Math.pow(10, 9)).toString();
             console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (raw lamports: ${balanceData.value})`);
           } else {
-            // SPL token balance - for now, use mock
-            balance = (Math.random() * 50).toFixed(4);
-            console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (mock SPL token)`);
+            // SPL token balance - for now, use mock (would need SPL token program integration)
+            balance = '0';
+            console.log(`💰 ${walletName} ${tokenSymbol} balance: ${balance} (SPL token - not implemented yet)`);
           }
         }
       }
@@ -750,9 +795,9 @@ export default function MultiWalletPage() {
                       // Refresh combines re-detect and update states
                       detectAvailableWallets();
                       await updateWalletStates();
-                      addToast({ message: '🔄 Wallets re-detected and states refreshed', type: 'info' });
+                      addToast({ title: 'Wallets Refreshed', message: '🔄 Wallets re-detected and states refreshed', type: 'info' });
                     } catch (error) {
-                      addToast({ message: `❌ Refresh error: ${error}`, type: 'error' });
+                      addToast({ title: 'Refresh Error', message: `❌ Refresh error: ${error}`, type: 'error' });
                     }
                   }}
                   className="px-8 py-4"
@@ -1264,7 +1309,7 @@ export default function MultiWalletPage() {
                               onClick={() => {
                                 // Copy address to clipboard
                                 navigator.clipboard.writeText(wallet.address);
-                                addToast({ message: 'Address copied to clipboard!', type: 'success' });
+                                addToast({ title: 'Address Copied', message: 'Address copied to clipboard!', type: 'success' });
                               }}
                             >
                               📋 Copy
@@ -1276,11 +1321,11 @@ export default function MultiWalletPage() {
                               className="flex-1"
                               onClick={async () => {
                                 try {
-                                  addToast({ message: `🔄 Refreshing ${wallet.name} balance...`, type: 'info' });
+                                  addToast({ title: 'Refreshing Balance', message: `🔄 Refreshing ${wallet.name} balance...`, type: 'info' });
                                   await updateWalletStates();
-                                  addToast({ message: `✅ ${wallet.name} balance refreshed`, type: 'success' });
+                                  addToast({ title: 'Balance Refreshed', message: `✅ ${wallet.name} balance refreshed`, type: 'success' });
                                 } catch (error) {
-                                  addToast({ message: `❌ Failed to refresh balance: ${error}`, type: 'error' });
+                                  addToast({ title: 'Refresh Failed', message: `❌ Failed to refresh balance: ${error}`, type: 'error' });
                                 }
                               }}
                             >

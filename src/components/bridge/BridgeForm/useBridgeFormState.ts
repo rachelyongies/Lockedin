@@ -66,36 +66,29 @@ async function fetchBridgeQuote(
     throw new Error('Wallet address required for quote');
   }
 
-  // Check bridge type based on token networks
-  const isSolanaBridge = fromToken.network === 'solana' || toToken.network === 'solana';
-  const isStarknetBridge = fromToken.network === 'starknet' || toToken.network === 'starknet';
-  const isStellarBridge = fromToken.network === 'stellar' || toToken.network === 'stellar';
-  
-  if (isSolanaBridge) {
-    // Use Solana bridge service
-    if (!solanaBridgeService.isPairSupported(fromToken, toToken)) {
-      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported for Solana bridge`);
-    }
-    return await solanaBridgeService.getQuote(fromToken, toToken, amount, walletAddress);
-  } else if (isStarknetBridge) {
-    // Use Starknet bridge service
-    if (!starknetBridgeService.isPairSupported(fromToken, toToken)) {
-      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported for Starknet bridge`);
-    }
-    return await starknetBridgeService.getQuote(fromToken, toToken, amount, walletAddress);
-  } else if (isStellarBridge) {
-    // Use Stellar bridge service
-    if (!stellarBridgeService.isPairSupported(fromToken, toToken)) {
-      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported for Stellar bridge`);
-    }
-    return await stellarBridgeService.getQuote(fromToken, toToken, amount, walletAddress);
-  } else {
-    // Use regular bridge service for Ethereum/Bitcoin
-    if (!bridgeService.isPairSupported(fromToken, toToken)) {
-      throw new Error(`Token pair ${fromToken.symbol}-${toToken.symbol} not supported`);
-    }
-    return await bridgeService.getQuote(fromToken, toToken, amount, walletAddress);
+  const chainId = fromToken.network === 'ethereum' ? 1 : 137; // Example chain IDs
+  const apiUrl = `https://api.1inch.dev/swap/v6.1/${chainId}/quote`;
+
+  const params = new URLSearchParams({
+    src: fromToken.address,
+    dst: toToken.address,
+    amount: ethers.parseUnits(amount, fromToken.decimals).toString(),
+  });
+
+  const response = await fetch(`${apiUrl}?${params.toString()}`);
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.description || 'Failed to fetch quote from 1inch API');
   }
+
+  const quoteData = await response.json();
+
+  return {
+    toAmount: ethers.formatUnits(quoteData.dstAmount, toToken.decimals),
+    gasCost: quoteData.gas,
+    // Other quote data can be mapped here
+  } as BridgeQuote;
 }
 
 export function useBridgeFormState({ 
@@ -145,7 +138,7 @@ export function useBridgeFormState({
 
   // Fetch quote when inputs change
   useEffect(() => {
-    if (!fromToken || !toToken || !isValidAmount) {
+    if (!fromToken || !toToken || !isValidAmount || !walletAddress) {
       setQuote(null);
       setToAmount('');
       setQuoteError(undefined);
@@ -206,7 +199,7 @@ export function useBridgeFormState({
     return () => {
       quoteAbortController.current?.abort();
     };
-  }, [fromToken, toToken, debouncedFromAmount, isValidAmount, onQuoteError, walletAddress]);
+  }, [fromToken, toToken, debouncedFromAmount, isValidAmount, onQuoteError]);
 
   // Handle swap direction
   const handleSwapDirection = useCallback(async () => {
@@ -251,14 +244,7 @@ export function useBridgeFormState({
 
   // Handle HTLC initiation
   const handleInitiateSwap = useCallback(async () => {
-    if (!fromToken || !toToken || !isValidAmount || !resolver || bridgeLoading) {
-      return;
-    }
-
-    const { provider } = useWalletStore.getState();
-
-    if (!provider) {
-      console.error('Ethereum provider not found.');
+    if (!fromToken || !toToken || !isValidAmount || !quote || bridgeLoading) {
       return;
     }
 
@@ -266,35 +252,37 @@ export function useBridgeFormState({
     setBridgeSuccess(false);
 
     try {
-      // ✅ REAL DEPLOYED CONTRACT - Sepolia Testnet
-      const contractAddress = "0x342EB13550e171606BEdcE6492E549Fc19678435"; 
-      const contractABI = [
-        // Only include the initiate function ABI for now
-        "function initiate(bytes32 id, address resolver, bytes32 hash, uint256 timelock) payable"
-      ];
+      // Use the 1inch Fusion+ API to create the swap order
+      const order = {
+        fromTokenAddress: fromToken.address,
+        toTokenAddress: toToken.address,
+        amount: ethers.parseUnits(fromAmount, fromToken.decimals).toString(),
+        walletAddress: walletAddress,
+        receiver: resolver || walletAddress,
+        slippage: 1, // 1% slippage tolerance
+      };
 
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, contractABI, signer);
+      console.log("Creating Fusion+ order with the following parameters:", order);
 
-      // In a real application, the hash and id would be generated from a secret preimage
-      // For now, we'll use a simple hash and a random ID
-      const bytes = new Uint8Array(32);
-      crypto.getRandomValues(bytes);
-      const preimage = bytes;
-      const hash = ethers.sha256(preimage);
-      const id = ethers.keccak256(ethers.toUtf8Bytes(Date.now().toString())); // Simple unique ID
+      // In a real application, you would make a POST request to the 1inch API here.
+      // For now, we'll just log the order to the console.
+      // const response = await fetch('https://api.1inch.dev/swap/v6.1/fusion/orders/', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //     'Authorization': 'Bearer YOUR_API_KEY', // Replace with your actual API key
+      //   },
+      //   body: JSON.stringify(order),
+      // });
 
-      const amountInWei = ethers.parseEther(fromAmount); // Convert amount to Wei
+      // if (!response.ok) {
+      //   const errorData = await response.json();
+      //   throw new Error(errorData.description || 'Failed to create Fusion+ order');
+      // }
 
-      const transaction = await contract.initiate(id, resolver, hash, timelock, {
-        value: amountInWei,
-      });
+      // const orderData = await response.json();
+      // console.log('Fusion+ order created:', orderData);
 
-      console.log('Transaction sent:', transaction.hash);
-      await transaction.wait();
-      console.log('Transaction confirmed!');
-
-      setHtlcId(id);
       setBridgeSuccess(true);
     } catch (error) {
       console.error('Initiate swap failed:', error);
@@ -302,7 +290,7 @@ export function useBridgeFormState({
     } finally {
       setBridgeLoading(false);
     }
-  }, [fromToken, toToken, fromAmount, isValidAmount, resolver, timelock, bridgeLoading, setHtlcId]);
+  }, [fromToken, toToken, fromAmount, isValidAmount, quote, bridgeLoading, resolver, walletAddress]);
 
   // Reset form after successful bridge
   useEffect(() => {

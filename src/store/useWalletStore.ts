@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { immer } from 'zustand/middleware/immer'
 import { ethers } from 'ethers'
 import { solanaWalletService } from '@/lib/services/solana-wallet'
+import { createBalanceService } from '@/lib/services/balance-service'
 
 /**
  * Supported wallet types for the bridge
@@ -173,7 +174,7 @@ export const DEFAULT_NETWORKS: Record<number, NetworkInfo> = {
     chainId: 1,
     name: 'Ethereum Mainnet',
     currency: 'ETH',
-    rpcUrl: 'https://eth.llamarpc.com',
+    rpcUrl: 'https://eth-mainnet.g.alchemy.com/v2/demo',
     blockExplorerUrl: 'https://etherscan.io',
     isTestnet: false
   },
@@ -183,6 +184,14 @@ export const DEFAULT_NETWORKS: Record<number, NetworkInfo> = {
     currency: 'ETH',
     rpcUrl: 'https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161',
     blockExplorerUrl: 'https://goerli.etherscan.io',
+    isTestnet: true
+  },
+  11155111: {
+    chainId: 11155111,
+    name: 'Sepolia Testnet',
+    currency: 'ETH',
+    rpcUrl: 'https://eth-sepolia.g.alchemy.com/public',
+    blockExplorerUrl: 'https://sepolia.etherscan.io',
     isTestnet: true
   }
 }
@@ -219,7 +228,7 @@ export const useWalletStore = create<WalletState>()(
 
       get isCorrectNetwork() {
         const network = get().network
-        return !network || network.chainId === 1 || network.chainId === 5 // Support mainnet and goerli
+        return !network || network.chainId === 1 || network.chainId === 5 || network.chainId === 11155111 // Support mainnet, goerli, and sepolia
       },
 
       get isSwitchingNetwork() {
@@ -419,26 +428,32 @@ export const useWalletStore = create<WalletState>()(
         }
 
         try {
-          // TODO: Implement actual balance fetching logic
-          // This is a placeholder with mock data
-          const mockBalances: Record<string, TokenBalance> = {
-            'eth': {
-              address: '0x0000000000000000000000000000000000000000',
-              symbol: 'ETH',
-              decimals: 18,
-              balance: '1500000000000000000', // 1.5 ETH
-              formattedBalance: '1.5',
-              usdValue: 3000,
-              lastUpdated: now
-            },
-            'wbtc': {
-              address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
-              symbol: 'WBTC',
-              decimals: 8,
-              balance: '5000000', // 0.05 WBTC
-              formattedBalance: '0.05',
-              usdValue: 2000,
-              lastUpdated: now
+          // Create balance service for the current network
+          const balanceService = createBalanceService(network.chainId, network.rpcUrl);
+          
+          let balances: Record<string, TokenBalance>;
+          
+          if (tokenAddresses) {
+            // Update only specific tokens (selective update)
+            balances = await balanceService.getMultipleBalances(account.address, tokenAddresses);
+          } else {
+            // Full refresh - fetch native balance and common tokens
+            const commonTokens = [
+              '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // WBTC
+              '0xA0b86a33E6441b8c4C8C8C8C8C8C8C8C8C8C8C8', // USDC
+              '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT
+              '0x6B175474E89094C44Da98b954EedeAC495271d0F'  // DAI
+            ];
+            balances = await balanceService.getMultipleBalances(account.address, commonTokens);
+          }
+
+          // Add USD values to balances
+          for (const [address, balance] of Object.entries(balances)) {
+            try {
+              balance.usdValue = await balanceService.getUSDValue(balance.symbol, balance.formattedBalance);
+            } catch (error) {
+              console.warn(`Failed to get USD value for ${balance.symbol}:`, error);
+              balance.usdValue = 0;
             }
           }
 
@@ -447,18 +462,18 @@ export const useWalletStore = create<WalletState>()(
               if (tokenAddresses) {
                 // Update only specific tokens (selective update)
                 tokenAddresses.forEach(address => {
-                  const mockKey = address === '0x0000000000000000000000000000000000000000' ? 'eth' : 'wbtc'
-                  if (mockBalances[mockKey]) {
-                    state.account!.balances[address.toLowerCase()] = mockBalances[mockKey]
+                  const balance = balances[address.toLowerCase()];
+                  if (balance) {
+                    state.account!.balances[address.toLowerCase()] = balance;
                   }
-                })
+                });
               } else {
                 // Full refresh
-                state.account.balances = mockBalances
-                state.account.lastBalanceUpdate = now
+                state.account.balances = balances;
+                state.account.lastBalanceUpdate = now;
               }
             }
-          })
+          });
 
         } catch (error: unknown) {
           console.error('Error updating balances:', error)
