@@ -45,11 +45,13 @@ import {
   getIntelligentRouterTokens
 } from '@/config/intelligent-router-tokens';
 import { intelligentRouterRegistry } from '@/lib/services/intelligent-router-registry';
+import { ChainSupportService } from '@/lib/services/chain-support-config';
 
 // Import Enhanced UI Components
 import { NetworkSelector } from '@/components/intelligent-router/NetworkSelector';
 import { EnhancedTokenSelector } from '@/components/intelligent-router/EnhancedTokenSelector';
 import { RouteFlowVisualization } from '@/components/intelligent-router/RouteFlowVisualization';
+import { ChainSupportWarning } from '@/components/intelligent-router/ChainSupportWarning';
 
 // AI Router Interface
 interface AIRouterState {
@@ -125,6 +127,8 @@ export default function IntelligentAIRouterPage() {
     maxSlippage: 0.5,
     gasPreference: 'standard'
   });
+
+  const [showChainWarning, setShowChainWarning] = useState(true);
 
   const [liveMetrics, setLiveMetrics] = useState(REAL_AI_METRICS);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -389,6 +393,17 @@ export default function IntelligentAIRouterPage() {
             </h2>
             
             <div className="bg-gradient-to-br from-gray-800/50 to-gray-900/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-6 space-y-6">
+              {/* Chain Support Warning */}
+              {routerState.fromToken && (
+                <ChainSupportWarning
+                  chainId={routerState.fromToken.chainId}
+                  fromTokenSymbol={routerState.fromToken.symbol}
+                  toTokenSymbol={routerState.toToken?.symbol}
+                  isVisible={showChainWarning}
+                  onDismiss={() => setShowChainWarning(false)}
+                />
+              )}
+
               {/* From Token Selection */}
               <EnhancedTokenSelector
                 selectedToken={routerState.fromToken}
@@ -403,6 +418,11 @@ export default function IntelligentAIRouterPage() {
                     activeAgents: [],
                     currentPhase: ''
                   }));
+                  // Show warning if switching to a chain with limited support
+                  const chainConfig = ChainSupportService.getChainConfig(token.chainId);
+                  if (chainConfig && (!chainConfig.fusionSupported || !chainConfig.aggregationSupported)) {
+                    setShowChainWarning(true);
+                  }
                 }}
                 label="From Token"
                 placeholder="Select source token"
@@ -447,6 +467,11 @@ export default function IntelligentAIRouterPage() {
                     activeAgents: [],
                     currentPhase: ''
                   }));
+                  // Show warning if switching to a chain with limited support
+                  const chainConfig = ChainSupportService.getChainConfig(token.chainId);
+                  if (chainConfig && (!chainConfig.fusionSupported || !chainConfig.aggregationSupported)) {
+                    setShowChainWarning(true);
+                  }
                 }}
                 label="To Token"
                 placeholder="Select destination token"

@@ -19,7 +19,9 @@ import {
   ExecutionStrategy,
   MarketConditions,
   MessageType,
-  MessagePriority
+  MessagePriority,
+  UserFocusPreference,
+  UserPreferenceWeights
 } from '../agents/types';
 
 export interface AIAgentAnalysis {
@@ -279,17 +281,28 @@ export class AIAgentBridgeService {
       if (routes.length > 1) {
         try {
           console.log('🎯 Building consensus among agents for route selection...');
+          
+          // Generate user preference weights based on focus
+          const userFocus: UserFocusPreference = userPreferences?.userPreference || 'balanced';
+          const userPreferenceWeights = AgentCoordinator.generateUserPreferenceWeights(userFocus);
+          
+          console.log('👤 Applying user preference weighting:', {
+            focus: userFocus,
+            weightings: userPreferenceWeights.weightings
+          });
+          
           const bestRouteId = await this.coordinator.requestConsensus(
             routes,
             riskAssessments,
             executionStrategy ? [executionStrategy] : [],
             {
-              cost: userPreferences?.prioritizeCost ? 0.4 : 0.3,
-              time: userPreferences?.prioritizeSpeed ? 0.4 : 0.25,
-              security: userPreferences?.prioritizeSecurity ? 0.4 : 0.35,
+              cost: userPreferences?.userPreference === 'cost' ? 0.4 : 0.3,
+              time: userPreferences?.userPreference === 'speed' ? 0.4 : 0.25,
+              security: userPreferences?.userPreference === 'security' ? 0.4 : 0.35,
               reliability: 0.05,
               slippage: 0.05
-            }
+            },
+            userPreferenceWeights
           );
           
           consensusResult = { 

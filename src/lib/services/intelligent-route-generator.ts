@@ -2,6 +2,7 @@
 import { Token } from '@/types/bridge';
 import { oneInchAggregator, Comprehensive1inchAnalysis } from './1inch-api-aggregator';
 import { tokenValidationService } from './token-validation-service';
+import { ChainSupportService } from './chain-support-config';
 import { RouteProposal, RouteStep } from '../agents/types';
 
 export interface IntelligentRoute extends RouteProposal {
@@ -61,10 +62,28 @@ export class IntelligentRouteGenerator {
       confidence: oneInchAnalysis.overall.confidence
     });
 
+    // Check chain support and log warnings
+    const chainId = this.detectChainIdFromToken(fromToken) || 1;
+    const chainConfig = ChainSupportService.getChainConfig(chainId);
+    const fusionWarning = ChainSupportService.getFusionWarningMessage(chainId);
+    
+    if (fusionWarning) {
+      console.warn(`⚠️ ${fusionWarning}`);
+    }
+    
+    if (chainConfig) {
+      console.log(`🔗 Chain Support (${chainConfig.name}):`, {
+        fusion: chainConfig.fusionSupported,
+        aggregation: chainConfig.aggregationSupported,
+        fallbackStrategy: chainConfig.fallbackStrategy,
+        alternatives: chainConfig.alternativeProviders
+      });
+    }
+
     const routes: IntelligentRoute[] = [];
 
-    // Generate Fusion route if available
-    if (oneInchAnalysis.quotes.fusion.available && oneInchAnalysis.quotes.fusion.quote) {
+    // Generate Fusion route only if chain supports it and quote is available
+    if (chainConfig?.fusionSupported && oneInchAnalysis.quotes.fusion.available && oneInchAnalysis.quotes.fusion.quote) {
       const fusionRoute = await this.createFusionRoute(
         fromToken,
         toToken,
@@ -684,6 +703,39 @@ export class IntelligentRouteGenerator {
     }
     
     return causes;
+  }
+
+  // Detect chain ID from token data
+  private detectChainIdFromToken(token: Token): number | null {
+    // Check if token has explicit chainId property
+    if ('chainId' in token && typeof token.chainId === 'number') {
+      return token.chainId;
+    }
+    
+    // Map network names to chainIds for supported 1inch networks
+    if (token.network === 'ethereum') {
+      return 1; // Ethereum mainnet
+    }
+    if (token.network === 'polygon') {
+      return 137;
+    }
+    if (token.network === 'bsc' || token.network === 'binance') {
+      return 56;
+    }
+    if (token.network === 'arbitrum') {
+      return 42161;
+    }
+    if (token.network === 'optimism') {
+      return 10;
+    }
+    if (token.network === 'avalanche') {
+      return 43114;
+    }
+    if (token.network === 'fantom') {
+      return 250;
+    }
+    
+    return null; // Unknown network
   }
 }
 

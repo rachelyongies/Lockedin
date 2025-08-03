@@ -16,7 +16,10 @@ import {
   RiskAssessment,
   ExecutionStrategy,
   AgentCapabilities,
-  AgentMetrics
+  AgentMetrics,
+  UserFocusPreference,
+  UserPreferenceWeights,
+  AgentWeighting
 } from './types';
 
 // Enhanced decision aggregation types
@@ -722,7 +725,8 @@ export class AgentCoordinator extends EventEmitter {
     routes: RouteProposal[],
     assessments: RiskAssessment[],
     strategies: ExecutionStrategy[],
-    criteria?: DecisionCriteria
+    criteria?: DecisionCriteria,
+    userPreferences?: UserPreferenceWeights
   ): Promise<string> {
     const requestId = this.generateRequestId();
     const consensusRequest: ConsensusRequest = {
@@ -731,7 +735,8 @@ export class AgentCoordinator extends EventEmitter {
       assessments,
       strategies,
       criteria: criteria || this.config.decisionCriteria,
-      deadline: Date.now() + this.config.consensusTimeout
+      deadline: Date.now() + this.config.consensusTimeout,
+      userPreferences: userPreferences
     };
 
     this.consensusInProgress.set(requestId, consensusRequest);
@@ -869,7 +874,7 @@ export class AgentCoordinator extends EventEmitter {
     });
 
     // Step 1: Calculate weighted scores with confidence factors
-    const routeAnalysis = this.performDetailedRouteAnalysis(responses);
+    const routeAnalysis = this.performDetailedRouteAnalysis(responses, request.userPreferences);
     
     // Step 2: Detect and analyze conflicts
     const conflictAnalysis = this.analyzeConflicts(responses, routeAnalysis);
@@ -888,7 +893,7 @@ export class AgentCoordinator extends EventEmitter {
     return resolvedChoice.routeId;
   }
 
-  private performDetailedRouteAnalysis(responses: ConsensusResponse[]): Map<string, RouteAnalysisResult> {
+  private performDetailedRouteAnalysis(responses: ConsensusResponse[], userPreferences?: UserPreferenceWeights): Map<string, RouteAnalysisResult> {
     const routeAnalysis = new Map<string, RouteAnalysisResult>();
 
     // Handle empty responses gracefully
@@ -899,8 +904,20 @@ export class AgentCoordinator extends EventEmitter {
 
     for (const response of responses) {
       const routeId = response.recommendedRoute;
-      const agentWeight = this.getAgentWeight(response.agentId);
+      const agentWeight = this.getAgentWeight(response.agentId, userPreferences);
       const confidenceWeight = response.confidence;
+      
+      // Log agent weighting for transparency
+      if (userPreferences) {
+        const weighting = this.calculateAgentWeighting(response.agentId, userPreferences);
+        console.log(`🎯 Agent Weighting - ${response.agentId}:`, {
+          baseWeight: weighting.baseWeight,
+          userBonus: weighting.userBonus,
+          finalWeight: weighting.finalWeight,
+          reason: weighting.reason,
+          userFocus: userPreferences.focus
+        });
+      }
       
       // Combine agent reliability with their confidence in this specific recommendation
       const compositeWeight = agentWeight * confidenceWeight;
@@ -1137,8 +1154,8 @@ export class AgentCoordinator extends EventEmitter {
     return Math.sqrt(variance);
   }
 
-  // Calculate agent weight for consensus
-  private getAgentWeight(agentId: string): number {
+  // Calculate agent weight for consensus with user preference weighting
+  private getAgentWeight(agentId: string, userPreferences?: UserPreferenceWeights): number {
     const registry = this.agents.get(agentId);
     if (!registry) return 1;
 
@@ -1148,7 +1165,120 @@ export class AgentCoordinator extends EventEmitter {
     const reliability = metrics.successRate;
     const failurePenalty = Math.max(0.5, 1 - (registry.failureCount * 0.1));
 
-    return registry.priority * health * reliability * failurePenalty;
+    // Base weight calculation
+    const baseWeight = registry.priority * health * reliability * failurePenalty;
+    
+    // Apply user preference multiplier if available
+    if (userPreferences) {
+      const agentWeighting = this.calculateAgentWeighting(agentId, userPreferences);
+      return baseWeight * agentWeighting.finalWeight;
+    }
+
+    return baseWeight;
+  }
+
+  // Calculate agent weighting based on user preferences
+  private calculateAgentWeighting(agentId: string, userPreferences: UserPreferenceWeights): AgentWeighting {
+    const baseWeight = 1.0;
+    let userBonus = 0.0;
+    let reason = 'Standard weighting';
+
+    // Map agent IDs to their functional focus
+    const agentFocusMap: Record<string, keyof typeof userPreferences.weightings> = {
+      'route-discovery-001': 'route-discovery',
+      'market-intelligence-001': 'market-intelligence', 
+      'risk-assessment-001': 'risk-assessment',
+      'execution-strategy-001': 'execution-strategy',
+      'security-001': 'security',
+      'performance-monitor-001': 'performance-monitor'
+    };
+
+    const agentFocus = agentFocusMap[agentId];
+    
+    if (agentFocus && userPreferences.weightings[agentFocus]) {
+      userBonus = userPreferences.weightings[agentFocus] - 1.0; // Convert multiplier to bonus
+      
+      // Apply double weighting for user's focused preference
+      if (userPreferences.focus === 'speed' && (agentFocus === 'route-discovery' || agentFocus === 'execution-strategy')) {
+        userBonus = 1.0; // Double weight (2x)
+        reason = `Double weighted for ${userPreferences.focus} focus`;
+      } else if (userPreferences.focus === 'security' && (agentFocus === 'security' || agentFocus === 'risk-assessment')) {
+        userBonus = 1.0; // Double weight (2x)
+        reason = `Double weighted for ${userPreferences.focus} focus`;
+      } else if (userPreferences.focus === 'cost' && (agentFocus === 'market-intelligence' || agentFocus === 'route-discovery')) {
+        userBonus = 1.0; // Double weight (2x)
+        reason = `Double weighted for ${userPreferences.focus} focus`;
+      } else if (userBonus > 0) {
+        reason = `Enhanced weighting for ${userPreferences.focus} focus`;
+      }
+    }
+
+    const finalWeight = baseWeight + userBonus;
+
+    return {
+      agentId,
+      baseWeight,
+      userBonus,
+      finalWeight,
+      reason
+    };
+  }
+
+  // Generate user preference weights based on focus
+  static generateUserPreferenceWeights(focus: UserFocusPreference): UserPreferenceWeights {
+    let weightings: UserPreferenceWeights['weightings'];
+
+    switch (focus) {
+      case 'speed':
+        weightings = {
+          'market-intelligence': 1.2,
+          'route-discovery': 2.0,      // Double weight
+          'risk-assessment': 1.0,
+          'execution-strategy': 2.0,   // Double weight
+          'security': 0.8,
+          'performance-monitor': 1.1
+        };
+        break;
+      
+      case 'security':
+        weightings = {
+          'market-intelligence': 1.1,
+          'route-discovery': 1.0,
+          'risk-assessment': 2.0,      // Double weight
+          'execution-strategy': 1.2,
+          'security': 2.0,             // Double weight
+          'performance-monitor': 1.1
+        };
+        break;
+      
+      case 'cost':
+        weightings = {
+          'market-intelligence': 2.0,  // Double weight - for finding best prices
+          'route-discovery': 2.0,      // Double weight - for finding cheapest routes
+          'risk-assessment': 1.2,
+          'execution-strategy': 1.1,
+          'security': 1.0,
+          'performance-monitor': 1.3
+        };
+        break;
+      
+      case 'balanced':
+      default:
+        weightings = {
+          'market-intelligence': 1.0,
+          'route-discovery': 1.0,
+          'risk-assessment': 1.0,
+          'execution-strategy': 1.0,
+          'security': 1.0,
+          'performance-monitor': 1.0
+        };
+        break;
+    }
+
+    return {
+      focus,
+      weightings
+    };
   }
 
   // Initialize the coordinator (alias for start for compatibility)

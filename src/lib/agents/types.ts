@@ -213,6 +213,29 @@ export interface DecisionCriteria {
   slippage: number;    // 0-1 weight
 }
 
+// User Focus Preferences for Agent Weighting
+export type UserFocusPreference = 'speed' | 'security' | 'cost' | 'balanced';
+
+export interface AgentWeighting {
+  agentId: string;
+  baseWeight: number;      // Default weight (usually 1.0)
+  userBonus: number;       // Additional weight from user preference (0.0-1.0)
+  finalWeight: number;     // baseWeight + userBonus
+  reason: string;          // Why this agent got weighted
+}
+
+export interface UserPreferenceWeights {
+  focus: UserFocusPreference;
+  weightings: {
+    'market-intelligence': number;
+    'route-discovery': number;
+    'risk-assessment': number;
+    'execution-strategy': number;
+    'security': number;
+    'performance-monitor': number;
+  };
+}
+
 export interface DecisionScore {
   routeId: string;
   totalScore: number;
@@ -233,6 +256,7 @@ export interface ConsensusRequest {
   strategies: ExecutionStrategy[];
   criteria: DecisionCriteria;
   deadline: number; // timestamp
+  userPreferences?: UserPreferenceWeights; // Add user preference weighting
 }
 
 export interface ConsensusResponse {
@@ -242,6 +266,7 @@ export interface ConsensusResponse {
   score: DecisionScore;
   confidence: number;
   reasoning: string[];
+  appliedWeighting?: AgentWeighting; // Include weighting info in response
 }
 
 // Agent Communication Events

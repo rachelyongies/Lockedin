@@ -9,7 +9,8 @@ import {
   Shield, 
   RotateCcw,
   Info,
-  X
+  X,
+  Brain
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -34,6 +35,7 @@ const PREFERENCE_OPTIONS = [
     value: 'speed' as const,
     label: 'Speed First',
     description: 'Fastest execution, higher fees',
+    agentFocus: 'Route Discovery & Execution Strategy agents get 2x weight',
     icon: Zap,
     color: 'text-blue-500',
     bgColor: 'bg-blue-500/10 border-blue-500/20'
@@ -42,6 +44,7 @@ const PREFERENCE_OPTIONS = [
     value: 'cost' as const,
     label: 'Cost Optimal',
     description: 'Lowest fees, may take longer',
+    agentFocus: 'Market Intelligence & Route Discovery agents get 2x weight',
     icon: DollarSign,
     color: 'text-green-500',
     bgColor: 'bg-green-500/10 border-green-500/20'
@@ -50,6 +53,7 @@ const PREFERENCE_OPTIONS = [
     value: 'security' as const,
     label: 'Security First',
     description: 'MEV protection, private pools',
+    agentFocus: 'Security & Risk Assessment agents get 2x weight',
     icon: Shield,
     color: 'text-purple-500',
     bgColor: 'bg-purple-500/10 border-purple-500/20'
@@ -58,6 +62,7 @@ const PREFERENCE_OPTIONS = [
     value: 'balanced' as const,
     label: 'Balanced',
     description: 'Good balance of speed, cost & security',
+    agentFocus: 'All AI agents weighted equally',
     icon: Settings2,
     color: 'text-blue-500',
     bgColor: 'bg-blue-500/10 border-blue-500/20'
@@ -149,7 +154,7 @@ export function UserPreferences({
                     Trading Preferences
                   </h3>
                   <p className="text-xs text-muted-foreground max-w-72">
-                    Customize how routes are optimized based on your priorities
+                    Your focus affects AI agent weighting in consensus finding
                   </p>
                 </div>
                 {onToggleVisibility && (
@@ -168,8 +173,11 @@ export function UserPreferences({
               {/* Strategy Selection */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-white">Strategy</span>
-                  <Tooltip content="Choose your priority: speed, cost savings, security, or balanced approach">
+                  <span className="text-sm font-medium text-white flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-cyan-400" />
+                    AI Agent Focus
+                  </span>
+                  <Tooltip content="Your choice doubles the weight of specific AI agents in consensus decisions">
                     <Info className="w-3 h-3 text-muted-foreground" />
                   </Tooltip>
                 </div>
@@ -204,6 +212,12 @@ export function UserPreferences({
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {option.description}
+                          </div>
+                          <div className={cn(
+                            'text-xs font-mono',
+                            userPreference === option.value ? 'text-cyan-300' : 'text-muted-foreground/70'
+                          )}>
+                            {option.agentFocus}
                           </div>
                         </div>
                       </div>
@@ -291,8 +305,8 @@ export function UserPreferences({
                 </Button>
 
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>AI-powered optimization enabled</span>
-                  <Shield className="w-3 h-3 text-primary" />
+                  <span>Multi-agent AI consensus with preference weighting</span>
+                  <Brain className="w-3 h-3 text-cyan-400" />
                 </div>
               </div>
             </Card>

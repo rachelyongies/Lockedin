@@ -1,6 +1,7 @@
 // 1inch API Aggregator Service - Uses all available 1inch APIs for comprehensive analysis
 import { Token } from '@/types/bridge';
 import { tokenValidationService, TokenPairValidation } from './token-validation-service';
+import { ChainSupportService, ChainSupportInfo } from './chain-support-config';
 
 export interface OneInchQuoteComparison {
   fusion: {
@@ -170,6 +171,22 @@ export class OneInchAPIAggregator {
     // Auto-detect chainId from token or default to Ethereum mainnet
     const targetChainId = chainId || this.detectChainIdFromToken(fromToken) || 1;
     
+    // Check chain support first
+    const chainConfig = ChainSupportService.getChainConfig(targetChainId);
+    const isChainSupported = chainConfig !== null;
+    
+    if (!isChainSupported) {
+      console.warn(`⚠️ Chain ${targetChainId} not supported by 1inch APIs`);
+      return this.createUnsupportedChainAnalysis(targetChainId, fromToken, toToken);
+    }
+    
+    console.log(`🔍 Chain Support Status for ${chainConfig.name} (${targetChainId}):`, {
+      fusion: chainConfig.fusionSupported,
+      aggregation: chainConfig.aggregationSupported,
+      portfolio: chainConfig.portfolioSupported,
+      fallbackStrategy: chainConfig.fallbackStrategy
+    });
+    
     // Validate token pair first
     const validation = tokenValidationService.validateTokenPair(fromToken, toToken);
     
@@ -263,10 +280,26 @@ export class OneInchAPIAggregator {
     walletAddress?: string,
     chainId: number = 1
   ): Promise<OneInchQuoteComparison> {
-    const [fusionResult, aggregationResult] = await Promise.allSettled([
-      this.getFusionQuote(fromTokenAddress, toTokenAddress, amount, walletAddress, chainId),
-      this.getAggregationQuote(fromTokenAddress, toTokenAddress, amount, chainId)
-    ]);
+    const chainConfig = ChainSupportService.getChainConfig(chainId);
+    
+    // Only attempt Fusion if chain supports it
+    const promises: Promise<Record<string, unknown>>[] = [];
+    const fusionEnabled = chainConfig?.fusionSupported ?? false;
+    const aggregationEnabled = chainConfig?.aggregationSupported ?? false;
+    
+    if (fusionEnabled && walletAddress) {
+      promises.push(this.getFusionQuote(fromTokenAddress, toTokenAddress, amount, walletAddress, chainId));
+    } else {
+      promises.push(Promise.reject(new Error(fusionEnabled ? 'No wallet address for Fusion' : `Fusion not supported on ${chainConfig?.name || 'this chain'}`)));
+    }
+    
+    if (aggregationEnabled) {
+      promises.push(this.getAggregationQuote(fromTokenAddress, toTokenAddress, amount, chainId));
+    } else {
+      promises.push(Promise.reject(new Error(`Aggregation not supported on ${chainConfig?.name || 'this chain'}`)));
+    }
+    
+    const [fusionResult, aggregationResult] = await Promise.allSettled(promises);
 
     const fusion = fusionResult.status === 'fulfilled' ? 
       { available: true, quote: fusionResult.value } : 
@@ -602,6 +635,77 @@ export class OneInchAPIAggregator {
         confidence: 0,
         recommendation: 'INVALID_TOKEN_PAIR',
         reasoning: ['Invalid token pair for 1inch APIs - only Ethereum-based tokens supported'],
+        optimalStrategy: 'wait'
+      },
+      timestamp: Date.now()
+    };
+  }
+
+  // Create analysis for unsupported chains
+  private createUnsupportedChainAnalysis(chainId: number, fromToken: Token, toToken: Token): Comprehensive1inchAnalysis {
+    const chainConfig = ChainSupportService.getChainConfig(chainId);
+    const routeRecommendation = ChainSupportService.getRouteRecommendation(chainId);
+    const warningMessage = ChainSupportService.getFusionWarningMessage(chainId);
+    
+    const reasoning: string[] = [];
+    reasoning.push(routeRecommendation.reasoning);
+    if (warningMessage) reasoning.push(warningMessage);
+    if (routeRecommendation.alternatives) {
+      reasoning.push(`Alternative options: ${routeRecommendation.alternatives.join(', ')}`);
+    }
+
+    return {
+      quotes: {
+        fusion: { 
+          available: false, 
+          error: chainConfig ? `Fusion not supported on ${chainConfig.name}` : `Chain ${chainId} not supported`
+        },
+        aggregation: { 
+          available: false, 
+          error: chainConfig ? `Aggregation not supported on ${chainConfig.name}` : `Chain ${chainId} not supported`
+        },
+        recommendation: 'unavailable',
+        reasoning: chainConfig ? 
+          `1inch services not available on ${chainConfig.name}` : 
+          `Chain ${chainId} not supported by 1inch APIs`,
+        savings: { amount: '0', percentage: 0 }
+      },
+      gas: {
+        current: { slow: 0, standard: 0, fast: 0, baseFee: 0 },
+        recommendation: chainConfig ? 
+          `Consider bridging to ${ChainSupportService.getFusionSupportedChains()[0]?.name || 'Ethereum'} for optimal gas prices` :
+          'Chain not supported',
+        trend: 'Unknown',
+        optimalTiming: 'Bridge to supported chain recommended',
+        analysis: { unsupportedChain: true, chainId }
+      },
+      liquidity: {
+        totalSources: 0,
+        topSources: [],
+        coverage: { 
+          score: 0, 
+          description: chainConfig ? 
+            `${chainConfig.name} not supported by 1inch` : 
+            'Unsupported chain', 
+          breakdown: {} 
+        },
+        recommendations: routeRecommendation.alternatives || ['Bridge to supported chain']
+      },
+      paths: {
+        totalPaths: 0,
+        complexity: { 
+          score: 0, 
+          description: 'No routing available on this chain', 
+          distribution: {} 
+        },
+        optimalPath: null,
+        recommendations: [`Consider using native DEXs: ${routeRecommendation.alternatives?.join(', ') || 'None available'}`]
+      },
+      approvals: null,
+      overall: {
+        confidence: 0,
+        recommendation: `Bridge to ${ChainSupportService.getFusionSupportedChains()[0]?.name || 'supported chain'} for 1inch services`,
+        reasoning,
         optimalStrategy: 'wait'
       },
       timestamp: Date.now()
