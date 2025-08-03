@@ -126,6 +126,11 @@ export class IntelligentRouteGenerator {
 
     // Calculate fallback output if API quote failed or returned 0
     let estimatedOutput = (quote?.toTokenAmount as string) || (quote?.toAmount as string) || (quote?.dstAmount as string) || '0';
+    let dataSource: 'real_api' | 'fallback_calculation' | 'synthetic_estimate' | 'hybrid' = 'real_api';
+    let isSynthetic = false;
+    let dataQuality: 'high' | 'medium' | 'low' = 'high';
+    let fallbackReason: string | undefined;
+    let syntheticFlags: string[] = [];
     
     console.log('🔍 Fusion quote analysis:', {
       fusionAvailable: analysis.quotes.fusion.available,
@@ -145,6 +150,13 @@ export class IntelligentRouteGenerator {
       const aggQuote = analysis.quotes.aggregation.quote;
       estimatedOutput = (aggQuote?.toTokenAmount as string) || (aggQuote?.toAmount as string) || (aggQuote?.dstAmount as string) || '0';
       
+      if (estimatedOutput !== '0' && estimatedOutput) {
+        dataSource = 'hybrid';
+        dataQuality = 'medium';
+        fallbackReason = 'Fusion API returned zero, using aggregation API fallback';
+        syntheticFlags.push('price');
+      }
+      
       console.log('🔍 Aggregation fallback result:', {
         aggAvailable: analysis.quotes.aggregation.available,
         hasAggQuote: !!aggQuote,
@@ -157,6 +169,13 @@ export class IntelligentRouteGenerator {
         console.log('🧮 Both APIs failed, using price-based fallback calculation');
         estimatedOutput = await this.calculateFallbackOutputWithRealPrices(fromToken, toToken, amount);
         console.log('📊 Fallback calculation result:', estimatedOutput);
+        
+        // Mark as synthetic
+        dataSource = 'synthetic_estimate';
+        isSynthetic = true;
+        dataQuality = 'low';
+        fallbackReason = 'Both APIs failed, using synthetic price-based calculation';
+        syntheticFlags = ['price', 'output', 'slippage'];
       }
     }
 
@@ -186,6 +205,12 @@ export class IntelligentRouteGenerator {
         'Lower slippage'
       ],
       proposedBy: '1inch-fusion-intelligent',
+      // Data quality flags
+      dataSource,
+      isSynthetic,
+      dataQuality,
+      fallbackReason,
+      syntheticFlags: syntheticFlags,
       source: '1inch-fusion',
       oneInchData: analysis,
       reasoning,
@@ -216,6 +241,11 @@ export class IntelligentRouteGenerator {
 
     // Calculate fallback output if API quote failed or returned 0
     let estimatedOutput = (quote?.toTokenAmount as string) || (quote?.toAmount as string) || (quote?.dstAmount as string) || '0';
+    let dataSource: 'real_api' | 'fallback_calculation' | 'synthetic_estimate' | 'hybrid' = 'real_api';
+    let isSynthetic = false;
+    let dataQuality: 'high' | 'medium' | 'low' = 'high';
+    let fallbackReason: string | undefined;
+    let syntheticFlags: string[] = [];
     
     console.log('🔍 Aggregation quote analysis:', {
       aggAvailable: analysis.quotes.aggregation.available,
@@ -232,6 +262,13 @@ export class IntelligentRouteGenerator {
       const fusionQuote = analysis.quotes.fusion.quote;
       estimatedOutput = (fusionQuote?.toTokenAmount as string) || (fusionQuote?.toAmount as string) || (fusionQuote?.dstAmount as string) || '0';
       
+      if (estimatedOutput !== '0' && estimatedOutput) {
+        dataSource = 'hybrid';
+        dataQuality = 'medium';
+        fallbackReason = 'Aggregation API returned zero, using fusion API fallback';
+        syntheticFlags.push('price');
+      }
+      
       console.log('🔍 Fusion fallback result:', {
         fusionAvailable: analysis.quotes.fusion.available,
         hasFusionQuote: !!fusionQuote,
@@ -243,6 +280,13 @@ export class IntelligentRouteGenerator {
         console.log('🧮 Both APIs failed, using price-based fallback calculation');
         estimatedOutput = await this.calculateFallbackOutputWithRealPrices(fromToken, toToken, amount);
         console.log('📊 Fallback calculation result:', estimatedOutput);
+        
+        // Mark as synthetic
+        dataSource = 'synthetic_estimate';
+        isSynthetic = true;
+        dataQuality = 'low';
+        fallbackReason = 'Both APIs failed, using synthetic price-based calculation';
+        syntheticFlags = ['price', 'output', 'slippage'];
       }
     }
 
@@ -265,6 +309,12 @@ export class IntelligentRouteGenerator {
         'High liquidity access'
       ],
       proposedBy: '1inch-aggregation-intelligent',
+      // Data quality flags
+      dataSource,
+      isSynthetic,
+      dataQuality,
+      fallbackReason,
+      syntheticFlags: syntheticFlags,
       source: '1inch-aggregation',
       oneInchData: analysis,
       reasoning,

@@ -10,7 +10,8 @@ import {
   AgentCapabilities,
   RouteProposal,
   RiskAssessment,
-  MarketConditions
+  MarketConditions,
+  DecisionCriteria
 } from './types';
 import { DataAggregationService } from '../services/DataAggregationService';
 
@@ -240,6 +241,10 @@ export class RiskAssessmentAgent extends BaseAgent {
         case MessageType.MARKET_DATA:
           console.log('🔄 Processing MARKET RISK UPDATE...');
           result = await this.handleMarketRiskUpdate(message);
+          break;
+        case MessageType.CONSENSUS_REQUEST:
+          console.log('🔄 Processing CONSENSUS REQUEST...');
+          result = await this.handleConsensusRequest(message);
           break;
         default:
           console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
@@ -985,9 +990,13 @@ export class RiskAssessmentAgent extends BaseAgent {
   }
 
   private convertToRiskAssessment(analysis: RouteRiskAnalysis, routeId: string): RiskAssessment {
+    // Calculate security score based on protocol risk (inverse relationship)
+    const securityScore = Math.round((1 - analysis.riskBreakdown.protocolRisk) * 100);
+    
     return {
       routeId,
       overallRisk: analysis.overallRisk,
+      securityScore: Math.max(1, securityScore), // Ensure minimum score of 1 for demo
       factors: {
         protocolRisk: analysis.riskBreakdown.protocolRisk,
         liquidityRisk: analysis.riskBreakdown.liquidityRisk,
@@ -1505,6 +1514,100 @@ export class RiskAssessmentAgent extends BaseAgent {
   private async reassessRoute(routeId: string): Promise<void> {
     // Handle route reassessment requests
     console.log(`🔄 Reassessing route: ${routeId}`);
+  }
+
+  private async handleConsensusRequest(message: AgentMessage): Promise<{ type: string; messageSent: boolean; agentId: string }> {
+    try {
+      const payload = message.payload as {
+        requestId: string;
+        routes: RouteProposal[];
+        assessments: RiskAssessment[];
+        criteria: DecisionCriteria;
+        deadline: number;
+        responseId: string;
+      };
+
+      console.log(`🎯 [CONSENSUS] Risk Assessment Agent evaluating ${payload.routes.length} routes for consensus`);
+
+      // Evaluate routes based on risk criteria
+      const bestRoute = this.selectBestRouteForConsensus(payload.routes, payload.assessments, payload.criteria);
+      
+      // Create consensus response
+      const consensusResponse = {
+        responseId: payload.responseId,  // Fixed: use responseId not requestId
+        agentId: this.config.id,
+        recommendedRoute: bestRoute.routeId,
+        score: bestRoute.score,
+        confidence: bestRoute.confidence,
+        reasoning: bestRoute.reasoning
+      };
+
+      // Send response back to coordinator
+      await this.sendMessage({
+        to: message.from,
+        type: MessageType.CONSENSUS_REQUEST, // Response using same type
+        payload: consensusResponse,
+        priority: MessagePriority.HIGH
+      });
+
+      console.log(`✅ [CONSENSUS] Risk Assessment Agent sent recommendation: ${bestRoute.routeId}`);
+      
+      return {
+        type: 'consensus-response',
+        messageSent: true,
+        agentId: this.config.id
+      };
+    } catch (error) {
+      console.error('❌ [CONSENSUS] Error handling consensus request:', error);
+      return {
+        type: 'consensus-error',
+        messageSent: false,
+        agentId: this.config.id
+      };
+    }
+  }
+
+  private selectBestRouteForConsensus(
+    routes: RouteProposal[], 
+    assessments: RiskAssessment[], 
+    criteria: DecisionCriteria
+  ): { routeId: string; score: any; confidence: number; reasoning: string[] } {
+    let bestRoute = routes[0];
+    let bestScore = 0;
+    
+    for (const route of routes) {
+      const assessment = assessments.find(a => a.routeId === route.id);
+      
+      // Calculate risk-weighted score
+      const riskScore = assessment ? (1 - assessment.overallRisk) : 0.5; // Default to medium risk
+      const confidenceScore = route.confidence || 0.5;
+      
+      // Weight based on user criteria (emphasize security)
+      const combinedScore = (riskScore * criteria.security) + (confidenceScore * 0.3);
+      
+      if (combinedScore > bestScore) {
+        bestScore = combinedScore;
+        bestRoute = route;
+      }
+    }
+
+    return {
+      routeId: bestRoute.id,
+      score: {
+        totalScore: bestScore,
+        breakdown: {
+          security: bestScore * criteria.security,
+          risk: 1 - (assessments.find(a => a.routeId === bestRoute.id)?.overallRisk || 0.5),
+          confidence: bestRoute.confidence || 0.5
+        }
+      },
+      confidence: bestScore,
+      reasoning: [
+        `Selected route ${bestRoute.id} based on risk analysis`,
+        `Risk score: ${((1 - (assessments.find(a => a.routeId === bestRoute.id)?.overallRisk || 0.5)) * 100).toFixed(0)}%`,
+        `Confidence: ${((bestRoute.confidence || 0.5) * 100).toFixed(0)}%`
+      ]
+    };
   }
 
   private async handleMarketRiskUpdate(message: AgentMessage): Promise<void> {

@@ -118,6 +118,12 @@ export interface RouteProposal {
   risks: string[];
   advantages: string[];
   proposedBy: string; // agent ID
+  // Data quality and source tracking flags
+  dataSource?: 'real_api' | 'fallback_calculation' | 'synthetic_estimate' | 'hybrid';
+  isSynthetic?: boolean; // True if route uses fallback/synthetic data
+  dataQuality?: 'high' | 'medium' | 'low'; // Overall data quality assessment
+  fallbackReason?: string; // Why fallback calculation was used
+  syntheticFlags?: string[]; // Specific parts that are synthetic (e.g., 'price', 'gas', 'time')
 }
 
 export interface RouteStep {
@@ -132,6 +138,7 @@ export interface RouteStep {
 export interface RiskAssessment {
   routeId: string;
   overallRisk: number; // 0-1 scale (0 = low risk)
+  securityScore: number; // 0-100 scale (100 = most secure)
   factors: {
     protocolRisk: number;
     liquidityRisk: number;

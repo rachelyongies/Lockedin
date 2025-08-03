@@ -14,6 +14,7 @@ import { oneInchAggregator, Comprehensive1inchAnalysis } from './1inch-api-aggre
 import { intelligentRouteGenerator, IntelligentRoute } from './intelligent-route-generator';
 import { 
   RouteProposal, 
+  RouteStep,
   RiskAssessment, 
   ExecutionStrategy,
   MarketConditions,
@@ -1411,7 +1412,7 @@ export class AIAgentBridgeService {
     try {
       const normalizedSrc = this.normalizeTokenAddress(fromToken);
       const normalizedDst = this.normalizeTokenAddress(toToken);
-      const normalizedAmount = this.normalizeAmount(amount);
+      const normalizedAmount = this.normalizeAmountWithDecimals(amount, normalizedSrc);
       
       console.log('🔍 Aggregation API - Fetching quote...');
 
@@ -1438,7 +1439,7 @@ export class AIAgentBridgeService {
     try {
       const normalizedSrc = this.normalizeFusionTokenAddress(fromToken);
       const normalizedDst = this.normalizeFusionTokenAddress(toToken);
-      const normalizedAmount = this.normalizeAmount(amount);
+      const normalizedAmount = this.normalizeAmountWithDecimals(amount, normalizedSrc);
       
       console.log('🔍 Fusion API - Fetching quote...');
 
@@ -1651,54 +1652,78 @@ export class AIAgentBridgeService {
     };
   }
 
-  private createRouteProposal(quoteData: unknown, fromToken: string, toToken: string, amount: string): unknown {
+  private createRouteProposal(quoteData: unknown, fromToken: string, toToken: string, amount: string): RouteProposal {
     const quoteDataTyped = quoteData as Record<string, unknown>;
     // Handle hybrid quote structure with both aggregation and fusion data
     const baselineQuote = quoteDataTyped?.aggregation || quoteDataTyped?.fusion || quoteDataTyped;
     
-    return {
-      id: `route-${Date.now()}`,
+    // Create properly formatted RouteProposal with required path array
+    const amountOut = this.getBestAmountOut(quoteData);
+    const recommendedApi = (quoteDataTyped?.comparison as Record<string, unknown>)?.recommendation as string || 'aggregation';
+    
+    // Create path array that RiskAssessmentAgent expects
+    const routePath: RouteStep[] = [];
+    
+    // If we have protocol information from aggregation API, use it
+    const protocols = (baselineQuote as Record<string, unknown>)?.protocols as Record<string, unknown>[] || [];
+    if (protocols.length > 0) {
+      protocols.forEach((protocol: Record<string, unknown>, index: number) => {
+        routePath.push({
+          protocol: protocol?.name as string || 'Unknown DEX',
+          fromToken: index === 0 ? fromToken : 'INTERMEDIATE',
+          toToken: index === protocols.length - 1 ? toToken : 'INTERMEDIATE',
+          amount: index === 0 ? amount : 'AUTO',
+          estimatedOutput: index === protocols.length - 1 ? amountOut : 'AUTO',
+          fee: protocol?.fee as string || '0.003'
+        });
+      });
+    } else {
+      // Fallback to single-step path if no protocol info
+      const protocolName = recommendedApi === 'fusion' ? '1inch Fusion' : '1inch Aggregation';
+      routePath.push({
+        protocol: protocolName,
+        fromToken,
+        toToken,
+        amount,
+        estimatedOutput: amountOut,
+        fee: recommendedApi === 'fusion' ? '0.001' : '0.003'
+      });
+    }
+    
+    const routeProposal: RouteProposal = {
+      id: `baseline-route-${Date.now()}`,
       fromToken,
       toToken,
-      amountIn: amount,
-      
-      // Hybrid quote information
-      quotes: {
-        aggregation: quoteDataTyped?.aggregation,
-        fusion: quoteDataTyped?.fusion,
-        comparison: quoteDataTyped?.comparison
-      },
-      
-      // Use the recommended quote for primary data
-      amountOut: this.getBestAmountOut(quoteData),
-      recommendedApi: quoteDataTyped?.comparison?.recommendation || 'aggregation',
-      
-      // Route information from aggregation (for multi-hop discovery)
-      protocols: baselineQuote?.protocols || [],
-      gas: baselineQuote?.gas || 200000,
-      gasPrice: baselineQuote?.gasPrice || '25000000000',
-      
-      // Route characteristics
-      estimatedExecutionTime: this.getEstimatedExecutionTime(quoteData),
-      slippage: 0.5, // 0.5% default
-      priceImpact: 0.1, // 0.1% default
-      
-      // Paths for multi-hop analysis
-      paths: this.extractPaths(baselineQuote),
-      
-      // MEV and execution preferences
-      mevProtection: {
-        available: !!quoteData.fusion,
-        recommended: quoteData.comparison?.recommendation === 'fusion'
-      },
-      
+      amount,
+      estimatedOutput: amountOut,
+      path: routePath, // This is the key field that was missing!
+      estimatedGas: (baselineQuote as Record<string, unknown>)?.gas as string || '200000',
+      estimatedTime: this.getEstimatedExecutionTime(quoteData),
+      priceImpact: '0.001', // 0.1% default
       confidence: 0.8,
-      timestamp: Date.now(),
-      
-      // Flag for RouteDiscoveryAgent to explore alternatives
-      enableCustomDiscovery: true,
-      baselineComplete: true
+      risks: [
+        'Market volatility',
+        recommendedApi === 'fusion' ? 'Private pool execution delay' : 'MEV exposure',
+        'Gas price fluctuation'
+      ],
+      advantages: [
+        'Real-time pricing',
+        recommendedApi === 'fusion' ? 'MEV protection' : 'Fast execution',
+        'Multi-DEX optimization'
+      ],
+      proposedBy: `${recommendedApi}-baseline`
     };
+    
+    console.log('✅ Created baseline RouteProposal with populated path:', {
+      id: routeProposal.id,
+      pathLength: routeProposal.path.length,
+      protocols: routeProposal.path.map(p => p.protocol),
+      fromToken: routeProposal.fromToken,
+      toToken: routeProposal.toToken,
+      estimatedOutput: routeProposal.estimatedOutput
+    });
+    
+    return routeProposal;
   }
 
   private getBestAmountOut(quoteData: unknown): string {
@@ -1790,6 +1815,72 @@ export class AIAgentBridgeService {
       return '1000000000000000000'; // 1 ETH in wei as fallback
     }
     return cleanAmount;
+  }
+
+  private normalizeAmountWithDecimals(amount: string, tokenAddress: string): string {
+    // Get token-specific decimals
+    const decimals = this.getTokenDecimals(tokenAddress);
+    
+    console.log(`💰 [DECIMAL CONVERSION] Converting amount for token ${tokenAddress}`);
+    console.log(`💰 [DECIMAL CONVERSION] Input amount: ${amount}, Token decimals: ${decimals}`);
+    
+    // If amount is already in wei format (no decimal point), return as-is
+    if (!amount.includes('.') || amount.includes('e')) {
+      console.log(`💰 [DECIMAL CONVERSION] Amount already in wei format: ${amount}`);
+      return amount;
+    }
+    
+    // Convert decimal amount to proper format using token decimals
+    const convertedAmount = this.toWei(amount, decimals);
+    console.log(`💰 [DECIMAL CONVERSION] Converted ${amount} → ${convertedAmount} (${decimals} decimals)`);
+    
+    return convertedAmount;
+  }
+
+  private getTokenDecimals(tokenAddress: string): number {
+    // Standard token decimals mapping - all addresses in lowercase for consistent matching
+    const tokenDecimals: Record<string, number> = {
+      '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 8,  // WBTC
+      '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d': 6,  // USDC  
+      '0xdac17f958d2ee523a2206206994597c13d831ec7': 6,  // USDT
+      '0x6b175474e89094c44da98b954eedeac495271d0f': 18, // DAI
+      '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 18, // WETH
+      '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee': 18, // ETH
+      '0x0000000000000000000000000000000000000000': 18, // ETH (alternative)
+      '0x514910771af9ca656af840dff83e8264ecf986ca': 18, // LINK
+      '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984': 18, // UNI
+      '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0': 18, // MATIC
+      '0xa0b73e1ff0b80914ab6fe0444e65848c4c34450b': 8,  // CRO
+      '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce': 18, // SHIB
+      '0x4fabb145d64652a948d72533023f6e7a623c7c53': 18, // BUSD
+      '0x0d8775f648430679a709e98d2b0cb6250d2887ef': 18, // BAT
+      '0xbb0e17ef65f82ab018d8edd776e8dd940327b28b': 18, // AXS
+    };
+    
+    // Normalize address to lowercase for comparison
+    const normalizedAddress = tokenAddress.toLowerCase();
+    const decimals = tokenDecimals[normalizedAddress];
+    
+    if (decimals === undefined) {
+      console.warn(`⚠️ [DECIMAL CONVERSION] Unknown token decimals for ${tokenAddress}, defaulting to 18`);
+      return 18; // Default to 18 decimals
+    }
+    
+    console.log(`🔍 [DECIMAL CONVERSION] Token ${tokenAddress} has ${decimals} decimals`);
+    return decimals;
+  }
+
+  private toWei(amount: string, decimals: number): string {
+    // Convert decimal amount to wei format using specified decimals
+    const parts = amount.split('.');
+    const integerPart = parts[0] || '0';
+    const fractionalPart = (parts[1] || '').padEnd(decimals, '0').slice(0, decimals);
+    
+    // Combine integer and fractional parts
+    const result = integerPart + fractionalPart;
+    
+    // Remove leading zeros but keep at least one digit
+    return result.replace(/^0+/, '') || '0';
   }
 
   private async collectAgentResponses(analysisRequest: unknown): Promise<Record<string, unknown>> {

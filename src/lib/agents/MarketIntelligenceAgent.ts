@@ -456,6 +456,10 @@ export class MarketIntelligenceAgent extends BaseAgent {
           console.log('🔄 Processing MARKET DATA UPDATE...');
           result = await this.handleMarketDataUpdate(message);
           break;
+        case MessageType.CONSENSUS_REQUEST:
+          console.log('🔄 Processing CONSENSUS REQUEST...');
+          result = await this.handleConsensusRequest(message);
+          break;
         default:
           console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
           result = { type: 'unknown', processed: false };
@@ -1276,10 +1280,56 @@ export class MarketIntelligenceAgent extends BaseAgent {
 
   private async initializeMarketHistory(): Promise<void> {
     try {
-      const conditions = await this.dataService.getNetworkConditions();
+      console.log('📈 Fetching initial market conditions...');
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Market history initialization timed out')), 2000) // Reduced to 2 seconds for demo
+      );
+      
+      const conditions = await Promise.race([
+        this.dataService.getNetworkConditions(),
+        timeoutPromise
+      ]) as MarketConditions;
+      
       this.storeMarketHistory(conditions);
+      console.log('✅ Market history initialized successfully');
     } catch (error) {
-      console.error('Error initializing market history:', error);
+      console.error('⚠️ Error initializing market history, using fallback data:', error);
+      // Use fallback data to ensure initialization completes
+      const fallbackConditions: MarketConditions = {
+        timestamp: Date.now(),
+        networkCongestion: {
+          ethereum: 0.5,
+          polygon: 0.3,
+          bsc: 0.3,
+          arbitrum: 0.2,
+          bitcoin: 0.4,
+          stellar: 0.1,
+          solana: 0.25,
+          starknet: 0.15
+        },
+        gasPrices: {
+          ethereum: { fast: 30, standard: 25, safe: 20 },
+          polygon: { fast: 35, standard: 30, safe: 25 }
+        },
+        volatility: {
+          overall: 0.15,
+          byAsset: { ETH: 0.18, BTC: 0.12 },
+          trending: []
+        },
+        liquidity: {
+          totalTVL: 50000000000,
+          topPools: [],
+          crossChainflows: []
+        },
+        marketCap: {
+          total: 2500000000000,
+          dominance: { BTC: 0.45, ETH: 0.20 },
+          trending: []
+        }
+      };
+      this.storeMarketHistory(fallbackConditions);
     }
   }
 
@@ -1335,5 +1385,106 @@ export class MarketIntelligenceAgent extends BaseAgent {
     this.lastAnalysis = null;
     
     console.log('📊 Market Intelligence Agent cleaned up');
+  }
+
+  // Consensus handling for multi-agent decision making
+  private async handleConsensusRequest(message: AgentMessage): Promise<{ type: string; messageSent: boolean; agentId: string }> {
+    try {
+      const payload = message.payload as {
+        requestId: string;
+        routes: RouteProposal[];
+        assessments: RiskAssessment[];
+        criteria: DecisionCriteria;
+        deadline: number;
+        responseId: string;
+      };
+
+      console.log(`🎯 [CONSENSUS] Market Intelligence Agent evaluating ${payload.routes.length} routes`);
+
+      // Select route based on market conditions
+      const bestRoute = this.selectBestRouteForMarketConditions(payload.routes, payload.criteria);
+      
+      // Create consensus response
+      const consensusResponse = {
+        responseId: payload.responseId,  // Fixed: use responseId not requestId
+        agentId: this.config.id,
+        recommendedRoute: bestRoute.routeId,
+        score: bestRoute.score,
+        confidence: bestRoute.confidence,
+        reasoning: bestRoute.reasoning
+      };
+
+      // Send response back to coordinator
+      await this.sendMessage({
+        to: message.from,
+        type: MessageType.CONSENSUS_REQUEST,
+        payload: consensusResponse,
+        priority: MessagePriority.HIGH
+      });
+
+      console.log(`✅ [CONSENSUS] Market Intelligence Agent sent recommendation: ${bestRoute.routeId}`);
+      
+      return {
+        type: 'consensus-response',
+        messageSent: true,
+        agentId: this.config.id
+      };
+    } catch (error) {
+      console.error('❌ [CONSENSUS] Error handling consensus request:', error);
+      return {
+        type: 'consensus-error',
+        messageSent: false,
+        agentId: this.config.id
+      };
+    }
+  }
+
+  private selectBestRouteForMarketConditions(routes: RouteProposal[], criteria: DecisionCriteria): {
+    routeId: string;
+    score: any;
+    confidence: number;
+    reasoning: string[];
+  } {
+    let bestRoute = routes[0];
+    let bestScore = 0;
+    
+    for (const route of routes) {
+      // Score based on market efficiency and timing
+      const efficiencyScore = parseFloat(route.estimatedOutput) / parseFloat(route.inputAmount);
+      const gasEfficiency = 1 / (parseFloat(route.estimatedGas) || 1000000);
+      const confidenceScore = route.confidence || 0.5;
+      
+      // Weight based on market criteria
+      const combinedScore = 
+        (efficiencyScore * criteria.cost) +
+        (gasEfficiency * criteria.cost * 0.2) +
+        (confidenceScore * criteria.reliability);
+      
+      if (combinedScore > bestScore) {
+        bestScore = combinedScore;
+        bestRoute = route;
+      }
+    }
+
+    return {
+      routeId: bestRoute.id,
+      score: {
+        totalScore: bestScore,
+        breakdown: {
+          cost: bestScore * criteria.cost,
+          time: bestScore * criteria.time,
+          security: 75, // Market intel focuses less on security
+          reliability: bestScore * criteria.reliability,
+          slippage: 70
+        },
+        reasoning: ['Market intelligence recommendation']
+      },
+      confidence: bestScore,
+      reasoning: [
+        `Selected route ${bestRoute.id} based on market efficiency`,
+        `Market score: ${(bestScore * 100).toFixed(0)}%`,
+        `Gas efficiency considered in scoring`
+      ]
+    };
   }
 }

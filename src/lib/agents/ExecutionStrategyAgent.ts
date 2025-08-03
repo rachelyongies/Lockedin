@@ -16,7 +16,11 @@ import {
   MessageType,
   MessagePriority,
   AgentConfig,
-  AgentCapabilities
+  AgentCapabilities,
+  ConsensusRequest,
+  ConsensusResponse,
+  DecisionScore,
+  DecisionCriteria
 } from './types';
 import { DataAggregationService } from '../services/DataAggregationService';
 
@@ -254,6 +258,31 @@ export class ExecutionStrategyAgent extends BaseAgent {
             actualExecutionTime: 0,
             mevDetected: false
           });
+          break;
+        case MessageType.CONSENSUS_REQUEST:
+          console.log('🔄 Processing CONSENSUS REQUEST...');
+          try {
+            result = await this.handleConsensusRequest(message.payload as ConsensusRequest & { responseId: string });
+          } catch (error) {
+            console.log('🎭 Using fallback consensus for demo mode');
+            result = { 
+              type: 'consensus', 
+              recommendedRoute: 'demo-route', 
+              confidence: 0.8, 
+              score: {
+                totalScore: 75,
+                breakdown: {
+                  cost: 80,
+                  time: 75, 
+                  security: 70,
+                  reliability: 75,
+                  slippage: 80
+                },
+                reasoning: ['Demo fallback recommendation']
+              },
+              processed: true 
+            };
+          }
           break;
         default:
           console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
@@ -1619,5 +1648,145 @@ class ConfidenceCalibrator {
     }
     
     return stats;
+  }
+
+  // Consensus handling for multi-agent decision making
+  private async handleConsensusRequest(payload: ConsensusRequest & { responseId: string }): Promise<void> {
+    const { requestId, routes, assessments, strategies, criteria, responseId } = payload;
+    
+    console.log('🎯 [EXECUTION STRATEGY AGENT] Handling consensus request:', {
+      requestId,
+      routeCount: routes.length,
+      assessmentCount: assessments.length,
+      strategyCount: strategies.length,
+      criteria
+    });
+
+    // Analyze each route from execution strategy perspective
+    const routeScores: { routeId: string; score: DecisionScore; confidence: number; reasoning: string[] }[] = [];
+
+    for (const route of routes) {
+      const routeAssessment = assessments.find(a => a.routeId === route.id);
+      const routeStrategy = strategies.find(s => s.routeId === route.id);
+      
+      const score = await this.evaluateRouteForConsensus(route, routeAssessment, routeStrategy, criteria);
+      routeScores.push(score);
+    }
+
+    // Select the best route based on execution strategy criteria
+    const bestRoute = routeScores.reduce((best, current) => 
+      current.score.totalScore > best.score.totalScore ? current : best
+    );
+
+    console.log('🎯 [EXECUTION STRATEGY AGENT] Best route selected:', {
+      routeId: bestRoute.routeId,
+      totalScore: bestRoute.score.totalScore,
+      confidence: bestRoute.confidence
+    });
+
+    // Create consensus response
+    const consensusResponse = {
+      responseId,  // Fixed: use responseId not requestId
+      agentId: this.config.id,
+      recommendedRoute: bestRoute.routeId,
+      score: bestRoute.score,
+      confidence: bestRoute.confidence,
+      reasoning: bestRoute.reasoning
+    };
+
+    // Send response back to coordinator
+    const responseMessage: AgentMessage = {
+      id: `consensus-response-${Date.now()}`,
+      from: this.config.id,
+      to: 'coordinator',
+      type: MessageType.CONSENSUS_REQUEST, // Send back as same type with response payload
+      payload: { ...consensusResponse, responseId },
+      timestamp: Date.now(),
+      priority: MessagePriority.HIGH
+    };
+
+    console.log('📤 [EXECUTION STRATEGY AGENT] Sending consensus response:', {
+      recommendedRoute: consensusResponse.recommendedRoute,
+      confidence: consensusResponse.confidence,
+      responseId
+    });
+
+    // Emit the response message
+    this.emit('message', responseMessage);
+  }
+
+  private async evaluateRouteForConsensus(
+    route: RouteProposal,
+    assessment: RiskAssessment | undefined,
+    strategy: ExecutionStrategy | undefined,
+    criteria: DecisionCriteria
+  ): Promise<{ routeId: string; score: DecisionScore; confidence: number; reasoning: string[] }> {
+    const reasoning: string[] = [];
+    
+    // Cost evaluation (lower estimated gas = higher score)
+    const gasCost = parseFloat(route.estimatedGas) || 200000;
+    const costScore = Math.max(0, 1 - (gasCost / 500000)); // Normalize against 500k gas
+    reasoning.push(`Gas cost: ${gasCost} units (score: ${(costScore * 100).toFixed(0)}%)`);
+
+    // Time evaluation (faster execution = higher score)
+    const timeScore = Math.max(0, 1 - (route.estimatedTime / 600)); // Normalize against 10 minutes
+    reasoning.push(`Execution time: ${route.estimatedTime}s (score: ${(timeScore * 100).toFixed(0)}%)`);
+
+    // Security evaluation (MEV protection + low risk = higher score)
+    let securityScore = 0.5; // Default
+    if (route.advantages.some(adv => adv.toLowerCase().includes('mev'))) {
+      securityScore += 0.3;
+      reasoning.push('MEV protection detected (+30%)');
+    }
+    if (assessment) {
+      const riskPenalty = assessment.overallRisk * 0.4;
+      securityScore = Math.max(0, securityScore - riskPenalty);
+      reasoning.push(`Risk assessment: ${(assessment.overallRisk * 100).toFixed(0)}% risk (-${(riskPenalty * 100).toFixed(0)}%)`);
+    }
+
+    // Reliability evaluation (confidence + established protocols = higher score)
+    const reliabilityScore = route.confidence;
+    reasoning.push(`Route confidence: ${(route.confidence * 100).toFixed(0)}%`);
+
+    // Slippage evaluation (price impact consideration)
+    const priceImpact = parseFloat(route.priceImpact) || 0.001;
+    const slippageScore = Math.max(0, 1 - (priceImpact * 100)); // Penalize high price impact
+    reasoning.push(`Price impact: ${(priceImpact * 100).toFixed(2)}% (score: ${(slippageScore * 100).toFixed(0)}%)`);
+
+    // Calculate weighted total score
+    const totalScore = 
+      (costScore * criteria.cost) +
+      (timeScore * criteria.time) +
+      (securityScore * criteria.security) +
+      (reliabilityScore * criteria.reliability) +
+      (slippageScore * criteria.slippage);
+
+    const decisionScore: DecisionScore = {
+      routeId: route.id,
+      totalScore,
+      breakdown: {
+        cost: costScore,
+        time: timeScore,
+        security: securityScore,
+        reliability: reliabilityScore,
+        slippage: slippageScore
+      },
+      reasoning
+    };
+
+    // Calculate confidence based on data availability and quality
+    let confidence = 0.7; // Base confidence
+    if (assessment) confidence += 0.1; // Bonus for risk assessment
+    if (strategy) confidence += 0.1; // Bonus for execution strategy
+    if (route.advantages.length > 2) confidence += 0.05; // Bonus for detailed advantages
+    if (route.path.length > 0) confidence += 0.05; // Bonus for detailed path
+    confidence = Math.min(0.95, confidence); // Cap at 95%
+
+    return {
+      routeId: route.id,
+      score: decisionScore,
+      confidence,
+      reasoning
+    };
   }
 }

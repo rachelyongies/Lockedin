@@ -547,7 +547,17 @@ export abstract class BaseAgent extends EventEmitter {
     const issues: string[] = [];
     
     if (this.status !== AgentStatus.ACTIVE) {
-      issues.push(`Agent status is ${this.status}`);
+      if (this.status === AgentStatus.INITIALIZING) {
+        // Check if agent has been initializing for too long
+        const initializingTime = Date.now() - this.metrics.lastActivity;
+        if (initializingTime > 30000) { // 30 seconds
+          issues.push(`Agent stuck in INITIALIZING state for ${Math.round(initializingTime / 1000)}s - possible timeout or hanging initialization`);
+        } else {
+          issues.push(`Agent status is ${this.status} (${Math.round(initializingTime / 1000)}s)`);
+        }
+      } else {
+        issues.push(`Agent status is ${this.status}`);
+      }
     }
     
     // More lenient success rate check - only flag if we have data and it's poor

@@ -10,7 +10,9 @@ import {
   AgentCapabilities,
   RouteProposal,
   RouteStep,
-  MarketConditions
+  MarketConditions,
+  DecisionCriteria,
+  RiskAssessment
 } from './types';
 import { DataAggregationService, FusionQuoteParams, FusionQuoteResponse } from '../services/DataAggregationService';
 
@@ -202,8 +204,14 @@ export class FusionAwarePathfinder {
     const feasibleEdges: PoolEdge[] = [];
     let fusionQueries = 0;
 
-    // Batch process edges for better performance
-    const BATCH_SIZE = 5;
+    // Validate parameters first to avoid undefined API calls
+    if (!params.fromToken || !params.toToken || !params.amountIn || params.amountIn === '0') {
+      console.warn('⚠️ Invalid parameters for Fusion filtering, skipping API calls');
+      return { edges, fusionQueries: 0 };
+    }
+
+    // Batch process edges for better performance with rate limiting
+    const BATCH_SIZE = 3; // Reduced batch size to avoid rate limits
     const batches = this.chunkArray(edges, BATCH_SIZE);
 
     for (const batch of batches) {
@@ -673,8 +681,16 @@ export class RouteDiscoveryAgent extends BaseAgent {
     console.log('🛣️ Initializing Enhanced Route Discovery Agent with Fusion integration...');
     
     try {
-      // Always build the routing graph on initialization
-      await this.buildRoutingGraph();
+      // Add timeout to prevent hanging during graph building
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Route graph building timed out')), 3000) // Reduced to 3 seconds for demo
+      );
+      
+      await Promise.race([
+        this.buildRoutingGraph(),
+        timeoutPromise
+      ]);
+      
       console.log(`✅ Routing graph built with ${this.routingGraph.nodes.size} nodes and ${Array.from(this.routingGraph.edges.values()).flat().length} edges`);
     } catch (error) {
       console.error('❌ Failed to build routing graph, using fallback data:', error);
@@ -712,6 +728,10 @@ export class RouteDiscoveryAgent extends BaseAgent {
         case MessageType.MARKET_DATA:
           console.log('🔄 Processing MARKET UPDATE...');
           result = await this.handleMarketUpdate(message);
+          break;
+        case MessageType.CONSENSUS_REQUEST:
+          console.log('🔄 Processing CONSENSUS REQUEST...');
+          result = await this.handleConsensusRequest(message);
           break;
         default:
           console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
@@ -1847,13 +1867,13 @@ export class RouteDiscoveryAgent extends BaseAgent {
           const marketConditionsTyped = marketConditions as { gasPrices?: { ethereum?: { standard?: string } } };
           const userPreferencesTyped = userPreferences as { maxSlippage?: number; gasPreference?: string; riskTolerance?: string };
           const params: RouteSearchParams = {
-            fromToken: routeProposalTyped?.fromToken,
-            toToken: routeProposalTyped?.toToken,
-            amountIn: routeProposalTyped?.amountIn,
+            fromToken: routeProposalTyped?.fromToken || '',
+            toToken: routeProposalTyped?.toToken || '',
+            amountIn: routeProposalTyped?.amountIn || '0',
             chainId: payload.chainId || 1,
             maxHops: 3,
             maxSlippage: userPreferencesTyped?.maxSlippage || 0.5,
-            gasPrice: routeProposalTyped?.gasPrice || marketConditionsTyped?.gasPrices?.ethereum?.standard,
+            gasPrice: routeProposalTyped?.gasPrice || parseInt(marketConditionsTyped?.gasPrices?.ethereum?.standard || '20'),
             prioritizeGas: userPreferencesTyped?.gasPreference === 'slow',
             prioritizeSlippage: userPreferencesTyped?.riskTolerance === 'conservative',
             excludeProtocols: [],
@@ -1883,13 +1903,13 @@ export class RouteDiscoveryAgent extends BaseAgent {
       
       // Transform the payload to match RouteSearchParams interface
       const params: RouteSearchParams = {
-        fromToken: rawParams?.fromToken as string,
-        toToken: rawParams?.toToken as string,
-        amountIn: rawParams?.amount as string,
+        fromToken: (rawParams?.fromToken as string) || '',
+        toToken: (rawParams?.toToken as string) || '',
+        amountIn: (rawParams?.amount as string) || '0',
         chainId: (rawParams?.chainId as number) || 1,
         maxHops: (rawParams?.maxHops as number) || 3,
         maxSlippage: (rawParams?.maxSlippage as number) || 0.5,
-        gasPrice: (rawParams?.gasPrice as number) || 0,
+        gasPrice: (rawParams?.gasPrice as number) || 20,
         prioritizeGas: (rawParams?.prioritizeGas as boolean) || false,
         prioritizeSlippage: (rawParams?.prioritizeSlippage as boolean) || false,
         excludeProtocols: (rawParams?.excludeProtocols as string[]) || [],
@@ -2644,5 +2664,101 @@ export class RouteDiscoveryAgent extends BaseAgent {
     }
 
     return steps;
+  }
+
+  private async handleConsensusRequest(message: AgentMessage): Promise<{ type: string; messageSent: boolean; agentId: string }> {
+    try {
+      const payload = message.payload as {
+        requestId: string;
+        routes: RouteProposal[];
+        assessments: RiskAssessment[];
+        criteria: DecisionCriteria;
+        deadline: number;
+        responseId: string;
+      };
+
+      console.log(`🎯 [CONSENSUS] Route Discovery Agent evaluating ${payload.routes.length} routes for consensus`);
+
+      // Evaluate routes based on route optimization criteria
+      const bestRoute = this.selectBestRouteForConsensus(payload.routes, payload.criteria);
+      
+      // Create consensus response
+      const consensusResponse = {
+        responseId: payload.responseId,  // Fixed: use responseId not requestId
+        agentId: this.config.id,
+        recommendedRoute: bestRoute.routeId,
+        score: bestRoute.score,
+        confidence: bestRoute.confidence,
+        reasoning: bestRoute.reasoning
+      };
+
+      // Send response back to coordinator
+      await this.sendMessage({
+        to: message.from,
+        type: MessageType.CONSENSUS_REQUEST,
+        payload: consensusResponse,
+        priority: MessagePriority.HIGH
+      });
+
+      console.log(`✅ [CONSENSUS] Route Discovery Agent sent recommendation: ${bestRoute.routeId}`);
+      
+      return {
+        type: 'consensus-response',
+        messageSent: true,
+        agentId: this.config.id
+      };
+    } catch (error) {
+      console.error('❌ [CONSENSUS] Error handling consensus request:', error);
+      return {
+        type: 'consensus-error',
+        messageSent: false,
+        agentId: this.config.id
+      };
+    }
+  }
+
+  private selectBestRouteForConsensus(
+    routes: RouteProposal[], 
+    criteria: DecisionCriteria
+  ): { routeId: string; score: any; confidence: number; reasoning: string[] } {
+    let bestRoute = routes[0];
+    let bestScore = 0;
+    
+    for (const route of routes) {
+      // Calculate route optimization score
+      const outputScore = parseFloat(route.estimatedOutput) || 0;
+      const confidenceScore = route.confidence || 0.5;
+      const gasScore = 1 / (parseFloat(route.estimatedGas) || 1000000); // Lower gas is better
+      
+      // Weight based on user criteria (emphasize cost and time)
+      const combinedScore = 
+        (outputScore / 1000000000000000000 * criteria.cost) + // Normalize ETH output
+        (confidenceScore * criteria.reliability) +
+        (gasScore * criteria.cost * 0.1);
+      
+      if (combinedScore > bestScore) {
+        bestScore = combinedScore;
+        bestRoute = route;
+      }
+    }
+
+    return {
+      routeId: bestRoute.id,
+      score: {
+        totalScore: bestScore,
+        breakdown: {
+          cost: parseFloat(bestRoute.estimatedOutput) / 1000000000000000000,
+          reliability: bestRoute.confidence || 0.5,
+          gas: 1 / (parseFloat(bestRoute.estimatedGas) || 1000000)
+        }
+      },
+      confidence: bestRoute.confidence || 0.5,
+      reasoning: [
+        `Selected route ${bestRoute.id} for optimal output`,
+        `Output: ${(parseFloat(bestRoute.estimatedOutput) / 1000000000000000000).toFixed(6)} ETH`,
+        `Confidence: ${((bestRoute.confidence || 0.5) * 100).toFixed(0)}%`,
+        `Gas estimate: ${bestRoute.estimatedGas}`
+      ]
+    };
   }
 }
