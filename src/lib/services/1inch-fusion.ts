@@ -2,8 +2,8 @@ import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode } f
 
 const FUSION_API_CONFIG = {
   baseUrl: process.env.NEXT_PUBLIC_1INCH_FUSION_API_URL || 'https://api.1inch.dev/fusion',
-  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || 'demo_api_key',
-  timeout: 30000, // set min time out 
+  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || '',
+  timeout: 30000,  
   retryAttempts: 3,
   retryDelay: 1000,
 } as const;
@@ -14,7 +14,7 @@ export interface FusionQuoteRequest {
   toTokenAddress: string;
   amount: string;
   walletAddress: string;
-  source?: string; // Your app identifier
+  source?: string; 
   enableEstimate?: boolean;
   permit?: string;
   fee?: number;
@@ -229,22 +229,61 @@ const TOKEN_ADDRESS_MAP: Record<string, string> = {
   'WETH': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   'WBTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
   'USDC': '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C',
+  'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+  'DAI': '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+  'LINK': '0x514910771AF9Ca656af840dff83E8264EcF986CA',
+  'UNI': '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
+  'AAVE': '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9',
+  'CRV': '0xD533a949740bb3306d119CC777fa900bA034cd52',
+  'COMP': '0xc00e94Cb662C3520282E6f5717214004A7f26888',
   
-  // Testnet addresses (if needed)
+  // Ethereum Testnet (Goerli)
   'ETH_GOERLI': '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE',
   'WETH_GOERLI': '0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6',
   'WBTC_GOERLI': '0x45AC1a6661fD0D4ec7Bf9aE58a9F63A7E2b51e73',
+  'USDC_GOERLI': '0x07865c6E87B9F70255377e024ace6630C1Eaa37F',
+  'USDT_GOERLI': '0x110a13FC3efE6A245B50102D2d529B3d88A5F3c4',
+  
+  // Ethereum Testnet (Sepolia)
+  'ETH_SEPOLIA': '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE',
+  'WETH_SEPOLIA': '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
+  'USDC_SEPOLIA': '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
 };
 
 // Convert our token to 1inch token address
 function getTokenAddress(token: Token): string {
+  // Handle Bitcoin network - use WBTC on Ethereum
   if (token.network === 'bitcoin') {
-    // For Bitcoin, we need to use WBTC on Ethereum
     return TOKEN_ADDRESS_MAP['WBTC'];
   }
   
-  const key = `${token.symbol}_${token.network === 'ethereum' ? (token.chainId === 1 ? '' : 'GOERLI') : ''}`;
-  return TOKEN_ADDRESS_MAP[key] || ('address' in token ? token.address || '' : '');
+  // Handle different Ethereum networks
+  if (token.network === 'ethereum') {
+    let networkSuffix = '';
+    
+    if (token.chainId === 1) {
+      networkSuffix = ''; // Mainnet
+    } else if (token.chainId === 5) {
+      networkSuffix = '_GOERLI';
+    } else if (token.chainId === 11155111) {
+      networkSuffix = '_SEPOLIA';
+    }
+    
+    const key = `${token.symbol}${networkSuffix}`;
+    const address = TOKEN_ADDRESS_MAP[key];
+    
+    if (address) {
+      return address;
+    }
+  }
+  
+  // Fallback to token's own address if available
+  if ('address' in token && token.address) {
+    return token.address;
+  }
+  
+  // Final fallback - try mainnet address
+  return TOKEN_ADDRESS_MAP[token.symbol] || '';
 }
 
 // Main Fusion API Service

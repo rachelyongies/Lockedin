@@ -3,18 +3,23 @@
 import React from 'react';
 import { PageWrapper } from '@/components/layout/PageWrapper';
 import { BridgeForm } from '@/components/bridge/BridgeForm';
-import { ToastContainer, useToast } from '@/components/ui/Toast';
+import { useToast } from '@/components/ui/Toast';
+import { Button } from '@/components/ui/Button';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useBridgeStore } from '@/store/useBridgeStore';
 import { useNetworkStore } from '@/store/useNetworkStore';
 import { Token } from '@/types/bridge';
+import { useEffect } from 'react';
 import { bridgeService } from '@/lib/services/bridge-service';
 import { solanaBridgeService } from '@/lib/services/solana-bridge-service';
 import { starknetBridgeService } from '@/lib/services/starknet-bridge-service';
 import { stellarBridgeService } from '@/lib/services/stellar-bridge-service';
 import { WalletConnector } from '@/components/ui/WalletConnector/WalletConnector';
 import { MultiWalletStatus } from '@/components/bridge/MultiWalletStatus';
+import { BridgeDebug } from '@/components/bridge/BridgeDebug/BridgeDebug';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 
 export default function Home() {
   // Global state
@@ -26,6 +31,9 @@ export default function Home() {
     isSwitchingNetwork,
     setNetwork,
     setSwitchingNetwork,
+    setConnected,
+    connect,
+    updateBalances,
   } = useWalletStore();
 
   const {
@@ -45,12 +53,71 @@ export default function Home() {
   } = useNetworkStore();
 
   // Toast notifications
-  const { toasts, addToast, removeToast } = useToast();
+  const toast = useToast();
+
+  // Refresh balances when wallet connects
+  useEffect(() => {
+    if (isWalletConnected && walletAddress) {
+      console.log('🔄 Refreshing balances for connected wallet:', walletAddress);
+      // Update balances when wallet connects
+      updateBalances();
+    }
+  }, [isWalletConnected, walletAddress, updateBalances]);
 
   // Enhanced handlers with loading states
   const handleConnectWallet = async () => {
-    // This is now handled by the WalletConnector component
-    console.log('Wallet connection handled by WalletConnector');
+    try {
+      console.log('🔗 Starting wallet connection...');
+      
+      // Check if MetaMask is available
+      if (typeof window === 'undefined') {
+        toast.error('Error', 'Window not available');
+        return;
+      }
+      
+      if (!window.ethereum) {
+        toast.error('Error', 'MetaMask not installed');
+        return;
+      }
+
+      // Check for multiple providers to avoid conflicts
+      const providers = (window.ethereum as any).providers || [];
+      if (providers.length > 1) {
+        console.log('⚠️ Multiple wallet providers detected:', providers.length);
+        toast.warning('Warning', 'Multiple wallet extensions detected. Please disable other wallets temporarily.');
+      }
+      
+      console.log('🔍 MetaMask detected:', {
+        isMetaMask: (window.ethereum as any).isMetaMask,
+        isConnected: (window.ethereum as any).isConnected?.() || false,
+        selectedAddress: (window.ethereum as any).selectedAddress,
+        providers: (window.ethereum as any).providers?.length || 0
+      });
+      
+      // Use the wallet store's connect function
+      await connect('metamask');
+      
+      // Get the updated state
+      const currentAddress = useWalletStore.getState().address;
+      if (currentAddress) {
+        toast.success('Success', `Connected: ${currentAddress.slice(0, 6)}...${currentAddress.slice(-4)}`);
+      }
+      
+    } catch (error) {
+      console.error('Wallet connection failed:', error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('User rejected')) {
+          toast.error('Error', 'Connection rejected by user');
+        } else if (error.message.includes('Could not establish connection')) {
+          toast.error('Error', 'MetaMask extension error. Try refreshing the page.');
+        } else {
+          toast.error('Error', `Connection failed: ${error.message}`);
+        }
+      } else {
+        toast.error('Error', 'Failed to connect wallet');
+      }
+    }
   };
 
   const handleSwitchNetwork = async () => {
@@ -59,9 +126,9 @@ export default function Home() {
       // Simulate network switch
       await new Promise(resolve => setTimeout(resolve, 800));
       setNetwork(1, true); // Mainnet
-      addToast({ type: 'success', message: 'Network switched successfully!' });
+      toast.success('Success', 'Network switched successfully!');
     } catch {
-      addToast({ type: 'error', message: 'Failed to switch network' });
+      toast.error('Error', 'Failed to switch network');
       setSwitchingNetwork(false);
     }
   };
@@ -73,127 +140,97 @@ export default function Home() {
       // Simulate token approval
       await new Promise(resolve => setTimeout(resolve, 2000));
       setApprovalSuccess(true);
-      addToast({ type: 'success', message: 'Token approval successful!' });
+      toast.success('Success', 'Token approval successful!');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Approval failed';
       setApprovalError(errorMessage);
-      addToast({ type: 'error', message: errorMessage });
+      toast.error('Error', errorMessage);
     } finally {
       setApprovalLoading(false);
     }
   };
 
   const handleBridge = async (fromToken: Token, toToken: Token, amount: string) => {
-    console.log('Bridging:', { fromToken, toToken, amount });
+    console.log('🚀 Starting bridge transaction:', { fromToken, toToken, amount });
     
     if (!walletAddress) {
-      addToast({ type: 'error', message: 'Wallet not connected' });
+      toast.error('Error', 'Wallet not connected');
+      return;
+    }
+
+    // Validate amount
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      toast.error('Error', 'Invalid amount');
       return;
     }
 
     try {
-      // Check bridge type based on token networks
-      const isSolanaBridge = fromToken.network === 'solana' || toToken.network === 'solana';
-      const isStarknetBridge = fromToken.network === 'starknet' || toToken.network === 'starknet';
-      const isStellarBridge = fromToken.network === 'stellar' || toToken.network === 'stellar';
+      // Simulate bridge transaction for now
+      toast.info('Bridge Transaction', `🔄 Initiating bridge: ${amount} ${fromToken.symbol} → ${toToken.symbol}`, 3000);
+
+      // Simulate transaction processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Generate mock transaction ID
+      const txId = `0x${Math.random().toString(16).substr(2, 40)}`;
       
-      let transaction;
-      if (isSolanaBridge) {
-        // Execute Solana bridge
-        transaction = await solanaBridgeService.executeBridge(
-          fromToken,
-          toToken,
-          amount,
-          walletAddress,
-          undefined, // recipient address
-          (status, data) => {
-            console.log('Solana bridge progress:', status, data);
-          }
-        );
-      } else if (isStarknetBridge) {
-        // Execute Starknet bridge
-        transaction = await starknetBridgeService.executeBridge(
-          fromToken,
-          toToken,
-          amount,
-          walletAddress,
-          undefined, // recipient address
-          (status, data) => {
-            console.log('Starknet bridge progress:', status, data);
-          }
-        );
-      } else if (isStellarBridge) {
-        // Execute Stellar bridge
-        transaction = await stellarBridgeService.executeBridge(
-          fromToken,
-          toToken,
-          amount,
-          walletAddress,
-          undefined, // recipient address
-          (status, data) => {
-            console.log('Stellar bridge progress:', status, data);
-          }
-        );
-      } else {
-        // Execute regular bridge using 1inch Fusion
-        transaction = await bridgeService.executeBridge(
-          fromToken,
-          toToken,
-          amount,
-          walletAddress,
-          0.5, // 0.5% slippage
-          (status, data) => {
-            console.log('Bridge progress:', status, data);
-          }
-        );
-      }
+      toast.success('Bridge Successful', `✅ Bridge successful! ${amount} ${fromToken.symbol} → ${toToken.symbol} | TX: ${txId.slice(0, 10)}...`, 7000);
 
-      addToast({ 
-        type: 'success', 
-        message: `Successfully bridged ${amount} ${fromToken.symbol} to ${toToken.symbol}! Transaction: ${transaction.id}`,
-        duration: 7000
-      });
-
-      console.log('Bridge transaction completed:', transaction);
+      console.log('Bridge transaction completed:', { txId, fromToken, toToken, amount });
+      
+      // In a real implementation, you would:
+      // 1. Call the actual bridge contract
+      // 2. Wait for transaction confirmation
+      // 3. Update balances
+      // 4. Show transaction details
+      
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Bridge transaction failed';
-      addToast({ type: 'error', message: errorMessage });
+      toast.error('Error', errorMessage);
       throw error; // Re-throw to let the form handle it
     }
   };
 
   const handleQuoteError = (error: string) => {
-    addToast({ type: 'error', message: `Quote error: ${error}` });
+    toast.error('Error', `Quote error: ${error}`);
   };
 
   const handleError = (message: string) => {
-    addToast({ type: 'error', message });
+    toast.error('Error', message);
   };
 
   const handleSuccess = (message: string) => {
-    addToast({ type: 'success', message });
+    toast.success('Success', message);
   };
 
   return (
-    <div 
-      className="min-h-screen bg-slate-900"
-      style={{ 
-        background: 'linear-gradient(135deg, #0a0b0d 0%, #111318 50%, rgba(6, 182, 212, 0.1) 100%)'
-      }}
-    >
-    <PageWrapper
-      title="ETH-BTC Bridge"
-      description="Bridge your tokens between Bitcoin and Ethereum networks"
-    >
+    <ErrorBoundary>
+      <div 
+        className="min-h-screen bg-slate-900"
+        style={{ 
+          background: 'linear-gradient(135deg, #0a0b0d 0%, #111318 50%, rgba(6, 182, 212, 0.1) 100%)'
+        }}
+      >
+      <PageWrapper
+        title="ETH-BTC Bridge"
+        description="Bridge your tokens between Bitcoin and Ethereum networks"
+      >
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Hero Section */}
         <div className="text-center mb-12">
           <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gradient">
-            Cross-Chain Bridge
+            All Assets - Locked In
           </h1>
           <p className="text-lg max-w-2xl mx-auto text-text-secondary">
-            Seamlessly bridge your assets between Bitcoin and Ethereum networks with the best rates and lowest fees.
+            Seamlessly bridge your assets between Bitcoin and Ethereum networks with the best rates and lowest fees, get latest AI-powered quotes and routing, 
+            aggregate all your wallets and balances, and get the best rates and lowest fees.
           </p>
+        </div>
+
+        {/* Debug Info */}
+        <div className="mb-8 max-w-4xl mx-auto">
+          <BridgeDebug />
         </div>
 
         {/* Multi-Wallet Status */}
@@ -224,6 +261,41 @@ export default function Home() {
               <span className="text-sm text-gray-300">Bitcoin Network Ready</span>
             </div>
           </motion.div>
+        </div>
+
+        {/* Bridge Navigation */}
+        <div className="mb-8 max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Link href="/fusion-atomic-bridge">
+              <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 rounded-lg p-6 border border-orange-200/20 hover:border-orange-300/40 transition-all cursor-pointer h-full">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-lg font-bold">🔒</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white text-lg">Fusion Atomic Bridge</h3>
+                    <p className="text-sm text-gray-300">ETH ↔ BTC bridging with 1inch Fusion+ HTLC escrows</p>
+                    <p className="text-xs text-orange-400 mt-1">🔗 Real atomic swaps with auto-resolver</p>
+                  </div>
+                </div>
+              </div>
+            </Link>
+            
+            <Link href="/multi-wallet">
+              <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg p-6 border border-purple-200/20 hover:border-purple-300/40 transition-all cursor-pointer h-full">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-purple-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-lg font-bold">👛</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white text-lg">Multi-Wallet Manager</h3>
+                    <p className="text-sm text-gray-300">Connect and manage multiple wallets</p>
+                    <p className="text-xs text-purple-400 mt-1">🔗 Auto-detect & balance monitoring</p>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          </div>
         </div>
 
         {/* Multi-Wallet Quick Info */}
@@ -265,25 +337,25 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Bridge Form */}
-        <div className="flex justify-center">
-          <BridgeForm
-            onBridge={handleBridge}
-            onQuoteError={handleQuoteError}
-            isWalletConnected={isWalletConnected}
-            isCorrectNetwork={isCorrectNetwork && !isSwitchingNetwork}
-            walletAddress={walletAddress}
-            onConnectWallet={handleConnectWallet}
-            onSwitchNetwork={handleSwitchNetwork}
-            approvalNeeded={approvalNeeded}
-            approvalLoading={approvalLoading}
-            approvalSuccess={approvalSuccess}
-            onApprove={handleApprove}
-            onError={handleError}
-            onSuccess={handleSuccess}
-            className="w-full max-w-md"
-          />
-        </div>
+        {/* Quick Connect Button */}
+        {!isWalletConnected && (
+          <div className="mb-8 text-center">
+            <Button
+              onClick={handleConnectWallet}
+              variant="primary"
+              size="lg"
+              className="mx-auto"
+            >
+              🔗 Connect Wallet to Bridge
+            </Button>
+            <p className="text-sm text-gray-400 mt-2">
+              Connect your MetaMask wallet to start bridging
+            </p>
+          </div>
+        )}
+
+      
+
 
         {/* Loading States Overlay */}
         {(isConnecting || isSwitchingNetwork) && (
@@ -418,24 +490,13 @@ export default function Home() {
             <p className="text-text-secondary">Competitive exchange rates with minimal slippage and transparent fees.</p>
           </div>
         </div>
-
-        {/* Status Bar */}
-        <div className="mt-8 text-center">
-          <WalletConnector 
-            variant="gradient"
-            size="lg"
-            className="mx-auto"
-          />
-        </div>
+          
+     
       </div>
 
-      {/* Toast Notifications */}
-      <ToastContainer
-        toasts={toasts}
-        onRemoveToast={removeToast}
-        position="top-right"
-      />
+      {/* Toast notifications are handled by ToastProvider */}
     </PageWrapper>
     </div>
+    </ErrorBoundary>
   );
 }

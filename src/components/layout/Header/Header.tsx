@@ -102,6 +102,8 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
     const getNavItems = useCallback(() => {
       const baseItems = [
         { href: '/', label: 'Bridge', emoji: '🌉' },
+        // { href: '/wbtc-bridge', label: 'WBTC Bridge', emoji: '₿' },
+        // { href: '/live-bridge', label: 'Live HTLC', emoji: '🔒' },
         { href: '/multi-wallet', label: 'Multi-Wallet', emoji: '👛' },
         { href: '/demo', label: 'AI Demo', emoji: '🚀' },
         { href: '/transactions', label: 'Transactions', emoji: '📊' },
@@ -211,7 +213,7 @@ export const Header = React.forwardRef<HTMLElement, HeaderProps>(
               <div className="hidden sm:block">
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl font-bold bg-gradient-to-r from-primary-400 to-accent-400 bg-clip-text text-transparent">
-                    UniteDefi
+                    LockedIn
                   </h1>
                   {environment === 'testnet' && (
                     <span className="px-1.5 py-0.5 bg-warning/20 text-warning text-xs font-medium rounded">
