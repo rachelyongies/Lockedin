@@ -1,0 +1,164 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, getCachedResponse, setCachedResponse, getClientId, performCleanup } from '@/lib/utils/rate-limit-cache';
+
+const GAS_TRACKER_API_CONFIG = {
+  baseUrl: 'https://api.1inch.dev/gas-price/v1.2',
+  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || 'demo_api_key',
+  timeout: 30000,
+};
+
+function getCacheKey(chainId: string): string {
+  return `gas_tracker_${chainId}`;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const chainId = searchParams.get('chainId') || '1';
+    
+    // Perform periodic cleanup
+    performCleanup();
+    
+    // Get client ID for rate limiting
+    const clientId = getClientId(request);
+    
+    // Check rate limiting
+    const rateLimitResult = checkRateLimit(clientId);
+    if (rateLimitResult.isLimited) {
+      console.log('⚠️ Rate limit exceeded for client:', clientId);
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please wait before making more requests.' },
+        { 
+          status: 429, 
+          headers: { 
+            'Retry-After': rateLimitResult.retryAfter?.toString() || '60',
+            'X-RateLimit-Limit': '15',
+            'X-RateLimit-Remaining': '0'
+          } 
+        }
+      );
+    }
+    
+    console.log('🔥 1inch Gas Tracker API - Request');
+    console.log('📋 Chain ID:', chainId);
+    
+    // Check cache first
+    const cacheKey = getCacheKey(chainId);
+    const cachedResponse = getCachedResponse(cacheKey);
+    if (cachedResponse) {
+      console.log('📦 Returning cached gas tracker data');
+      return NextResponse.json(cachedResponse);
+    }
+
+    const endpoint = `${GAS_TRACKER_API_CONFIG.baseUrl}/${chainId}`;
+    console.log('🎯 1inch Gas Tracker API endpoint:', endpoint);
+
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${GAS_TRACKER_API_CONFIG.apiKey}`,
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(GAS_TRACKER_API_CONFIG.timeout),
+    });
+
+    console.log('📊 1inch Gas Tracker API Response:', response.status, response.statusText);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ 1inch Gas Tracker API Error:', errorText);
+      return NextResponse.json(
+        { error: `1inch Gas Tracker API error: ${errorText}` },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+    console.log('✅ 1inch Gas Tracker API Success - Gas data received');
+    console.log('📊 Raw gas data from 1inch:', JSON.stringify(data, null, 2));
+
+    // Enhance response with additional analysis
+    const enhancedData = {
+      ...data,
+      analysis: {
+        recommendation: getGasRecommendation(data),
+        trend: analyzeGasTrend(data),
+        optimalTiming: getOptimalTiming()
+      },
+      timestamp: Date.now()
+    };
+    
+    // Cache the response
+    setCachedResponse(cacheKey, enhancedData);
+
+    return NextResponse.json(enhancedData);
+  } catch (error) {
+    console.error('❌ 1inch Gas Tracker API Proxy Error:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch from 1inch Gas Tracker API' },
+      { status: 500 }
+    );
+  }
+}
+
+// Helper functions for gas analysis
+interface GasData {
+  baseFee?: string;
+  low?: { maxFeePerGas?: string };
+  medium?: { maxFeePerGas?: string };
+  high?: { maxFeePerGas?: string };
+  instant?: { maxFeePerGas?: string };
+}
+
+function getGasRecommendation(gasData: GasData): string {
+  if (!gasData.baseFee) return 'Execute when ready';
+  
+  const baseFee = parseInt(gasData.baseFee);
+  const high = gasData.high?.maxFeePerGas ? parseInt(gasData.high.maxFeePerGas) : baseFee * 1.2;
+  
+  // Convert wei to gwei for comparison
+  const baseFeeGwei = baseFee / 1e9;
+  const highGwei = high / 1e9;
+  
+  if (highGwei < baseFeeGwei * 1.1) {
+    return 'Execute now - Gas prices are very low';
+  } else if (highGwei < baseFeeGwei * 1.3) {
+    return 'Good time to execute - Gas prices are reasonable';
+  } else if (highGwei < baseFeeGwei * 2.0) {
+    return 'Consider waiting - Gas prices are high';
+  } else {
+    return 'Wait for lower gas - Prices are extremely high';
+  }
+}
+
+function analyzeGasTrend(gasData: GasData): string {
+  // Simple trend analysis based on current gas price tiers
+  if (gasData.medium?.maxFeePerGas && gasData.high?.maxFeePerGas) {
+    const mediumGas = parseInt(gasData.medium.maxFeePerGas);
+    const highGas = parseInt(gasData.high.maxFeePerGas);
+    const ratio = highGas / mediumGas;
+    
+    if (ratio < 1.1) {
+      return 'Stable network - Low congestion';
+    } else if (ratio < 1.3) {
+      return 'Normal activity - Moderate congestion';
+    } else {
+      return 'High activity - Network congested';
+    }
+  }
+  
+  return 'Stable network conditions';
+}
+
+function getOptimalTiming(): string {
+  const currentHour = new Date().getUTCHours();
+  
+  // General patterns: gas is usually lower during UTC off-hours (2-8 AM)
+  if (currentHour >= 2 && currentHour <= 8) {
+    return 'OPTIMAL - Off-peak hours';
+  } else if (currentHour >= 14 && currentHour <= 18) {
+    return 'PEAK - High activity period, consider waiting';
+  } else {
+    return 'NORMAL - Standard network activity';
+  }
+}

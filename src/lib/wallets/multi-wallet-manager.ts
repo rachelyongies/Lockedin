@@ -320,9 +320,14 @@ export class MultiWalletManager {
       
       try {
         console.log('🔗 Requesting accounts from MetaMask...');
-        const accounts = await provider.request({ 
-          method: 'eth_requestAccounts' 
-        }) as string[];
+        const accounts = await Promise.race([
+          provider.request({ 
+            method: 'eth_requestAccounts' 
+          }) as Promise<string[]>,
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Connection timeout')), 10000)
+          )
+        ]);
         
         console.log('✅ MetaMask accounts received:', accounts.length > 0 ? `${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}` : 'none');
         
@@ -359,6 +364,19 @@ export class MultiWalletManager {
         };
       } catch (error) {
         console.error('MetaMask connection failed:', error);
+        
+        // Update wallet state to reflect error
+        this.updateWalletState(walletName, {
+          isConnected: false,
+          status: 'error',
+          name: walletName,
+          chainId,
+          address: undefined,
+          provider: null,
+          lastUpdated: Date.now(),
+          error: error instanceof Error ? error.message : 'MetaMask connection failed'
+        });
+        
         return {
           success: false,
           error: error instanceof Error ? error.message : 'MetaMask connection failed'
@@ -604,7 +622,12 @@ export class MultiWalletManager {
         console.log('🔗 Requesting connection from Phantom via window.solana...');
         
         // First, try to connect without network switching
-        const response = await windowSolana.connect!();
+        const response = await Promise.race([
+          windowSolana.connect!(),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Solana connection timeout')), 10000)
+          )
+        ]);
         const address = response.publicKey.toString();
         
         console.log('✅ Phantom connected successfully, address:', address);
@@ -654,10 +677,24 @@ export class MultiWalletManager {
             errorMessage = 'Connection rejected by user';
           } else if (error.message.includes('0e')) {
             errorMessage = 'Phantom extension error - please try again';
+          } else if (error.message.includes('timeout')) {
+            errorMessage = 'Connection timeout - please try again';
           } else {
             errorMessage = error.message;
           }
         }
+        
+        // Update wallet state to reflect error
+        this.updateWalletState(walletName, {
+          isConnected: false,
+          status: 'error',
+          name: walletName,
+          chainId,
+          address: undefined,
+          provider: null,
+          lastUpdated: Date.now(),
+          error: errorMessage
+        });
         
         return { 
           success: false, 
@@ -1037,6 +1074,7 @@ export class MultiWalletManager {
     provider: unknown;
     balance?: string;
     lastUpdated: number;
+    error?: string;
   }>) {
     const currentState = this.walletStates.get(walletName) || {
       isConnected: false,

@@ -224,8 +224,8 @@ async function fetchWithRetry(
 
 // Token address mapping for 1inch
 const TOKEN_ADDRESS_MAP: Record<string, string> = {
-  // Ethereum Mainnet
-  'ETH': '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeEeE',
+  // Ethereum Mainnet - Use the correct native ETH address for 1inch
+  'ETH': '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
   'WETH': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   'WBTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
   'USDC': '0xA0b86a33E6441b8C4C8C8C8C8C8C8C8C8C8C8C8C',
@@ -250,8 +250,20 @@ const TOKEN_ADDRESS_MAP: Record<string, string> = {
   'USDC_SEPOLIA': '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
 };
 
+// Convert amount to wei (smallest unit) for API calls
+function toWei(amount: string, decimals: number = 18): string {
+  const [integer, decimal = ''] = amount.split('.');
+  const paddedDecimal = decimal.padEnd(decimals, '0').slice(0, decimals);
+  return (integer + paddedDecimal).replace(/^0+/, '') || '0';
+}
+
 // Convert our token to 1inch token address
 function getTokenAddress(token: Token): string {
+  // Handle native ETH - always use the correct 1inch address
+  if (token.symbol === 'ETH' || ('address' in token && token.address === '0x0000000000000000000000000000000000000000')) {
+    return TOKEN_ADDRESS_MAP['ETH'];
+  }
+  
   // Handle Bitcoin network - use WBTC on Ethereum
   if (token.network === 'bitcoin') {
     return TOKEN_ADDRESS_MAP['WBTC'];
@@ -305,10 +317,40 @@ export class FusionAPIService {
     walletAddress: string
   ): Promise<BridgeQuote> {
     try {
+      console.log('🔥 1inch Fusion API - Starting quote request');
+      console.log('📋 Request parameters:', {
+        fromToken: fromToken.symbol,
+        toToken: toToken.symbol,
+        amount,
+        walletAddress: walletAddress?.slice(0, 6) + '...' + walletAddress?.slice(-4),
+        network: fromToken.network
+      });
+
+      const fromTokenAddress = getTokenAddress(fromToken);
+      const toTokenAddress = getTokenAddress(toToken);
+      
+      console.log('🏷️ Token addresses:', {
+        fromTokenAddress,
+        toTokenAddress,
+        fromTokenMapped: fromTokenAddress !== fromToken.symbol,
+        toTokenMapped: toTokenAddress !== toToken.symbol
+      });
+
+      // Convert amount to wei for API call
+      const fromTokenDecimals = fromToken.symbol === 'WBTC' ? 8 : 18;
+      const amountInWei = toWei(amount, fromTokenDecimals);
+      
+      console.log('💰 Amount conversion:', {
+        originalAmount: amount,
+        decimals: fromTokenDecimals,
+        amountInWei,
+        tokenSymbol: fromToken.symbol
+      });
+
       const request: FusionQuoteRequest = {
-        fromTokenAddress: getTokenAddress(fromToken),
-        toTokenAddress: getTokenAddress(toToken),
-        amount: amount,
+        fromTokenAddress,
+        toTokenAddress,
+        amount: amountInWei,
         walletAddress: walletAddress,
         source: 'chaincrossing-bridge',
         enableEstimate: true,
@@ -316,18 +358,49 @@ export class FusionAPIService {
         allowPartialFill: false,
       };
 
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/quote`,
-        {
-          method: 'POST',
-          body: JSON.stringify(request),
-        }
-      );
+      console.log('📡 1inch Fusion API - Sending request to proxy:', '/api/1inch/fusion/quote');
+      console.log('🔑 API Key configured:', !!FUSION_API_CONFIG.apiKey && FUSION_API_CONFIG.apiKey !== 'demo_api_key');
+      console.log('📦 Request payload:', JSON.stringify(request, null, 2));
+
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch('/api/1inch/fusion/quote', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new FusionAPIError(
+          errorData.error || `HTTP ${response.status}`,
+          BridgeErrorCode.NETWORK_ERROR,
+          response.status,
+          errorData
+        );
+      }
+
+      console.log('✅ 1inch Fusion API - Response received');
+      console.log('📊 Response status:', response.status, response.statusText);
+      console.log('📋 Response headers:', Object.fromEntries(response.headers.entries()));
 
       const data: FusionQuoteResponse = await response.json();
+      
+      console.log('🎯 1inch Fusion API - Response data received');
+      console.log('📈 Quote data:', {
+        fromTokenAmount: data.fromTokenAmount,
+        toTokenAmount: data.toTokenAmount,
+        estimatedGas: data.estimatedGas,
+        gasCostUSD: data.gasCostUSD,
+        priceImpact: data.priceImpact,
+        protocolsUsed: data.protocols?.length || 0,
+        protocols: data.protocols?.map(p => p.name).join(', ') || 'none'
+      });
 
       // Convert 1inch response to our BridgeQuote format
-      return {
+      const bridgeQuote = {
         id: Math.random().toString(36).substr(2, 9), // Generate unique ID
         fromToken,
         toToken,
@@ -342,7 +415,26 @@ export class FusionAPIService {
         priceImpact: data.priceImpact,
         expiresAt: Date.now() + 30000, // 30 seconds
       };
+
+      console.log('🎉 1inch Fusion API - Quote successfully converted');
+      console.log('💰 Final quote:', {
+        id: bridgeQuote.id,
+        exchangeRate: bridgeQuote.exchangeRate,
+        toAmount: bridgeQuote.toAmount,
+        networkFee: bridgeQuote.networkFee,
+        priceImpact: bridgeQuote.priceImpact,
+        estimatedTime: bridgeQuote.estimatedTime
+      });
+      
+      return bridgeQuote;
     } catch (error) {
+      console.error('❌ 1inch Fusion API - Quote request failed');
+      console.error('Error details:', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined,
+        type: typeof error,
+        apiUrl: `${FUSION_API_CONFIG.baseUrl}/quote`
+      });
       throw createFusionAPIError(error);
     }
   }
@@ -367,13 +459,24 @@ export class FusionAPIService {
         quoteId,
       };
 
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/order`,
-        {
-          method: 'POST',
-          body: JSON.stringify(request),
-        }
-      );
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch('/api/1inch/fusion/order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
 
       return await response.json();
     } catch (error) {
@@ -384,12 +487,23 @@ export class FusionAPIService {
   // Get order status
   async getOrderStatus(orderId: string): Promise<FusionOrderStatusResponse> {
     try {
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/order/${orderId}`,
-        {
-          method: 'GET',
-        }
-      );
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch(`/api/1inch/fusion/order/${orderId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
 
       return await response.json();
     } catch (error) {
@@ -406,12 +520,23 @@ export class FusionAPIService {
     logoURI?: string;
   }>> {
     try {
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/tokens/${chainId}`,
-        {
-          method: 'GET',
-        }
-      );
+      // Use local API proxy to avoid CORS issues
+      const response = await fetch(`/api/1inch/fusion/tokens/${chainId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
 
       return await response.json();
     } catch (error) {
@@ -419,20 +544,125 @@ export class FusionAPIService {
     }
   }
 
-  // Get token prices
+  // Get token prices using 1inch Spot Price API with proper token metadata
   async getTokenPrices(tokenAddresses: string[]): Promise<Record<string, number>> {
     try {
-      const response = await fetchWithRetry(
-        `${FUSION_API_CONFIG.baseUrl}/prices?tokens=${tokenAddresses.join(',')}`,
-        {
-          method: 'GET',
+      console.log('🔥 1inch Token Pricing - Step 1: Get token metadata');
+      
+      // Filter out non-Ethereum addresses and validate
+      const validAddresses = tokenAddresses.filter(addr => {
+        const isValid = addr.startsWith('0x') && addr.length === 42;
+        if (!isValid) {
+          console.warn(`⚠️ Invalid Ethereum address for 1inch: ${addr}`);
         }
-      );
+        return isValid;
+      });
 
-      const data = await response.json();
-      return data.prices || {};
+      if (validAddresses.length === 0) {
+        console.warn('⚠️ No valid Ethereum addresses for 1inch API');
+        return {};
+      }
+
+      // Step 1: Get token metadata from 1inch Aggregation API
+      const tokensMetadata = await this.getTokensMetadata(1); // Ethereum mainnet
+      console.log('✅ Token metadata fetched from 1inch Aggregation API');
+
+      // Step 2: Get spot prices from 1inch
+      const response = await fetch(`/api/1inch/spot-price/1/${validAddresses.join(',')}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw createFusionAPIError({
+          message: errorData.error || `HTTP ${response.status}`,
+          status: response.status,
+          details: errorData
+        });
+      }
+
+      const spotData = await response.json();
+      console.log('✅ 1inch Spot Price API response:', spotData);
+      
+      // Step 3: Get real ETH price from CoinGecko for USD conversion
+      let ethPriceUSD = 3200; // Updated fallback
+      try {
+        const ethPriceResponse = await fetch('/api/coingecko/simple/price?ids=ethereum&vs_currencies=usd');
+        if (ethPriceResponse.ok) {
+          const ethPriceData = await ethPriceResponse.json();
+          if (ethPriceData.ethereum && ethPriceData.ethereum.usd) {
+            ethPriceUSD = ethPriceData.ethereum.usd;
+            console.log(`✅ Real ETH price from CoinGecko: $${ethPriceUSD.toLocaleString()}`);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Failed to get real ETH price, using fallback:', ethPriceUSD);
+      }
+      
+      // Step 4: Convert 1inch ratios to USD prices using metadata
+      const convertedPrices: Record<string, number> = {};
+      const ethAddress = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      
+      console.log('🔥 1inch Token Analysis with Metadata:');
+      
+      for (const [address, priceWei] of Object.entries(spotData)) {
+        if (typeof priceWei === 'string') {
+          const addressLower = address.toLowerCase();
+          const tokenMeta = tokensMetadata.tokens?.[addressLower];
+          
+          // Convert wei to ETH ratio (divide by 1e18)
+          const priceRatioInEth = parseFloat(priceWei) / 1e18;
+          // Convert to USD using real ETH price
+          const priceInUSD = priceRatioInEth * ethPriceUSD;
+          
+          convertedPrices[address] = priceInUSD;
+          
+          // Enhanced logging with token metadata
+          const tokenSymbol = tokenMeta?.symbol || 'UNKNOWN';
+          const tokenName = tokenMeta?.name || 'Unknown Token';
+          
+          if (addressLower === '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599') {
+            console.log(`🏆 ${tokenSymbol} (${tokenName}): ${priceWei} wei = ${priceRatioInEth.toFixed(6)} ETH = $${priceInUSD.toLocaleString()} USD`);
+            console.log(`   → 1 ${tokenSymbol} = ${priceRatioInEth.toFixed(6)} ETH (${(priceInUSD/ethPriceUSD).toFixed(6)}x ETH)`);
+          } else if (addressLower === ethAddress) {
+            console.log(`🏆 ${tokenSymbol} (${tokenName}): ${priceWei} wei = ${priceRatioInEth.toFixed(6)} ETH = $${priceInUSD.toLocaleString()} USD`);
+          } else {
+            console.log(`💰 ${tokenSymbol}: ${priceWei} wei = ${priceRatioInEth.toFixed(6)} ETH = $${priceInUSD.toFixed(2)} USD`);
+          }
+        }
+      }
+      
+      console.log('🔄 Final USD prices with 1inch metadata:', convertedPrices);
+      return convertedPrices;
     } catch (error) {
+      console.error('❌ 1inch Token Pricing error:', error);
       throw createFusionAPIError(error);
+    }
+  }
+
+  // Get token metadata from 1inch Aggregation API
+  private async getTokensMetadata(chainId: number = 1): Promise<{ tokens: Record<string, { symbol: string; name: string; decimals: number; logoURI?: string }> }> {
+    try {
+      const response = await fetch(`/api/1inch/fusion/tokens/${chainId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(FUSION_API_CONFIG.timeout),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Tokens metadata API error: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.warn('⚠️ Failed to get token metadata:', error);
+      return { tokens: {} };
     }
   }
 }

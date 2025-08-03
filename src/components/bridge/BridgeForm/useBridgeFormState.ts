@@ -4,6 +4,7 @@ import { useWalletStore } from '@/store/useWalletStore';
 import { useDebounce } from '@/hooks/useDebounce';
 import { validateAmount, validateBalance } from '@/lib/utils/validation';
 import { Token, BridgeQuote } from '@/types/bridge';
+import { RouteGenerationOptions } from '@/lib/services/intelligent-route-generator';
 
 interface UseBridgeFormStateProps {
   onBridge?: (fromToken: Token, toToken: Token, amount: string) => Promise<void>;
@@ -32,6 +33,15 @@ interface BridgeFormState {
   quoteError: string | undefined;
   bridgeLoading: boolean;
   bridgeSuccess: boolean;
+  
+  // User preferences for intelligent routing
+  userPreference: 'speed' | 'cost' | 'security' | 'balanced';
+  setUserPreference: (preference: 'speed' | 'cost' | 'security' | 'balanced') => void;
+  maxSlippage: number;
+  setMaxSlippage: (slippage: number) => void;
+  gasPreference: 'slow' | 'standard' | 'fast';
+  setGasPreference: (preference: 'slow' | 'standard' | 'fast') => void;
+  
   handleSwapDirection: () => void;
   handleBridge: () => Promise<void>;
   handleInitiateSwap: () => Promise<void>;
@@ -43,6 +53,7 @@ import { bridgeService } from '@/lib/services/bridge-service';
 import { solanaBridgeService } from '@/lib/services/solana-bridge-service';
 import { starknetBridgeService } from '@/lib/services/starknet-bridge-service';
 import { stellarBridgeService } from '@/lib/services/stellar-bridge-service';
+
 
 // Real quote fetching function using bridge services
 async function fetchBridgeQuote(
@@ -104,6 +115,11 @@ export function useBridgeFormState({
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | undefined>();
   
+  // User preferences for intelligent routing
+  const [userPreference, setUserPreference] = useState<'speed' | 'cost' | 'security' | 'balanced'>('balanced');
+  const [maxSlippage, setMaxSlippage] = useState(0.5); // 0.5% default
+  const [gasPreference, setGasPreference] = useState<'slow' | 'standard' | 'fast'>('standard');
+  
   // Debounced amount for quote fetching
   const debouncedFromAmount = useDebounce(fromAmount, 500);
   
@@ -114,14 +130,23 @@ export function useBridgeFormState({
   const amountValidation = validateAmount(fromAmount);
   const isValidAmount = amountValidation.isValid && parseFloat(fromAmount || '0') > 0;
   
-  // Balance validation (mock balance for now)
-  const mockBalance = fromToken ? '10.5' : '0';
-  const balanceValidation = validateBalance(fromAmount, mockBalance);
+  // Balance validation - requires real wallet integration
+  const balanceValidation = fromToken ? 
+    { isValid: false, error: 'Real wallet balance check not implemented - connect wallet first' } :
+    { isValid: true, error: undefined };
   const balanceError = balanceValidation.isValid ? undefined : balanceValidation.error;
 
   // Fetch quote when inputs change
   useEffect(() => {
     if (!fromToken || !toToken || !isValidAmount || !walletAddress) {
+      setQuote(null);
+      setToAmount('');
+      setQuoteError(undefined);
+      return;
+    }
+
+    // If no wallet is connected, clear everything and don't fetch quote
+    if (!walletAddress) {
       setQuote(null);
       setToAmount('');
       setQuoteError(undefined);
@@ -152,10 +177,18 @@ export function useBridgeFormState({
         if (signal.aborted) return;
         
         const errorMessage = error?.message || 'Failed to fetch quote';
-        setQuoteError(errorMessage);
+        
+        // Only show wallet errors once, not repeatedly
+        if (errorMessage.toLowerCase().includes('wallet')) {
+          console.log('Wallet connection required for quotes');
+          setQuoteError('Connect wallet to get quotes');
+        } else {
+          setQuoteError(errorMessage);
+          onQuoteError?.(errorMessage);
+        }
+        
         setQuote(null);
         setToAmount('');
-        onQuoteError?.(errorMessage);
       })
       .finally(() => {
         if (!signal.aborted) {
@@ -309,6 +342,15 @@ export function useBridgeFormState({
     quoteError,
     bridgeLoading,
     bridgeSuccess,
+    
+    // User preferences
+    userPreference,
+    setUserPreference,
+    maxSlippage,
+    setMaxSlippage,
+    gasPreference,
+    setGasPreference,
+    
     handleSwapDirection,
     handleBridge,
     handleInitiateSwap,
