@@ -7,7 +7,7 @@ import { Token } from '@/types/bridge';
 
 export interface PricingResult {
   prices: Record<string, number>;
-  source: '1inch-fusion' | 'coingecko-fallback' | 'hybrid';
+  source: '1inch-fusion' | 'coingecko-fallback' | 'hybrid' | 'all-apis-failed';
   timestamp: number;
   confidence: number;
 }
@@ -181,12 +181,12 @@ class FusionFirstPricingService {
     } catch (error) {
       console.error('❌ CoinGecko pricing failed:', error);
       
-      // Return hardcoded fallback prices for common tokens
+      // No more fallback prices - return failure
       return {
-        prices: this.getHardcodedPrices(tokenAddresses),
-        source: 'coingecko-fallback',
+        prices: this.handlePricingFailure(tokenAddresses),
+        source: 'all-apis-failed',
         timestamp: Date.now(),
-        confidence: 0.5
+        confidence: 0.0
       };
     }
   }
@@ -206,14 +206,42 @@ class FusionFirstPricingService {
           return geckoToAddress;
         }
         
-        // Just return the token as-is since it's a string (likely symbol or address)
-        return token;
+        // Handle common token symbols by converting to their addresses
+        const symbolToAddress = this.symbolToAddress(token);
+        if (symbolToAddress) {
+          return symbolToAddress;
+        }
+        
+        // Return empty string if we can't resolve the token
+        console.warn(`⚠️ Could not resolve token: ${token}`);
+        return '';
       } else {
         // It's a Token object
         return tokenValidationService.getTokenAddress(token) || 
                ('address' in token ? token.address || '' : '');
       }
     }).filter(addr => addr.length > 0);
+  }
+
+  // 🏷️ Convert token symbols to addresses for 1inch API
+  private symbolToAddress(symbol: string): string | null {
+    const symbolToAddressMap: Record<string, string> = {
+      'ETH': '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      'WETH': '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+      'WBTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+      'BTC': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // BTC maps to WBTC on Ethereum
+      'USDC': '0xA0b86a33E6441b8C4F27eAD9083C756Cc2',
+      'USDT': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      'DAI': '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+      'MATIC': '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0'
+    };
+    
+    const address = symbolToAddressMap[symbol.toUpperCase()];
+    if (!address) {
+      console.warn(`⚠️ No address mapping found for token symbol: ${symbol}`);
+    }
+    
+    return address || null;
   }
 
   // 🏷️ Convert CoinGecko IDs to token addresses (Only Ethereum-based tokens for 1inch)
@@ -261,28 +289,14 @@ class FusionFirstPricingService {
            tokenIdentifier.toLowerCase();
   }
 
-  // 💰 Hardcoded fallback prices for common tokens (Ethereum-based only)
-  private getHardcodedPrices(tokenAddresses: string[]): Record<string, number> {
-    const fallbackPrices: Record<string, number> = {
-      '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee': 2400, // ETH
-      '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 2400, // WETH
-      '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 43000, // WBTC
-      '0xa0b86a33e6441b8c4f27ead9083c756cc2': 1, // USDC (corrected address)
-      '0xdac17f958d2ee523a2206206994597c13d831ec7': 1, // USDT
-      '0x6b175474e89094c44da98b954eedeac495271d0f': 1, // DAI  
-      '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0': 0.85, // MATIC (wrapped on Ethereum)
-    };
-
-    const result: Record<string, number> = {};
-    for (const address of tokenAddresses) {
-      const price = fallbackPrices[address.toLowerCase()];
-      if (price) {
-        result[address] = price;
-      }
-    }
+  // ❌ REMOVED: No more hardcoded fallback prices - fail gracefully if all APIs fail
+  private handlePricingFailure(tokenAddresses: string[]): Record<string, number> {
+    console.error('💥 All pricing APIs failed for tokens:', tokenAddresses);
+    console.error('🚫 No fallback prices available - this is intentional for production reliability');
     
-    console.log('💰 Using hardcoded fallback prices for:', Object.keys(result).length, '/', tokenAddresses.length, 'tokens');
-    return result;
+    // Return empty object to indicate pricing failure
+    // Calling code should handle this gracefully
+    return {};
   }
 
   // 🗂️ Cache management

@@ -181,10 +181,10 @@ export class ExecutionStrategyAgent extends BaseAgent {
 
   constructor(dataService: DataAggregationService) {
     const config: AgentConfig = {
-      id: 'execution-strategy',
+      id: 'execution-strategy-001',
       name: 'ExecutionStrategyAgent',
       version: '1.0.0',
-      capabilities: ['mev-protection', 'timing-optimization', 'gas-strategy'],
+      capabilities: ['execute', 'analyze', 'transaction-execution', 'market-analysis', 'mev-protection', 'timing-optimization', 'gas-strategy'],
       dependencies: ['data-aggregation'],
       maxConcurrentTasks: 10,
       timeout: 30000
@@ -218,25 +218,62 @@ export class ExecutionStrategyAgent extends BaseAgent {
   }
 
   async processMessage(message: AgentMessage, signal: AbortSignal): Promise<void> {
-    if (signal.aborted) return;
+    console.log('🚀 [EXECUTION STRATEGY AGENT] ========== PROCESSING MESSAGE ==========');
+    console.log('📨 INPUT MESSAGE:', {
+      id: message.id,
+      type: message.type,
+      from: message.from,
+      priority: message.priority,
+      timestamp: message.timestamp,
+      payloadKeys: Object.keys(message.payload || {}),
+      payloadSize: JSON.stringify(message.payload || {}).length
+    });
     
-    switch (message.type) {
-      case MessageType.REQUEST_ANALYSIS:
-        await this.handleStrategyRequest(message.payload as Record<string, unknown>);
-        break;
-      case MessageType.EXECUTION_RESULT:
-        const payload = message.payload as Record<string, unknown>;
-        await this.recordExecutionOutcome(String(payload.strategyId || ''), (payload.actualResults as ExecutionOutcome['actualResults']) || {
-          executionSuccess: false,
-          actualSlippage: 0,
-          actualGasCost: '0',
-          actualExecutionTime: 0,
-          mevDetected: false
-        });
-        break;
-      default:
-        console.log(`ExecutionStrategyAgent: Unhandled message type ${message.type}`);
+    if (signal.aborted) {
+      console.log('⚠️ [EXECUTION STRATEGY AGENT] Signal aborted, skipping processing');
+      return;
     }
+    
+    const startTime = Date.now();
+    let result: unknown = null;
+    let error: Error | null = null;
+    
+    try {
+      switch (message.type) {
+        case MessageType.REQUEST_ANALYSIS:
+          console.log('🔄 Processing EXECUTION STRATEGY REQUEST...');
+          result = await this.handleStrategyRequest(message.payload as Record<string, unknown>);
+          break;
+        case MessageType.EXECUTION_RESULT:
+          console.log('🔄 Processing EXECUTION RESULT...');
+          const payload = message.payload as Record<string, unknown>;
+          result = await this.recordExecutionOutcome(String(payload.strategyId || ''), (payload.actualResults as ExecutionOutcome['actualResults']) || {
+            executionSuccess: false,
+            actualSlippage: 0,
+            actualGasCost: '0',
+            actualExecutionTime: 0,
+            mevDetected: false
+          });
+          break;
+        default:
+          console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
+          result = { type: 'unknown', processed: false };
+      }
+    } catch (err) {
+      error = err instanceof Error ? err : new Error(String(err));
+      console.error('❌ [EXECUTION STRATEGY AGENT] Error processing message:', err);
+    }
+    
+    const processingTime = Date.now() - startTime;
+    
+    console.log('📤 [EXECUTION STRATEGY AGENT] OUTPUT RESULT:', {
+      success: !error,
+      processingTimeMs: processingTime,
+      resultType: typeof result,
+      resultKeys: result && typeof result === 'object' ? Object.keys(result) : [],
+      error: error ? error.message : null
+    });
+    console.log('🚀 [EXECUTION STRATEGY AGENT] ========== MESSAGE COMPLETE ==========\n');
   }
 
   async handleTask(task: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {

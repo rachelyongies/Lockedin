@@ -501,6 +501,58 @@ export class FusionAwarePathfinder {
     };
   }
 
+  private convertToRouteSteps(protocols: unknown[], fromToken: string, toToken: string, amountIn: string, amountOut: string): RouteStep[] {
+    // Handle 1inch protocols array format and convert to RouteStep[]
+    if (!protocols || !Array.isArray(protocols) || protocols.length === 0) {
+      // Return default single-step path if no protocols data
+      return [{
+        protocol: '1inch Direct',
+        fromToken,
+        toToken,
+        amount: amountIn,
+        estimatedOutput: amountOut,
+        fee: '0.003'
+      }];
+    }
+
+    const steps: RouteStep[] = [];
+    let currentFromToken = fromToken;
+    let currentAmount = amountIn;
+
+    for (let i = 0; i < protocols.length; i++) {
+      const protocol = protocols[i] as { name?: string; part?: number; percentage?: number; toTokenAddress?: string };
+      const isLastStep = i === protocols.length - 1;
+      const currentToToken = isLastStep ? toToken : (protocol.toTokenAddress || 'INTERMEDIATE');
+      
+      // Calculate estimated output for this step
+      const percentage = protocol.percentage || protocol.part || 100;
+      let stepOutput: string;
+      
+      if (isLastStep) {
+        stepOutput = amountOut;
+      } else {
+        // Estimate intermediate output proportionally
+        const stepRatio = percentage / 100;
+        stepOutput = (parseFloat(currentAmount) * stepRatio * 0.997).toString(); // ~0.3% fee
+      }
+
+      steps.push({
+        protocol: protocol.name || 'Unknown DEX',
+        fromToken: currentFromToken,
+        toToken: currentToToken,
+        amount: currentAmount,
+        estimatedOutput: stepOutput,
+        fee: '0.003' // Standard 0.3% fee
+      });
+
+      // Update for next iteration
+      currentFromToken = currentToToken;
+      currentAmount = stepOutput;
+    }
+
+    return steps;
+  }
+
   private assessFusionOptimizedRisks(path: Array<{node: string, edge?: PoolEdge, fusionQuote?: FusionEdgeQuote}>): string[] {
     const risks: string[] = [];
     
@@ -589,7 +641,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
 
   constructor(config: Partial<AgentConfig> = {}, dataService: DataAggregationService) {
     const routingCapabilities: AgentCapabilities = {
-      canAnalyzeMarket: false,
+      canAnalyzeMarket: true,
       canDiscoverRoutes: true,
       canAssessRisk: true,
       canExecuteTransactions: false,
@@ -602,7 +654,7 @@ export class RouteDiscoveryAgent extends BaseAgent {
       id: config.id || 'route-discovery-agent',
       name: config.name || 'Route Discovery Agent',
       version: '2.0.0',
-      capabilities: ['pathfinding', 'routing', 'optimization', 'fusion-integration'],
+      capabilities: ['analyze', 'pathfinding', 'routing', 'optimization', 'fusion-integration'],
       dependencies: ['data-aggregation-service'],
       maxConcurrentTasks: 10,
       timeout: 30000
@@ -620,26 +672,66 @@ export class RouteDiscoveryAgent extends BaseAgent {
   async initialize(): Promise<void> {
     console.log('🛣️ Initializing Enhanced Route Discovery Agent with Fusion integration...');
     
-    // Defer heavy operations for faster startup
-    console.log('⚡ Using lazy initialization for faster startup');
+    try {
+      // Always build the routing graph on initialization
+      await this.buildRoutingGraph();
+      console.log(`✅ Routing graph built with ${this.routingGraph.nodes.size} nodes and ${Array.from(this.routingGraph.edges.values()).flat().length} edges`);
+    } catch (error) {
+      console.error('❌ Failed to build routing graph, using fallback data:', error);
+      await this.buildFallbackGraph();
+    }
     
     // Start liquidity monitoring (lightweight)
     this.startLiquidityMonitoring();
     
-    console.log(`✅ Route Discovery Agent initialized with lazy loading enabled`);
+    console.log(`✅ Route Discovery Agent initialized with ${this.routingGraph.nodes.size} nodes available for routing`);
   }
 
   async processMessage(message: AgentMessage, signal: AbortSignal): Promise<void> {
-    switch (message.type) {
-      case MessageType.REQUEST_ANALYSIS:
-        await this.handleRouteRequest(message);
-        break;
-      case MessageType.MARKET_DATA:
-        await this.handleMarketUpdate(message);
-        break;
-      default:
-        console.log(`🛣️ Route Discovery Agent received: ${message.type}`);
+    console.log('🛣️ [ROUTE DISCOVERY AGENT] ========== PROCESSING MESSAGE ==========');
+    console.log('📨 INPUT MESSAGE:', {
+      id: message.id,
+      type: message.type,
+      from: message.from,
+      priority: message.priority,
+      timestamp: message.timestamp,
+      dataKeys: Object.keys(message.payload || {}),
+      dataSize: JSON.stringify(message.payload || {}).length
+    });
+    
+    const startTime = Date.now();
+    let result: unknown = null;
+    let error: Error | null = null;
+    
+    try {
+      switch (message.type) {
+        case MessageType.REQUEST_ANALYSIS:
+          console.log('🔄 Processing ROUTE ANALYSIS REQUEST...');
+          result = await this.handleRouteRequest(message);
+          break;
+        case MessageType.MARKET_DATA:
+          console.log('🔄 Processing MARKET UPDATE...');
+          result = await this.handleMarketUpdate(message);
+          break;
+        default:
+          console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
+          result = { type: 'unknown', processed: false };
+      }
+    } catch (err) {
+      error = err instanceof Error ? err : new Error(String(err));
+      console.error('❌ [ROUTE DISCOVERY AGENT] Error processing message:', err);
     }
+    
+    const processingTime = Date.now() - startTime;
+    
+    console.log('📤 [ROUTE DISCOVERY AGENT] OUTPUT RESULT:', {
+      success: !error,
+      processingTimeMs: processingTime,
+      resultType: typeof result,
+      resultKeys: result && typeof result === 'object' ? Object.keys(result) : [],
+      error: error ? error.message : null
+    });
+    console.log('🛣️ [ROUTE DISCOVERY AGENT] ========== MESSAGE COMPLETE ==========\n');
   }
 
   async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
@@ -658,6 +750,53 @@ export class RouteDiscoveryAgent extends BaseAgent {
       default:
         throw new Error(`Unknown route discovery task: ${type}`);
     }
+  }
+
+  // Helper methods for amount conversion
+  private getTokenDecimals(tokenAddress: string): number {
+    // Standard token decimals mapping - all addresses in lowercase for consistent matching
+    const tokenDecimals: Record<string, number> = {
+      '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 8,  // WBTC
+      '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d': 6,  // USDC  
+      '0xdac17f958d2ee523a2206206994597c13d831ec7': 6,  // USDT
+      '0x6b175474e89094c44da98b954eedeac495271d0f': 18, // DAI
+      '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 18, // WETH
+      '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee': 18, // ETH
+      '0x0000000000000000000000000000000000000000': 18, // ETH (alternative)
+      '0x514910771af9ca656af840dff83e8264ecf986ca': 18, // LINK
+      '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984': 18, // UNI
+      '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0': 18, // MATIC
+      '0xa0b73e1ff0b80914ab6fe0444e65848c4c34450b': 8,  // CRO
+      '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce': 18, // SHIB
+      '0x4fabb145d64652a948d72533023f6e7a623c7c53': 18, // BUSD
+      '0x0d8775f648430679a709e98d2b0cb6250d2887ef': 18, // BAT
+      '0xbb0e17ef65f82ab018d8edd776e8dd940327b28b': 18, // AXS
+    };
+    
+    // Normalize address to lowercase for comparison
+    const normalizedAddress = tokenAddress.toLowerCase();
+    const decimals = tokenDecimals[normalizedAddress];
+    
+    if (decimals === undefined) {
+      console.warn(`⚠️ Unknown token decimals for ${tokenAddress}, defaulting to 18`);
+      return 18; // Default to 18 decimals
+    }
+    
+    console.log(`🔍 Token ${tokenAddress} has ${decimals} decimals`);
+    return decimals;
+  }
+
+  private toWei(amount: string, decimals: number): string {
+    // Convert decimal amount to wei format
+    const parts = amount.split('.');
+    const integerPart = parts[0] || '0';
+    const fractionalPart = (parts[1] || '').padEnd(decimals, '0').slice(0, decimals);
+    
+    // Combine integer and fractional parts
+    const fullAmount = integerPart + fractionalPart;
+    
+    // Remove leading zeros and return
+    return fullAmount.replace(/^0+/, '') || '0';
   }
 
   // ===== ENHANCED CORE ROUTING FUNCTIONALITY =====
@@ -1069,6 +1208,96 @@ export class RouteDiscoveryAgent extends BaseAgent {
       fusionCompatibilityCache: new Map(), // New: Fusion compatibility cache
       lastUpdate: 0
     };
+  }
+
+  private async buildFallbackGraph(): Promise<void> {
+    console.log('🔄 Building fallback routing graph with essential tokens...');
+    
+    // Essential tokens for major chains with real contract addresses
+    const fallbackTokens = {
+      // Ethereum Mainnet (chainId: 1)
+      1: [
+        { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', symbol: 'WETH', decimals: 18, price: 3200, marketCap: 1000000000 },
+        { address: '0xA0b86a33E6441431c0B7a5cEC6eCb99F2fB83A4D', symbol: 'USDC', decimals: 6, price: 1, marketCap: 50000000000 },
+        { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6, price: 1, marketCap: 80000000000 },
+        { address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', symbol: 'DAI', decimals: 18, price: 1, marketCap: 8000000000 },
+        { address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', symbol: 'WBTC', decimals: 8, price: 65000, marketCap: 15000000000 },
+        { address: '0x514910771AF9Ca656af840dff83E8264EcF986CA', symbol: 'LINK', decimals: 18, price: 25, marketCap: 12000000000 },
+        { address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', symbol: 'UNI', decimals: 18, price: 12, marketCap: 8000000000 },
+        { address: '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0', symbol: 'MATIC', decimals: 18, price: 1.2, marketCap: 7000000000 }
+      ],
+      // Polygon (chainId: 137)
+      137: [
+        { address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', symbol: 'WMATIC', decimals: 18, price: 1.2, marketCap: 7000000000 },
+        { address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', symbol: 'USDC', decimals: 6, price: 1, marketCap: 50000000000 },
+        { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', symbol: 'USDT', decimals: 6, price: 1, marketCap: 80000000000 },
+        { address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', symbol: 'WETH', decimals: 18, price: 3200, marketCap: 1000000000 }
+      ]
+    };
+
+    // Add fallback tokens to graph
+    for (const [chainId, tokens] of Object.entries(fallbackTokens)) {
+      for (const tokenInfo of tokens) {
+        const node: TokenNode = {
+          address: tokenInfo.address,
+          symbol: tokenInfo.symbol,
+          decimals: tokenInfo.decimals,
+          chainId: parseInt(chainId),
+          price: tokenInfo.price,
+          marketCap: tokenInfo.marketCap,
+          isStable: ['USDC', 'USDT', 'DAI'].includes(tokenInfo.symbol),
+          riskScore: this.calculateTokenRisk(tokenInfo)
+        };
+        
+        this.routingGraph.nodes.set(tokenInfo.address, node);
+      }
+    }
+
+    // Build edges between fallback tokens (simplified liquidity assumptions)
+    await this.buildFallbackEdges();
+    
+    this.routingGraph.lastUpdate = Date.now();
+    console.log(`📊 Fallback graph built with ${this.routingGraph.nodes.size} tokens`);
+  }
+
+  private async buildFallbackEdges(): Promise<void> {
+    const nodes = Array.from(this.routingGraph.nodes.values());
+    
+    // Create edges between tokens on the same chain
+    for (const nodeA of nodes) {
+      for (const nodeB of nodes) {
+        if (nodeA.address !== nodeB.address && nodeA.chainId === nodeB.chainId) {
+          const edgeKey = `${nodeA.address}-${nodeB.address}`;
+          
+          // Estimate liquidity based on market caps (simplified)
+          const avgMarketCap = (nodeA.marketCap + nodeB.marketCap) / 2;
+          const liquidityUSD = Math.min(avgMarketCap * 0.1, 100000000); // Cap at 100M
+          
+          const edge: PoolEdge = {
+            id: edgeKey,
+            fromToken: nodeA.address,
+            toToken: nodeB.address,
+            protocol: 'uniswap-v3', // Default protocol
+            liquidity: liquidityUSD,
+            fee: 0.003,
+            gasEstimate: 180000,
+            slippage: {
+              type: 'uniswap_v3',
+              params: { fee: 0.003, tickSpacing: 60 }
+            },
+            lastUpdate: Date.now(),
+            reliability: 0.95,
+            mevRisk: 0.1,
+            fusionCompatible: true
+          };
+
+          if (!this.routingGraph.edges.has(nodeA.address)) {
+            this.routingGraph.edges.set(nodeA.address, []);
+          }
+          this.routingGraph.edges.get(nodeA.address)!.push(edge);
+        }
+      }
+    }
   }
 
   private chunkArray<T>(array: T[], chunkSize: number): T[][] {
@@ -1576,9 +1805,102 @@ export class RouteDiscoveryAgent extends BaseAgent {
 
   private async handleRouteRequest(message: AgentMessage): Promise<void> {
     try {
-      const payload = message.payload as { params: Record<string, unknown> };
-    const { params } = payload;
-      const result = await this.findOptimalRoutes(params as unknown as RouteSearchParams);
+      const payload = message.payload as { type?: string; routeProposal?: unknown; marketConditions?: unknown; userPreferences?: unknown; chainId?: number; params?: unknown };
+      console.log('🔍 [ROUTE DISCOVERY] Received payload:', JSON.stringify(payload, null, 2));
+      
+      // Handle new structured payload format from ai-agent-bridge-service
+      if (payload.type === 'route-analysis') {
+        const { routeProposal, marketConditions, userPreferences } = payload;
+        const routeProposalTyped = routeProposal as { quotes?: { aggregation?: unknown; fusion?: unknown }; recommendedApi?: string; enableCustomDiscovery?: boolean; fromToken?: string; toToken?: string; amountIn?: string; gasPrice?: string };
+        
+        console.log('🔍 [ROUTE DISCOVERY] Hybrid Route Analysis Starting...');
+        console.log('📊 Baseline quotes:', {
+          hasAggregation: !!routeProposalTyped?.quotes?.aggregation,
+          hasFusion: !!routeProposalTyped?.quotes?.fusion,
+          recommendation: routeProposalTyped?.recommendedApi,
+          enableCustomDiscovery: routeProposalTyped?.enableCustomDiscovery
+        });
+
+        if (routeProposalTyped?.enableCustomDiscovery) {
+          // Perform hybrid analysis: baseline + custom discovery
+          const hybridResult = await this.performHybridRouteDiscovery(
+            routeProposalTyped as Record<string, unknown>, 
+            marketConditions as Record<string, unknown>, 
+            userPreferences as Record<string, unknown>,
+            payload.chainId || 1
+          );
+          
+          await this.sendMessage({
+            to: message.from,
+            type: MessageType.ROUTE_PROPOSAL,
+            payload: { 
+              routes: hybridResult.routes, 
+              searchStats: hybridResult.searchStats,
+              baseline: routeProposalTyped?.quotes,
+              hybrid: true
+            },
+            priority: MessagePriority.MEDIUM
+          });
+          return;
+        } else {
+          // Convert RouteProposal to RouteSearchParams format for legacy support
+          const marketConditionsTyped = marketConditions as { gasPrices?: { ethereum?: { standard?: string } } };
+          const userPreferencesTyped = userPreferences as { maxSlippage?: number; gasPreference?: string; riskTolerance?: string };
+          const params: RouteSearchParams = {
+            fromToken: routeProposalTyped?.fromToken,
+            toToken: routeProposalTyped?.toToken,
+            amountIn: routeProposalTyped?.amountIn,
+            chainId: payload.chainId || 1,
+            maxHops: 3,
+            maxSlippage: userPreferencesTyped?.maxSlippage || 0.5,
+            gasPrice: routeProposalTyped?.gasPrice || marketConditionsTyped?.gasPrices?.ethereum?.standard,
+            prioritizeGas: userPreferencesTyped?.gasPreference === 'slow',
+            prioritizeSlippage: userPreferencesTyped?.riskTolerance === 'conservative',
+            excludeProtocols: [],
+            includeOnlyProtocols: undefined,
+            deadline: Date.now() + 300000, // 5 minutes
+            useFusionQuotes: true
+          };
+          
+          console.log('🔍 [ROUTE DISCOVERY] Legacy route discovery mode');
+          
+          const result = await this.findOptimalRoutes(params);
+          
+          await this.sendMessage({
+            to: message.from,
+            type: MessageType.ROUTE_PROPOSAL,
+            payload: { routes: result.routes, searchStats: result.searchStats },
+            priority: MessagePriority.MEDIUM
+          });
+          return;
+        }
+      }
+      
+      // Handle legacy flat payload structure
+      const rawParams = (payload.params || payload) as Record<string, unknown>;
+      
+      console.log('🔍 [ROUTE DISCOVERY] Received legacy params:', JSON.stringify(rawParams, null, 2));
+      
+      // Transform the payload to match RouteSearchParams interface
+      const params: RouteSearchParams = {
+        fromToken: rawParams?.fromToken as string,
+        toToken: rawParams?.toToken as string,
+        amountIn: rawParams?.amount as string,
+        chainId: (rawParams?.chainId as number) || 1,
+        maxHops: (rawParams?.maxHops as number) || 3,
+        maxSlippage: (rawParams?.maxSlippage as number) || 0.5,
+        gasPrice: (rawParams?.gasPrice as number) || 0,
+        prioritizeGas: (rawParams?.prioritizeGas as boolean) || false,
+        prioritizeSlippage: (rawParams?.prioritizeSlippage as boolean) || false,
+        excludeProtocols: (rawParams?.excludeProtocols as string[]) || [],
+        includeOnlyProtocols: rawParams?.includeOnlyProtocols as string[] | undefined,
+        deadline: (rawParams?.deadline as number) || Date.now() + 300000, // 5 minutes
+        useFusionQuotes: (rawParams?.useFusionQuotes as boolean) !== false // Default to true
+      };
+      
+      console.log('🔍 [ROUTE DISCOVERY] Transformed legacy params:', JSON.stringify(params, null, 2));
+      
+      const result = await this.findOptimalRoutes(params);
       
       await this.sendMessage({
         to: message.from,
@@ -1606,6 +1928,659 @@ export class RouteDiscoveryAgent extends BaseAgent {
     return { ...this.searchMetrics };
   }
 
+  // ===== HYBRID ROUTE DISCOVERY =====
+
+  async performHybridRouteDiscovery(
+    routeProposal: Record<string, unknown>, 
+    marketConditions: Record<string, unknown>, 
+    userPreferences: Record<string, unknown>,
+    chainId: number
+  ): Promise<PathfindingResult> {
+    const routeProposalTyped = routeProposal as { fromToken?: string; toToken?: string; amountIn?: string };
+    const marketConditionsTyped = marketConditions as Record<string, unknown>;
+    const userPreferencesTyped = userPreferences as Record<string, unknown>;
+    
+    console.log('🚀 [HYBRID DISCOVERY] Starting comprehensive route analysis...');
+    
+    const startTime = Date.now();
+    
+    // 1. Extract baseline routes from 1inch APIs
+    const baselineRoutes = this.extractBaselineRoutes(routeProposal as Record<string, unknown>);
+    
+    // 2. Perform custom multi-hop discovery
+    const customRoutes = await this.discoverCustomMultiHopRoutes(
+      routeProposalTyped?.fromToken || '',
+      routeProposalTyped?.toToken || '',
+      routeProposalTyped?.amountIn || '',
+      marketConditionsTyped,
+      userPreferencesTyped,
+      chainId
+    );
+    
+    // 3. Combine and analyze all routes
+    const allRoutes = [...baselineRoutes, ...customRoutes];
+    
+    // 4. Rank routes by multiple criteria
+    const rankedRoutes = this.rankHybridRoutes(allRoutes, userPreferencesTyped, marketConditionsTyped);
+    
+    const searchStats = {
+      nodesExplored: this.routingGraph.nodes.size,
+      pathsEvaluated: allRoutes.length,
+      timeSpent: Date.now() - startTime,
+      cacheHits: 0,
+      fusionQueries: 1,
+      parallelBatches: 1,
+      optimalityGap: 0
+    };
+    
+    console.log('✅ [HYBRID DISCOVERY] Analysis complete:', searchStats);
+    
+    // Log detailed route information
+    console.log('🔍 [ROUTE DETAILS] ========== DISCOVERED ROUTES ==========');
+    rankedRoutes.forEach((route, index) => {
+      const routeTyped = route as Record<string, unknown>;
+      console.log(`📊 Route #${index + 1} [${routeTyped?.source}]:`, {
+        id: routeTyped?.id,
+        amountIn: routeTyped?.amountIn,
+        amountOut: routeTyped?.amountOut,
+        protocols: routeTyped?.protocols,
+        gas: routeTyped?.gas,
+        confidence: routeTyped?.confidence,
+        executionTime: routeTyped?.executionTime,
+        mevProtection: routeTyped?.mevProtection,
+        hopCount: routeTyped?.hopCount,
+        intermediateToken: routeTyped?.intermediateToken
+      });
+      
+      if (routeTyped?.paths && routeTyped?.paths.length > 0) {
+        console.log(`  🛤️ Paths (${(routeTyped?.paths as unknown[])?.length}):`, (routeTyped?.paths as Record<string, unknown>[])?.map((path: Record<string, unknown>) => ({
+          id: path?.id,
+          protocols: path?.protocols,
+          percentage: path?.percentage,
+          from: path?.from,
+          to: path?.to
+        })));
+      }
+    });
+    console.log('🔍 [ROUTE DETAILS] ========================================');
+    
+    return {
+      routes: rankedRoutes as Record<string, unknown>[],
+      searchStats
+    };
+  }
+
+  private extractBaselineRoutes(routeProposal: Record<string, unknown>): unknown[] {
+    const routes: unknown[] = [];
+    const proposalTyped = routeProposal as { quotes?: { aggregation?: Record<string, unknown>; fusion?: Record<string, unknown> }; fromToken?: string; toToken?: string; amountIn?: string; paths?: unknown[] };
+    
+    // Add aggregation route if available
+    if (proposalTyped.quotes?.aggregation) {
+      // Convert aggregation quote to RouteProposal format with populated path
+      const aggQuote = proposalTyped.quotes.aggregation;
+      const aggregationPath = this.convertToRouteSteps(
+        aggQuote.protocols || [],
+        proposalTyped.fromToken || '',
+        proposalTyped.toToken || '',
+        proposalTyped.amountIn || '0',
+        aggQuote.dstAmount as string || '0'
+      );
+
+      routes.push({
+        id: `baseline-aggregation-${Date.now()}`,
+        fromToken: proposalTyped.fromToken,
+        toToken: proposalTyped.toToken,
+        amount: proposalTyped.amountIn,
+        estimatedOutput: aggQuote.dstAmount,
+        path: aggregationPath,
+        estimatedGas: (aggQuote.gas || 200000).toString(),
+        estimatedTime: 60, // 1 minute typical for aggregation
+        priceImpact: (aggQuote.priceImpact || '0.002').toString(),
+        confidence: 0.9, // High confidence in 1inch aggregation
+        risks: ['MEV exposure', 'Gas price volatility'],
+        advantages: ['Fast execution', 'Multi-DEX optimization', 'Real-time routing'],
+        proposedBy: '1inch-aggregation-baseline'
+      });
+    }
+    
+    // Add fusion route if available
+    if (proposalTyped.quotes?.fusion) {
+      // Convert fusion quote to RouteProposal format with populated path
+      const fusionQuote = proposalTyped.quotes.fusion;
+      const fusionPath = this.convertToRouteSteps(
+        fusionQuote.protocols || [],
+        proposalTyped.fromToken || '',
+        proposalTyped.toToken || '',
+        proposalTyped.amountIn || '0',
+        fusionQuote.dstAmount as string || '0'
+      );
+
+      routes.push({
+        id: `baseline-fusion-${Date.now()}`,
+        fromToken: proposalTyped.fromToken,
+        toToken: proposalTyped.toToken,
+        amount: proposalTyped.amountIn,
+        estimatedOutput: fusionQuote.dstAmount,
+        path: fusionPath,
+        estimatedGas: (fusionQuote.gas || 0).toString(),
+        estimatedTime: 180, // 3 minutes typical for Fusion
+        priceImpact: (fusionQuote.priceImpact || '0.001').toString(),
+        confidence: 0.85, // High confidence with MEV protection
+        risks: ['Network congestion delays', 'Private pool liquidity'],
+        advantages: ['MEV protection enabled', 'Professional market makers', 'Optimal price execution'],
+        proposedBy: '1inch-fusion-baseline'
+      });
+    }
+    
+    console.log('🔍 [BASELINE ROUTES] ========== 1INCH BASELINE ROUTES ==========');
+    routes.forEach((route, index) => {
+      const routeTyped = route as Record<string, unknown>;
+      console.log(`🏦 Baseline Route #${index + 1} [${routeTyped.source}]:`, {
+        amountOut: routeTyped.amountOut,
+        gas: routeTyped.gas,
+        confidence: routeTyped.confidence,
+        mevProtection: routeTyped.mevProtection,
+        executionTime: routeTyped.executionTime,
+        pathCount: (routeTyped.paths as unknown[])?.length || 0
+      });
+    });
+    console.log('🔍 [BASELINE ROUTES] =============================================');
+    
+    return routes;
+  }
+
+  private async discoverCustomMultiHopRoutes(
+    fromToken: string,
+    toToken: string,
+    amount: string,
+    marketConditions: unknown,
+    userPreferences: unknown,
+    chainId: number
+  ): Promise<unknown[]> {
+    console.log('🔍 [CUSTOM DISCOVERY] Exploring alternative multi-hop routes...');
+    
+    const customRoutes: unknown[] = [];
+    
+    // Define intermediate tokens for multi-hop exploration
+    const intermediateTokens = this.getStrategicIntermediateTokens(fromToken, toToken, chainId);
+    
+    console.log('🔍 [MULTI-HOP] Intermediate tokens to explore:', 
+      intermediateTokens.map(token => {
+        const knownTokens: Record<string, string> = {
+          '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 'WETH',
+          '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d': 'USDC', 
+          '0xdac17f958d2ee523a2206206994597c13d831ec7': 'USDT',
+          '0x6b175474e89094c44da98b954eedeac495271d0f': 'DAI',
+          '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 'WBTC',
+          '0x514910771af9ca656af840dff83e8264ecf986ca': 'LINK',
+          '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984': 'UNI',
+          '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0': 'MATIC',
+          '0xa0b73e1ff0b80914ab6fe0444e65848c4c34450b': 'CRO',
+          '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce': 'SHIB',
+          '0x4fabb145d64652a948d72533023f6e7a623c7c53': 'BUSD',
+          '0x0d8775f648430679a709e98d2b0cb6250d2887ef': 'BAT',
+          '0xbb0e17ef65f82ab018d8edd776e8dd940327b28b': 'AXS',
+          '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 'WMATIC',
+          '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': 'USDC.P',
+          '0xc2132d05d31c914a87c6611c10748aeb04b58e8f': 'USDT.P',
+          '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063': 'DAI.P',
+          '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6': 'WBTC.P',
+          '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': 'WETH.P',
+          '0x4200000000000000000000000000000000000006': 'WETH.B',
+          '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 'USDC.B',
+          '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 'DAI.B',
+          '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': 'cbBTC'
+        };
+        return knownTokens[token.toLowerCase()] || token.slice(0, 8) + '...';
+      })
+    );
+    
+    // Explore 2-hop routes through strategic intermediate tokens
+    for (const intermediateToken of intermediateTokens) {
+      try {
+        const knownTokens: Record<string, string> = {
+          '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 'WETH',
+          '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d': 'USDC', 
+          '0xdac17f958d2ee523a2206206994597c13d831ec7': 'USDT',
+          '0x6b175474e89094c44da98b954eedeac495271d0f': 'DAI',
+          '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 'WBTC',
+          '0x514910771af9ca656af840dff83e8264ecf986ca': 'LINK',
+          '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984': 'UNI',
+          '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0': 'MATIC',
+          '0xa0b73e1ff0b80914ab6fe0444e65848c4c34450b': 'CRO',
+          '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce': 'SHIB',
+          '0x4fabb145d64652a948d72533023f6e7a623c7c53': 'BUSD',
+          '0x0d8775f648430679a709e98d2b0cb6250d2887ef': 'BAT',
+          '0xbb0e17ef65f82ab018d8edd776e8dd940327b28b': 'AXS',
+          '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': 'WMATIC',
+          '0x2791bca1f2de4661ed88a30c99a7a9449aa84174': 'USDC.P',
+          '0xc2132d05d31c914a87c6611c10748aeb04b58e8f': 'USDT.P',
+          '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063': 'DAI.P',
+          '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6': 'WBTC.P',
+          '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': 'WETH.P',
+          '0x4200000000000000000000000000000000000006': 'WETH.B',
+          '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 'USDC.B',
+          '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 'DAI.B',
+          '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': 'cbBTC'
+        };
+        const tokenName = knownTokens[intermediateToken.toLowerCase()] || intermediateToken.slice(0, 8) + '...';
+        
+        console.log(`🔄 [2-HOP EXPLORATION] Exploring route via ${tokenName} (${intermediateToken.slice(0, 8)}...)`);
+        
+        const twoHopRoute = await this.explore2HopRoute(
+          fromToken,
+          intermediateToken,
+          toToken,
+          amount,
+          marketConditions
+        );
+        
+        if (twoHopRoute) {
+          console.log(`✅ [2-HOP SUCCESS] Found route via ${tokenName}: ${twoHopRoute.amountOut} output`);
+          customRoutes.push(twoHopRoute);
+        } else {
+          console.log(`❌ [2-HOP FAILED] No viable route via ${tokenName}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ [2-HOP ERROR] Failed to explore route via ${intermediateToken.slice(0, 8)}...:`, error);
+      }
+    }
+    
+    // Explore alternative DEX combinations
+    const alternativeRoutes = await this.exploreAlternativeDEXCombinations(
+      fromToken,
+      toToken,
+      amount,
+      marketConditions
+    );
+    
+    customRoutes.push(...alternativeRoutes);
+    
+    console.log(`🔍 [CUSTOM DISCOVERY] Found ${customRoutes.length} custom routes`);
+    
+    // Log details of discovered custom routes
+    if (customRoutes.length > 0) {
+      console.log('🔍 [CUSTOM ROUTES] ========== DISCOVERED CUSTOM ROUTES ==========');
+      customRoutes.forEach((route, index) => {
+        const routeTyped = route as Record<string, unknown>;
+        console.log(`🛣️ Custom Route #${index + 1}:`, {
+          type: routeTyped.hopCount ? `${routeTyped.hopCount}-hop` : 'direct',
+          via: routeTyped.intermediateToken ? (routeTyped.intermediateToken as string).slice(0, 8) + '...' : 'direct',
+          amountOut: routeTyped.amountOut,
+          protocols: routeTyped.protocols,
+          confidence: routeTyped.confidence,
+          paths: (routeTyped.paths as unknown[])?.length || 0
+        });
+        
+        if (routeTyped.paths && (routeTyped.paths as unknown[]).length > 0) {
+          (routeTyped.paths as Record<string, unknown>[]).forEach((path: Record<string, unknown>, pathIndex: number) => {
+            console.log(`    Hop ${pathIndex + 1}: ${(path.from as string)?.slice(0, 8)}... → ${(path.to as string)?.slice(0, 8)}... via ${(path.protocols as string[])?.join(', ')}`);
+          });
+        }
+      });
+      console.log('🔍 [CUSTOM ROUTES] ===============================================');
+    }
+    
+    return customRoutes;
+  }
+
+  private getStrategicIntermediateTokens(fromToken: string, toToken: string, chainId: number): string[] {
+    // Strategic intermediate tokens based on liquidity and volume
+    const mainnetTokens = [
+      '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH - Primary base pair
+      '0xA0b86a33E6441431c0B7a5cEC6eCb99F2fB83A4D', // USDC - Stable high liquidity
+      '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT - Stable high volume
+      '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI - Decentralized stable
+      '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', // WBTC - Bitcoin bridge
+      '0x514910771af9ca656af840dff83e8264ecf986ca', // LINK - Oracle token
+      '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984', // UNI - DEX governance
+      '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0', // MATIC - L2 bridge
+      '0xA0b73E1Ff0B80914AB6fe0444E65848C4C34450b', // CRO - CEX bridge
+      '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE', // SHIB - Meme high volume
+      '0x4Fabb145d64652a948d72533023f6E7A623C7C53', // BUSD - Binance stable
+      '0x0D8775F648430679A709E98d2b0Cb6250d2887EF', // BAT - Browser token
+      '0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b'  // AXS - Gaming token
+    ];
+
+    const polygonTokens = [
+      '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', // WMATIC - Native wrapper
+      '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', // USDC - Primary stable
+      '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', // USDT - Tether stable
+      '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', // DAI - Maker stable
+      '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6', // WBTC - Bitcoin bridge
+      '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619'  // WETH - Ethereum bridge
+    ];
+
+    const baseTokens = [
+      '0x4200000000000000000000000000000000000006', // WETH - Native wrapper
+      '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC - Primary stable
+      '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', // DAI - Maker stable
+      '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'  // cbBTC - Coinbase BTC
+    ];
+
+    // Select tokens based on chain
+    let strategicTokens: string[];
+    switch (chainId) {
+      case 1:
+        strategicTokens = mainnetTokens;
+        break;
+      case 137:
+        strategicTokens = polygonTokens;
+        break;
+      case 8453:
+        strategicTokens = baseTokens;
+        break;
+      default:
+        // Fallback to mainnet tokens for unknown chains
+        strategicTokens = mainnetTokens;
+    }
+    
+    // Filter out source and destination tokens
+    return strategicTokens.filter(token => 
+      token.toLowerCase() !== fromToken.toLowerCase() && 
+      token.toLowerCase() !== toToken.toLowerCase()
+    );
+  }
+
+  private async explore2HopRoute(
+    fromToken: string,
+    intermediateToken: string,
+    toToken: string,
+    amount: string,
+    marketConditions: unknown
+  ): Promise<unknown | null> {
+    try {
+      console.log(`🔄 [2-HOP] Exploring real 2-hop route: ${fromToken.slice(0, 8)}... → ${intermediateToken.slice(0, 8)}... → ${toToken.slice(0, 8)}...`);
+      
+      // Step 1: Get quote from fromToken to intermediateToken
+      const hop1Quote = await this.getSingleHopQuote(fromToken, intermediateToken, amount, 1);
+      if (!hop1Quote) {
+        console.log(`❌ [2-HOP] Failed to get hop1 quote: ${fromToken} → ${intermediateToken}`);
+        return null;
+      }
+
+      // Step 2: Get quote from intermediateToken to toToken using hop1 output
+      const hop2Quote = await this.getSingleHopQuote(intermediateToken, toToken, hop1Quote.dstAmount, 1);
+      if (!hop2Quote) {
+        console.log(`❌ [2-HOP] Failed to get hop2 quote: ${intermediateToken} → ${toToken}`);
+        return null;
+      }
+
+      // Calculate total slippage and fees
+      const totalAmountOut = hop2Quote.dstAmount;
+      const directSlippage = this.calculateSlippage(amount, totalAmountOut);
+      
+      // Only proceed if the 2-hop route is competitive (less than 5% additional slippage)
+      if (directSlippage > 0.05) {
+        console.log(`❌ [2-HOP] Route not competitive: ${directSlippage * 100}% total slippage`);
+        return null;
+      }
+
+      const routeData = {
+        id: `custom-2hop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        fromToken,
+        toToken,
+        amountIn: amount,
+        amountOut: totalAmountOut,
+        protocols: this.extractProtocols([hop1Quote as Record<string, unknown>, hop2Quote as Record<string, unknown>]),
+        gas: (parseInt((hop1Quote as Record<string, unknown>).gas as string || '150000') + parseInt((hop2Quote as Record<string, unknown>).gas as string || '150000')).toString(),
+        gasPrice: (marketConditions as Record<string, unknown>)?.gasPrices?.ethereum?.standard || '25000000000',
+        paths: [
+          {
+            id: 'hop1',
+            from: fromToken,
+            to: intermediateToken,
+            protocols: (hop1Quote as Record<string, unknown>).protocols as string[] || ['uniswap-v3'],
+            percentage: 100,
+            amountIn: amount,
+            amountOut: (hop1Quote as Record<string, unknown>).dstAmount as string
+          },
+          {
+            id: 'hop2', 
+            from: intermediateToken,
+            to: toToken,
+            protocols: (hop2Quote as Record<string, unknown>).protocols as string[] || ['sushiswap'],
+            percentage: 100,
+            amountIn: (hop1Quote as Record<string, unknown>).dstAmount as string,
+            amountOut: (hop2Quote as Record<string, unknown>).dstAmount as string
+          }
+        ],
+        source: 'custom-discovery',
+        confidence: this.calculate2HopConfidence(hop1Quote as Record<string, unknown>, hop2Quote as Record<string, unknown>),
+        executionTime: 25000, // Estimated 25 seconds for 2-hop
+        mevProtection: false,
+        intermediateToken,
+        hopCount: 2,
+        totalSlippage: directSlippage,
+        estimatedOutput: totalAmountOut
+      };
+
+      console.log(`✅ [2-HOP] Successfully found 2-hop route with ${(directSlippage * 100).toFixed(2)}% slippage`);
+      return routeData;
+    } catch (error) {
+      console.error(`❌ [2-HOP] Error exploring 2-hop route:`, error);
+      return null;
+    }
+  }
+
+  private async getSingleHopQuote(fromToken: string, toToken: string, amount: string, chainId: number): Promise<any> {
+    try {
+      // Convert amount to wei format if it's a decimal
+      let amountInWei = amount;
+      if (amount.includes('.') && !amount.includes('e')) {
+        // This is a decimal amount, need to convert to wei
+        const tokenDecimals = this.getTokenDecimals(fromToken);
+        amountInWei = this.toWei(amount, tokenDecimals);
+        console.log(`💰 Converting amount: ${amount} → ${amountInWei} (${tokenDecimals} decimals)`);
+      }
+      
+      // Use 1inch aggregation API for single hop quotes
+      const url = `/api/1inch/aggregation/quote?fromTokenAddress=${fromToken}&toTokenAddress=${toToken}&amount=${amountInWei}&chainId=${chainId}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.warn(`❌ 1inch quote API error (${response.status}) for ${fromToken} → ${toToken}`);
+        return null;
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.warn(`❌ Failed to get single hop quote for ${fromToken} → ${toToken}:`, error);
+      return null;
+    }
+  }
+
+  private calculateSlippage(amountIn: string, amountOut: string): number {
+    const inputAmount = parseFloat(amountIn);
+    const outputAmount = parseFloat(amountOut);
+    if (inputAmount === 0) return 1; // 100% slippage if no input
+    
+    // This is a simplified slippage calculation
+    // In reality, you'd need to account for token price differences
+    const expectedOutput = inputAmount; // Assuming 1:1 for simplification
+    return Math.abs(expectedOutput - outputAmount) / expectedOutput;
+  }
+
+  private extractProtocols(quotes: Record<string, unknown>[]): string[] {
+    const protocols = new Set<string>();
+    quotes.forEach(quote => {
+      if (quote.protocols) {
+        (quote.protocols as (string | Record<string, unknown>)[]).forEach((protocol: string | Record<string, unknown>) => {
+          if (typeof protocol === 'string') {
+            protocols.add(protocol);
+          } else if ((protocol as Record<string, unknown>).name) {
+            protocols.add((protocol as Record<string, unknown>).name as string);
+          }
+        });
+      }
+    });
+    return Array.from(protocols);
+  }
+
+  private calculate2HopConfidence(hop1Quote: Record<string, unknown>, hop2Quote: Record<string, unknown>): number {
+    // Base confidence starts lower for multi-hop routes
+    let confidence = 0.6;
+    
+    // Increase confidence based on quote reliability
+    if (hop1Quote.gas && hop2Quote.gas) confidence += 0.1;
+    if (hop1Quote.protocols && hop2Quote.protocols) confidence += 0.1;
+    
+    // Decrease confidence for high gas costs
+    const totalGas = parseInt(hop1Quote.gas || '200000') + parseInt(hop2Quote.gas || '200000');
+    if (totalGas > 500000) confidence -= 0.1;
+    
+    return Math.max(0.3, Math.min(0.9, confidence));
+  }
+
+  private async exploreAlternativeDEXCombinations(
+    fromToken: string,
+    toToken: string,
+    amount: string,
+    marketConditions: unknown
+  ): Promise<unknown[]> {
+    console.log('🔍 [ALT DEX] Exploring alternative DEX combinations...');
+    
+    const alternativeRoutes: unknown[] = [];
+    
+    // For now, implement simulated alternative DEX routes
+    // In a real implementation, this would integrate with:
+    // - Curve Finance for stable swaps
+    // - Balancer for weighted pools
+    // - SushiSwap for specific pairs
+    // - Bancor for single-sided liquidity
+    // - 0x for RFQ and Limit Orders
+    
+    try {
+      // Simulate a Curve-style stable swap route
+      if (this.isStablePair(fromToken, toToken)) {
+        console.log('🌊 [ALT DEX] Detected stable pair - simulating Curve route');
+        const curveRoute = {
+          source: 'curve',
+          amountOut: (parseFloat(amount) * 0.998).toString(), // 0.2% fee
+          gas: 150000,
+          confidence: 0.85,
+          mevProtection: true,
+          executionTime: 15000,
+          protocols: ['Curve'],
+          hopCount: 1,
+          paths: [{
+            from: fromToken,
+            to: toToken,
+            protocols: ['Curve'],
+            part: 100
+          }]
+        };
+        alternativeRoutes.push(curveRoute);
+      }
+      
+      // Simulate a Balancer weighted pool route
+      const balancerRoute = {
+        source: 'balancer',
+        amountOut: (parseFloat(amount) * 0.997).toString(), // 0.3% fee
+        gas: 180000,
+        confidence: 0.80,
+        mevProtection: false,
+        executionTime: 20000,
+        protocols: ['Balancer'],
+        hopCount: 1,
+        paths: [{
+          from: fromToken,
+          to: toToken,
+          protocols: ['Balancer'],
+          part: 100
+        }]
+      };
+      alternativeRoutes.push(balancerRoute);
+      
+      console.log(`🔍 [ALT DEX] Found ${alternativeRoutes.length} alternative DEX routes`);
+      
+    } catch (error) {
+      console.error('❌ [ALT DEX] Error exploring alternative DEX combinations:', error);
+    }
+    
+    return alternativeRoutes;
+  }
+  
+  private isStablePair(fromToken: string, toToken: string): boolean {
+    const stableTokens = [
+      '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d', // USDC
+      '0xdac17f958d2ee523a2206206994597c13d831ec7', // USDT
+      '0x6b175474e89094c44da98b954eedeac495271d0f', // DAI
+      '0x4fabb145d64652a948d72533023f6e7a623c7c53', // BUSD
+      '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', // USDC (Polygon)
+      '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', // USDT (Polygon)
+      '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063', // DAI (Polygon)
+      '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', // USDC (Base)
+      '0x50c5725949a6f0c72e6c4a641f24049a917db0cb'  // DAI (Base)
+    ];
+    
+    const fromIsStable = stableTokens.some(stable => stable.toLowerCase() === fromToken.toLowerCase());
+    const toIsStable = stableTokens.some(stable => stable.toLowerCase() === toToken.toLowerCase());
+    
+    return fromIsStable && toIsStable;
+  }
+
+  private rankHybridRoutes(routes: unknown[], userPreferences: unknown, marketConditions: unknown): unknown[] {
+    return routes.sort((a, b) => {
+      // Multi-criteria ranking based on user preferences
+      const scoreA = this.calculateRouteScore(a, userPreferences, marketConditions);
+      const scoreB = this.calculateRouteScore(b, userPreferences, marketConditions);
+      
+      return scoreB - scoreA; // Higher score first
+    });
+  }
+
+  private calculateRouteScore(route: unknown, userPreferences: unknown, marketConditions: unknown): number {
+    let score = 0;
+    
+    // Base score from output amount
+    const outputAmount = parseFloat(route.amountOut || '0');
+    score += outputAmount * 0.4; // 40% weight on output
+    
+    // Adjust for user preferences
+    if (userPreferences?.riskTolerance === 'conservative' && route.mevProtection) {
+      score += outputAmount * 0.2; // Bonus for MEV protection
+    }
+    
+    if (userPreferences?.gasPreference === 'slow' && route.gas < 250000) {
+      score += outputAmount * 0.1; // Bonus for low gas
+    }
+    
+    // Confidence multiplier
+    score *= (route.confidence || 0.5);
+    
+    // Execution time penalty for time-sensitive users
+    if (userPreferences?.userPreference === 'speed') {
+      score *= (30000 / (route.executionTime || 30000));
+    }
+    
+    return score;
+  }
+
+  private calculateHybridConfidence(allRoutes: unknown[], baselineRoutes: unknown[], customRoutes: unknown[]): number {
+    if (allRoutes.length === 0) return 0;
+    
+    // Higher confidence when we have both baseline and custom routes
+    const hasBaseline = baselineRoutes.length > 0;
+    const hasCustom = customRoutes.length > 0;
+    
+    let confidence = 0.6; // Base confidence
+    
+    if (hasBaseline) confidence += 0.2;
+    if (hasCustom) confidence += 0.1;
+    if (hasBaseline && hasCustom) confidence += 0.1; // Bonus for hybrid
+    
+    return Math.min(confidence, 1.0);
+  }
+
   async cleanup(): Promise<void> {
     if (this.liquidityMonitor) {
       clearInterval(this.liquidityMonitor);
@@ -1617,5 +2592,57 @@ export class RouteDiscoveryAgent extends BaseAgent {
     this.routingGraph.fusionCompatibilityCache.clear();
     
     console.log('🛣️ Enhanced Route Discovery Agent cleaned up');
+  }
+
+  private convertToRouteSteps(protocols: unknown[], fromToken: string, toToken: string, amountIn: string, amountOut: string): RouteStep[] {
+    // Handle 1inch protocols array format and convert to RouteStep[]
+    if (!protocols || !Array.isArray(protocols) || protocols.length === 0) {
+      // Return default single-step path if no protocols data
+      return [{
+        protocol: '1inch Direct',
+        fromToken,
+        toToken,
+        amount: amountIn,
+        estimatedOutput: amountOut,
+        fee: '0.003'
+      }];
+    }
+
+    const steps: RouteStep[] = [];
+    let currentFromToken = fromToken;
+    let currentAmount = amountIn;
+
+    for (let i = 0; i < protocols.length; i++) {
+      const protocol = protocols[i] as { name?: string; part?: number; percentage?: number; toTokenAddress?: string };
+      const isLastStep = i === protocols.length - 1;
+      const currentToToken = isLastStep ? toToken : (protocol.toTokenAddress || 'INTERMEDIATE');
+      
+      // Calculate estimated output for this step
+      const percentage = protocol.percentage || protocol.part || 100;
+      let stepOutput: string;
+      
+      if (isLastStep) {
+        stepOutput = amountOut;
+      } else {
+        // Estimate intermediate output proportionally
+        const stepRatio = percentage / 100;
+        stepOutput = (parseFloat(currentAmount) * stepRatio * 0.997).toString(); // ~0.3% fee
+      }
+
+      steps.push({
+        protocol: protocol.name || 'Unknown DEX',
+        fromToken: currentFromToken,
+        toToken: currentToToken,
+        amount: currentAmount,
+        estimatedOutput: stepOutput,
+        fee: '0.003' // Standard 0.3% fee
+      });
+
+      // Update for next iteration
+      currentFromToken = currentToToken;
+      currentAmount = stepOutput;
+    }
+
+    return steps;
   }
 }

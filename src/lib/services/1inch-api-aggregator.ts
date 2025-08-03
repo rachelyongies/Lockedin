@@ -93,11 +93,69 @@ export interface Comprehensive1inchAnalysis {
 export class OneInchAPIAggregator {
   private static instance: OneInchAPIAggregator;
   
+  // Cache to eliminate redundant API calls
+  private apiCache = new Map<string, { data: unknown; timestamp: number; ttl: number }>();
+  private readonly DEFAULT_CACHE_TTL = 30000; // 30 seconds
+  private readonly QUOTE_CACHE_TTL = 15000; // 15 seconds for quotes (more volatile)
+  
   static getInstance(): OneInchAPIAggregator {
     if (!OneInchAPIAggregator.instance) {
       OneInchAPIAggregator.instance = new OneInchAPIAggregator();
     }
     return OneInchAPIAggregator.instance;
+  }
+
+  // Cache management methods
+  private generateCacheKey(method: string, params: Record<string, unknown>): string {
+    const sortedParams = Object.keys(params).sort().map(key => `${key}=${params[key]}`).join('&');
+    return `${method}:${sortedParams}`;
+  }
+
+  private isCacheValid(cacheKey: string): boolean {
+    const cached = this.apiCache.get(cacheKey);
+    if (!cached) return false;
+    
+    const isExpired = Date.now() > (cached.timestamp + cached.ttl);
+    if (isExpired) {
+      this.apiCache.delete(cacheKey);
+      return false;
+    }
+    
+    return true;
+  }
+
+  private setCacheData(cacheKey: string, data: unknown, ttl: number): void {
+    this.apiCache.set(cacheKey, {
+      data,
+      timestamp: Date.now(),
+      ttl
+    });
+  }
+
+  private getCacheData<T>(cacheKey: string): T | null {
+    const cached = this.apiCache.get(cacheKey);
+    return cached ? (cached.data as T) : null;
+  }
+
+  private async cachedApiCall<T>(
+    cacheKey: string, 
+    apiCall: () => Promise<T>, 
+    ttl: number = this.DEFAULT_CACHE_TTL
+  ): Promise<T> {
+    // Check cache first
+    if (this.isCacheValid(cacheKey)) {
+      const cachedData = this.getCacheData<T>(cacheKey);
+      if (cachedData) {
+        console.log(`🚀 [CACHE HIT] ${cacheKey}`);
+        return cachedData;
+      }
+    }
+
+    // Make API call and cache result
+    console.log(`📡 [CACHE MISS] Making API call: ${cacheKey}`);
+    const result = await apiCall();
+    this.setCacheData(cacheKey, result, ttl);
+    return result;
   }
 
   async getComprehensiveAnalysis(
@@ -207,55 +265,75 @@ export class OneInchAPIAggregator {
   }
 
   private async getFusionQuote(fromTokenAddress: string, toTokenAddress: string, amount: string, walletAddress?: string): Promise<Record<string, unknown>> {
-    const response = await fetch('/api/1inch/fusion/quote', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fromTokenAddress,
-        toTokenAddress,
-        amount,
-        walletAddress: walletAddress || '0x0000000000000000000000000000000000000000',
-        source: 'ai-router-comparison',
-        enableEstimate: true,
-        complexityLevel: 'medium',
-        allowPartialFill: false
-      })
+    const cacheKey = this.generateCacheKey('fusion_quote', {
+      fromTokenAddress,
+      toTokenAddress,
+      amount,
+      walletAddress: walletAddress || '0x0000000000000000000000000000000000000000'
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Fusion API error: ${error}`);
-    }
+    return this.cachedApiCall(cacheKey, async () => {
+      const response = await fetch('/api/1inch/fusion/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromTokenAddress,
+          toTokenAddress,
+          amount,
+          walletAddress: walletAddress || '0x0000000000000000000000000000000000000000',
+          source: 'ai-router-comparison',
+          enableEstimate: true,
+          complexityLevel: 'medium',
+          allowPartialFill: false
+        })
+      });
 
-    return response.json();
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Fusion API error: ${error}`);
+      }
+
+      return response.json();
+    }, this.QUOTE_CACHE_TTL);
   }
 
   private async getAggregationQuote(fromTokenAddress: string, toTokenAddress: string, amount: string): Promise<Record<string, unknown>> {
-    const response = await fetch('/api/1inch/aggregation/quote', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        src: fromTokenAddress,
-        dst: toTokenAddress,
-        amount,
-        fee: '0',
-        gasPrice: 'fast',
-        complexityLevel: '0',
-        mainRouteParts: '10',
-        parts: '50'
-      })
+    const cacheKey = this.generateCacheKey('aggregation_quote', {
+      src: fromTokenAddress,
+      dst: toTokenAddress,
+      amount
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Aggregation API error: ${error}`);
-    }
+    return this.cachedApiCall(cacheKey, async () => {
+      const response = await fetch('/api/1inch/aggregation/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          src: fromTokenAddress,
+          dst: toTokenAddress,
+          amount,
+          fee: '0',
+          gasPrice: 'fast',
+          complexityLevel: '0',
+          mainRouteParts: '10',
+          parts: '50'
+        })
+      });
 
-    return response.json();
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Aggregation API error: ${error}`);
+      }
+
+      return response.json();
+    }, this.QUOTE_CACHE_TTL);
   }
 
   private async getGasAnalysis(chainId: number): Promise<GasAnalysis> {
-    const response = await fetch(`/api/1inch/gas-tracker?chainId=${chainId}`);
+    const cacheKey = this.generateCacheKey('gas_analysis', { chainId });
+
+    return this.cachedApiCall(cacheKey, async () => {
+      const response = await fetch(`/api/1inch/gas-tracker?chainId=${chainId}`);
     
     if (!response.ok) {
       throw new Error('Gas Tracker API error');
@@ -275,10 +353,14 @@ export class OneInchAPIAggregator {
       optimalTiming: data.analysis?.optimalTiming || 'Unknown',
       analysis: data.analysis
     };
+    }, this.DEFAULT_CACHE_TTL);
   }
 
   private async getLiquidityAnalysis(chainId: number): Promise<LiquidityAnalysis> {
-    const response = await fetch(`/api/1inch/liquidity-sources?chainId=${chainId}`);
+    const cacheKey = this.generateCacheKey('liquidity_analysis', { chainId });
+
+    return this.cachedApiCall(cacheKey, async () => {
+      const response = await fetch(`/api/1inch/liquidity-sources?chainId=${chainId}`);
     
     if (!response.ok) {
       throw new Error('Liquidity Sources API error');
@@ -292,6 +374,7 @@ export class OneInchAPIAggregator {
       coverage: data.analysis?.coverage || { score: 0, description: 'Unknown', breakdown: {} },
       recommendations: data.analysis?.recommendations || []
     };
+    }, this.DEFAULT_CACHE_TTL);
   }
 
   private async getPathAnalysis(fromTokenAddress: string, toTokenAddress: string, chainId: number): Promise<PathAnalysis> {

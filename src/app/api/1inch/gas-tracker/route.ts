@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       analysis: {
         recommendation: getGasRecommendation(data),
         trend: analyzeGasTrend(data),
-        optimalTiming: getOptimalTiming(data)
+        optimalTiming: getOptimalTiming()
       },
       timestamp: Date.now()
     };
@@ -150,7 +150,7 @@ function analyzeGasTrend(gasData: GasData): string {
   return 'Stable network conditions';
 }
 
-function getOptimalTiming(_gasData: GasData): string {
+function getOptimalTiming(): string {
   const currentHour = new Date().getUTCHours();
   
   // General patterns: gas is usually lower during UTC off-hours (2-8 AM)

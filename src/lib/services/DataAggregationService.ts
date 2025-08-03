@@ -170,13 +170,16 @@ export class DataAggregationService {
       });
     } catch (error) {
       // Handle HTTP/2 protocol errors by falling back to regular fetch
-      if (error instanceof Error && error.message.includes('HTTP2_PROTOCOL_ERROR')) {
-        console.warn(`HTTP/2 error for ${url}, falling back to HTTP/1.1:`, error.message);
+      if (error instanceof Error && 
+          (error.message.includes('HTTP2_PROTOCOL_ERROR') || 
+           error.message.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
+           error.message.includes('Failed to fetch'))) {
+        console.warn(`🔄 HTTP/2 error for ${url}, falling back to simple fetch:`, error.message);
         return await fetch(url, {
           ...options,
           headers: {
             'Accept': 'application/json',
-            'User-Agent': 'UniteDefi/1.0',
+            'User-Agent': 'Mozilla/5.0 (compatible; UniteDefi/1.0)',
             'Connection': 'keep-alive',
             ...options.headers
           }
@@ -571,8 +574,8 @@ export class DataAggregationService {
     console.log(`📊 Fetching ${majorDexes.length} DEX protocols in parallel...`);
     
     const fetchPromises = majorDexes.map(async (dexName) => {
+      const url = `${this.DEFILLAMA_BASE_URL}/protocol/${dexName}`;
       try {
-        const url = `${this.DEFILLAMA_BASE_URL}/protocol/${dexName}`;
         
         const response = await this.optimizedFetch(url);
 
@@ -613,7 +616,42 @@ export class DataAggregationService {
         }
         return null;
       } catch (error) {
-        console.warn(`❌ Error fetching ${dexName}:`, error);
+        // Handle specific HTTP/2 protocol errors
+        if (error instanceof TypeError && 
+            (error.message.includes('ERR_HTTP2_PROTOCOL_ERROR') || 
+             error.message.includes('Failed to fetch'))) {
+          console.warn(`🔄 HTTP/2 protocol error for ${dexName}, attempting fallback...`);
+          
+          // Try a direct fetch with simpler options as fallback
+          try {
+            const fallbackResponse = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'UniteDefi/1.0'
+              }
+            });
+            
+            if (fallbackResponse.ok) {
+              const responseText = await fallbackResponse.text();
+              const data = this.parseWithJsonRepair(responseText, dexName);
+              
+              if (data) {
+                const normalizedKey = dexName.replace('-dex', '').replace('-exchange', '').replace('-network', '');
+                const dataRecord = data as Record<string, unknown>;
+                
+                if (data && typeof dataRecord.tvl === 'number' && dataRecord.tvl > 0) {
+                  console.log(`✅ Fallback fetch succeeded for ${dexName}`);
+                  return { key: normalizedKey, tvl: dataRecord.tvl, source: 'fallback' };
+                }
+              }
+            }
+          } catch (fallbackError) {
+            console.warn(`❌ Fallback fetch also failed for ${dexName}:`, fallbackError);
+          }
+        }
+        
+        console.warn(`❌ Error fetching ${dexName}:`, error instanceof Error ? error.message : error);
         return null;
       }
     });
@@ -1166,20 +1204,109 @@ export class DataAggregationService {
   // ===== FALLBACK DATA =====
 
   private getFallbackTokens(chainId: number): Record<string, TokenInfo> {
-    const mainnetTokens: Record<string, TokenInfo> = {};
-    
-    // Convert metadata to TokenInfo format
-    for (const [address, metadata] of Object.entries(this.tokenMetadata)) {
-      mainnetTokens[address] = {
-        address,
-        symbol: metadata.symbol,
-        name: metadata.name,
-        decimals: metadata.decimals,
-        geckoId: metadata.geckoId
-      };
-    }
-    
-    return chainId === 1 ? mainnetTokens : {};
+    // Enhanced fallback token list with major tokens for multi-hop routing
+    const fallbackTokensByChain: Record<number, Record<string, TokenInfo>> = {
+      // Ethereum Mainnet
+      1: {
+        '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2': {
+          address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+          symbol: 'WETH',
+          name: 'Wrapped Ether',
+          decimals: 18,
+          logoURI: '',
+          tags: ['tokens'],
+          geckoId: 'ethereum'
+        },
+        '0xA0b86a33E6441431c0B7a5cEC6eCb99F2fB83A4D': {
+          address: '0xA0b86a33E6441431c0B7a5cEC6eCb99F2fB83A4D',
+          symbol: 'USDC',
+          name: 'USD Coin',
+          decimals: 6,
+          logoURI: '',
+          tags: ['tokens', 'stablecoin'],
+          geckoId: 'usd-coin'
+        },
+        '0xdAC17F958D2ee523a2206206994597C13D831ec7': {
+          address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+          symbol: 'USDT',
+          name: 'Tether USD',
+          decimals: 6,
+          logoURI: '',
+          tags: ['tokens', 'stablecoin'],
+          geckoId: 'tether'
+        },
+        '0x6B175474E89094C44Da98b954EedeAC495271d0F': {
+          address: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+          symbol: 'DAI',
+          name: 'Dai Stablecoin',
+          decimals: 18,
+          logoURI: '',
+          tags: ['tokens', 'stablecoin'],
+          geckoId: 'dai'
+        },
+        '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599': {
+          address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+          symbol: 'WBTC',
+          name: 'Wrapped BTC',
+          decimals: 8,
+          logoURI: '',
+          tags: ['tokens'],
+          geckoId: 'wrapped-bitcoin'
+        },
+        '0x514910771AF9Ca656af840dff83E8264EcF986CA': {
+          address: '0x514910771AF9Ca656af840dff83E8264EcF986CA',
+          symbol: 'LINK',
+          name: 'ChainLink Token',
+          decimals: 18,
+          logoURI: '',
+          tags: ['tokens'],
+          geckoId: 'chainlink'
+        },
+        '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984': {
+          address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
+          symbol: 'UNI',
+          name: 'Uniswap',
+          decimals: 18,
+          logoURI: '',
+          tags: ['tokens'],
+          geckoId: 'uniswap'
+        }
+      },
+      // Polygon
+      137: {
+        '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270': {
+          address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+          symbol: 'WMATIC',
+          name: 'Wrapped Matic',
+          decimals: 18,
+          logoURI: '',
+          tags: ['tokens'],
+          geckoId: 'matic-network'
+        },
+        '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174': {
+          address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+          symbol: 'USDC',
+          name: 'USD Coin (PoS)',
+          decimals: 6,
+          logoURI: '',
+          tags: ['tokens', 'stablecoin'],
+          geckoId: 'usd-coin'
+        },
+        '0xc2132D05D31c914a87C6611C10748AEb04B58e8F': {
+          address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+          symbol: 'USDT',
+          name: 'Tether USD (PoS)',
+          decimals: 6,
+          logoURI: '',
+          tags: ['tokens', 'stablecoin'],
+          geckoId: 'tether'
+        }
+      }
+    };
+
+    const tokens = fallbackTokensByChain[chainId] || {};
+    console.log(`📋 Using ${Object.keys(tokens).length} enhanced fallback tokens for chain ${chainId}`);
+    return tokens;
   }
 
   private getFallbackPrices(tokenIdentifiers: string[]): Record<string, number> {

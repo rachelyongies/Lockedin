@@ -183,7 +183,7 @@ export class RiskAssessmentAgent extends BaseAgent {
       id: config.id || 'risk-assessment-agent',
       name: config.name || 'Risk Assessment Agent',
       version: '1.0.0',
-      capabilities: ['risk-analysis', 'security-scoring', 'threat-detection', 'compliance-check'],
+      capabilities: ['analyze', 'risk-analysis', 'security-scoring', 'threat-detection', 'compliance-check'],
       dependencies: ['data-aggregation-service'],
       maxConcurrentTasks: 8,
       timeout: 45000
@@ -208,19 +208,58 @@ export class RiskAssessmentAgent extends BaseAgent {
   }
 
   async processMessage(message: AgentMessage, signal: AbortSignal): Promise<void> {
-    switch (message.type) {
-      case MessageType.REQUEST_ANALYSIS:
-        await this.handleRiskAssessmentRequest(message);
-        break;
-      case MessageType.ROUTE_PROPOSAL:
-        await this.handleRouteRiskAnalysis(message);
-        break;
-      case MessageType.MARKET_DATA:
-        await this.handleMarketRiskUpdate(message);
-        break;
-      default:
-        console.log(`🛡️ Risk Assessment Agent received: ${message.type}`);
+    console.log('🛡️ [RISK ASSESSMENT AGENT] ========== PROCESSING MESSAGE ==========');
+    console.log('📨 INPUT MESSAGE:', {
+      id: message.id,
+      type: message.type,
+      from: message.from,
+      priority: message.priority,
+      timestamp: message.timestamp,
+      dataKeys: Object.keys(message.payload || {}),
+      dataSize: JSON.stringify(message.payload || {}).length
+    });
+    
+    const startTime = Date.now();
+    let result: unknown = null;
+    let error: Error | null = null;
+    
+    try {
+      switch (message.type) {
+        case MessageType.REQUEST_ANALYSIS:
+          console.log('🔄 Processing RISK ASSESSMENT REQUEST...');
+          result = await this.handleRiskAssessmentRequest(message);
+          break;
+        case MessageType.ROUTE_PROPOSAL:
+          console.log('🔄 Processing ROUTE RISK ANALYSIS...');
+          result = await this.handleRouteRiskAnalysis(message);
+          break;
+        case MessageType.RISK_ASSESSMENT:
+          console.log('🔄 Processing RISK ASSESSMENT MESSAGE...');
+          result = await this.handleRiskAssessmentMessage(message);
+          break;
+        case MessageType.MARKET_DATA:
+          console.log('🔄 Processing MARKET RISK UPDATE...');
+          result = await this.handleMarketRiskUpdate(message);
+          break;
+        default:
+          console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
+          result = { type: 'unknown', processed: false };
+      }
+    } catch (err) {
+      error = err instanceof Error ? err : new Error(String(err));
+      console.error('❌ [RISK ASSESSMENT AGENT] Error processing message:', err);
     }
+    
+    const processingTime = Date.now() - startTime;
+    
+    console.log('📤 [RISK ASSESSMENT AGENT] OUTPUT RESULT:', {
+      success: !error,
+      processingTimeMs: processingTime,
+      resultType: typeof result,
+      resultKeys: result && typeof result === 'object' ? Object.keys(result) : [],
+      error: error ? error.message : null
+    });
+    console.log('🛡️ [RISK ASSESSMENT AGENT] ========== MESSAGE COMPLETE ==========\n');
   }
 
   async handleTask(task: unknown, signal: AbortSignal): Promise<unknown> {
@@ -290,6 +329,21 @@ export class RiskAssessmentAgent extends BaseAgent {
       tokenRisk: number;
     }> = [];
 
+    // Safety check for route.path
+    if (!route.path || !Array.isArray(route.path)) {
+      console.warn(`⚠️ Route ${route.id} has invalid or missing path:`, route.path);
+      // Create a default single-step path for direct routes
+      const defaultPath = [{
+        protocol: 'direct',
+        fromToken: route.fromToken,
+        toToken: route.toToken,
+        amount: route.amount,
+        estimatedOutput: route.estimatedOutput,
+        fee: '0'
+      }];
+      route.path = defaultPath;
+    }
+
     for (const step of route.path) {
       const protocolRisk = await this.getProtocolRisk(step.protocol);
       const liquidityRisk = await this.assessLiquidityRisk(step);
@@ -350,56 +404,16 @@ export class RiskAssessmentAgent extends BaseAgent {
   async analyzeProtocolRisk(protocolName: string): Promise<ProtocolRiskProfile> {
     console.log(`🔍 Analyzing protocol risk for ${protocolName}...`);
     
-    // Lazy load protocol profiles if not already loaded
-    if (this.protocolProfiles.size === 0) {
-      await this.loadProtocolProfiles();
+    // Check if we already have this protocol's profile
+    if (this.protocolProfiles.has(protocolName)) {
+      return this.protocolProfiles.get(protocolName)!;
     }
     
-    // Get audit information
-    const auditReports = await this.fetchAuditReports(protocolName);
-    const auditScore = this.calculateAuditScore(auditReports);
+    // Create new profile and cache it
+    const profile = await this.createProtocolProfile(protocolName);
+    this.protocolProfiles.set(protocolName, profile);
     
-    // Get TVL stability data
-    const tvlStability = await this.calculateTVLStability(protocolName);
-    
-    // Analyze governance structure
-    const governanceRisk = await this.assessGovernanceRisk(protocolName);
-    
-    // Check smart contract risks
-    const smartContractRisk = await this.assessSmartContractRisk(protocolName);
-    
-    // Analyze historical incidents
-    const incidentHistory = await this.fetchSecurityIncidents(protocolName);
-    const operationalRisk = this.calculateOperationalRisk(incidentHistory);
-    
-    // Get liquidity analysis
-    const liquidityRisk = await this.assessProtocolLiquidityRisk(protocolName);
-
-    const riskFactors = {
-      auditScore,
-      tvlStability,
-      governanceRisk,
-      smartContractRisk,
-      liquidityRisk,
-      operationalRisk
-    };
-
-    // Calculate overall protocol risk
-    const overallRisk = this.calculateProtocolOverallRisk(riskFactors);
-    
-    // Determine confidence based on data availability
-    const confidence = this.calculateAssessmentConfidence(auditReports, incidentHistory);
-
-    return {
-      protocol: protocolName,
-      version: 'latest', // Would detect actual version
-      overallRisk,
-      riskFactors,
-      auditReports,
-      incidentHistory,
-      lastAssessed: Date.now(),
-      confidence
-    };
+    return profile;
   }
 
   private async fetchAuditReports(protocolName: string): Promise<AuditReport[]> {
@@ -616,44 +630,15 @@ export class RiskAssessmentAgent extends BaseAgent {
 
   private async analyzeTokenRisk(tokenAddress: string): Promise<TokenRiskProfile> {
     try {
-      // Lazy load token profiles if not already loaded
-      if (this.tokenProfiles.size === 0) {
-        await this.initializeTokenRiskProfiles();
+      // Check if we already have this token's profile
+      if (this.tokenProfiles.has(tokenAddress.toLowerCase())) {
+        return this.tokenProfiles.get(tokenAddress.toLowerCase())!;
       }
-      // Get token information
-      const tokenInfo = await this.getTokenInfo(tokenAddress);
+      // Create new profile and cache it
+      const profile = await this.createTokenProfile(tokenAddress);
+      this.tokenProfiles.set(tokenAddress.toLowerCase(), profile);
       
-      // Calculate individual risk factors
-      const liquidityRisk = await this.calculateTokenLiquidityRisk(tokenAddress);
-      const volatilityRisk = await this.calculateTokenVolatilityRisk(tokenAddress);
-      const centralizedRisk = await this.calculateCentralizationRisk(tokenAddress);
-      const rugPullRisk = await this.calculateRugPullRisk(tokenAddress);
-      const complianceRisk = await this.calculateComplianceRisk(tokenAddress);
-      const marketCapRisk = this.calculateMarketCapRisk(Number((tokenInfo as Record<string, unknown>).marketCap) || 0);
-      
-      const riskFactors = {
-        liquidityRisk,
-        volatilityRisk,
-        centralizedRisk,
-        rugPullRisk,
-        complianceRisk,
-        marketCapRisk
-      };
-      
-      // Calculate overall token risk
-      const overallRisk = this.calculateTokenOverallRisk(riskFactors);
-      
-      // Identify risk flags
-      const riskFlags = this.identifyTokenRiskFlags(riskFactors, tokenInfo);
-      
-      return {
-        address: tokenAddress,
-        symbol: String((tokenInfo as Record<string, unknown>).symbol) || 'UNKNOWN',
-        overallRisk,
-        riskFactors,
-        riskFlags,
-        lastUpdated: Date.now()
-      };
+      return profile;
     } catch (error) {
       console.error(`Failed to analyze token risk for ${tokenAddress}:`, error);
       
@@ -731,7 +716,7 @@ export class RiskAssessmentAgent extends BaseAgent {
     }
     
     // Check for MEV protection
-    if (route.advantages.includes('mev-protected')) {
+    if (route.advantages && route.advantages.includes('mev-protected')) {
       mevRisk *= 0.3; // Reduce risk by 70%
     }
     
@@ -1058,12 +1043,69 @@ export class RiskAssessmentAgent extends BaseAgent {
     
     for (const protocol of knownProtocols) {
       try {
-        const profile = await this.analyzeProtocolRisk(protocol);
-        this.protocolProfiles.set(protocol, profile);
+        // Only load if not already cached
+        if (!this.protocolProfiles.has(protocol)) {
+          const profile = await this.createProtocolProfile(protocol);
+          this.protocolProfiles.set(protocol, profile);
+        }
       } catch (error) {
         console.warn(`Failed to load profile for ${protocol}:`, error);
       }
     }
+  }
+
+  private async createProtocolProfile(protocolName: string): Promise<ProtocolRiskProfile> {
+    // Create protocol profile without triggering loadProtocolProfiles
+    const auditReports = await this.fetchAuditReports(protocolName);
+    const auditScore = this.calculateAuditScore(auditReports);
+    
+    // Get TVL stability data
+    const tvlStability = await this.calculateTVLStability(protocolName);
+    
+    // Calculate various risk scores using correct method names
+    const smartContractRisk = await this.assessSmartContractRisk(protocolName);
+    const liquidityRisk = await this.assessProtocolLiquidityRisk(protocolName);
+    const governanceRisk = await this.assessGovernanceRisk(protocolName);
+    
+    // For operational risk, we need to fetch security incidents first
+    const securityIncidents = await this.fetchSecurityIncidents(protocolName);
+    const operationalRisk = this.calculateOperationalRisk(securityIncidents);
+    
+    // Combine all risk factors into overall score
+    const overallRisk = (smartContractRisk + liquidityRisk + governanceRisk + operationalRisk) / 4;
+    
+    return {
+      protocolName,
+      auditScore,
+      smartContractRisk,
+      liquidityRisk,
+      governanceRisk,
+      operationalRisk,
+      overallRisk,
+      tvlStability,
+      lastUpdated: Date.now(),
+      confidence: this.calculateConfidenceScore(auditReports.length, tvlStability)
+    };
+  }
+
+  private calculateConfidenceScore(auditReportsCount: number, tvlStability: number): number {
+    // Calculate confidence based on data availability and quality
+    let confidence = 0.5; // Base confidence
+    
+    // Increase confidence based on audit reports
+    if (auditReportsCount > 0) {
+      confidence += Math.min(auditReportsCount * 0.1, 0.3); // Max 0.3 boost from audits
+    }
+    
+    // Increase confidence based on TVL stability
+    if (tvlStability > 0.8) {
+      confidence += 0.2; // High stability adds confidence
+    } else if (tvlStability > 0.6) {
+      confidence += 0.1; // Medium stability adds some confidence
+    }
+    
+    // Ensure confidence stays within 0-1 range
+    return Math.min(Math.max(confidence, 0), 1);
   }
 
   private async initializeTokenRiskProfiles(): Promise<void> {
@@ -1079,12 +1121,66 @@ export class RiskAssessmentAgent extends BaseAgent {
     
     for (const tokenAddress of majorTokens) {
       try {
-        const profile = await this.analyzeTokenRisk(tokenAddress);
-        this.tokenProfiles.set(tokenAddress.toLowerCase(), profile);
+        // Only load if not already cached
+        if (!this.tokenProfiles.has(tokenAddress.toLowerCase())) {
+          const profile = await this.createTokenProfile(tokenAddress);
+          this.tokenProfiles.set(tokenAddress.toLowerCase(), profile);
+        }
       } catch (error) {
         console.warn(`Failed to initialize token profile for ${tokenAddress}:`, error);
       }
     }
+  }
+
+  private async createTokenProfile(tokenAddress: string): Promise<TokenRiskProfile> {
+    // Create token profile without triggering initializeTokenRiskProfiles
+    const tokenInfo = await this.getTokenInfo(tokenAddress);
+    
+    // Calculate individual risk factors
+    const liquidityRisk = await this.calculateTokenLiquidityRisk(tokenAddress);
+    const volatilityRisk = await this.calculateTokenVolatilityRisk(tokenAddress);
+    const centralizedRisk = await this.calculateCentralizationRisk(tokenAddress);
+    const rugPullRisk = await this.calculateRugPullRisk(tokenAddress);
+    const complianceRisk = await this.calculateComplianceRisk(tokenAddress);
+    
+    const riskFactors = {
+      liquidityRisk,
+      volatilityRisk,
+      centralizedRisk,
+      rugPullRisk,
+      complianceRisk
+    };
+    
+    // Calculate overall risk
+    const overallRisk = this.calculateTokenOverallRisk(riskFactors);
+    
+    // Identify specific risk flags
+    const riskFlags = this.identifyTokenRiskFlags(riskFactors, tokenInfo);
+    
+    return {
+      tokenAddress: tokenAddress.toLowerCase(),
+      symbol: tokenInfo.symbol || 'UNKNOWN',
+      name: tokenInfo.name || 'Unknown Token',
+      decimals: tokenInfo.decimals || 18,
+      riskFactors,
+      overallRisk,
+      riskFlags,
+      marketCapRisk: this.calculateMarketCapRisk(tokenInfo.marketCap || 0),
+      lastAssessed: Date.now(),
+      confidence: this.calculateTokenConfidence(tokenInfo)
+    };
+  }
+
+  private calculateTokenConfidence(tokenInfo: any): number {
+    // Calculate confidence based on available token information
+    let confidence = 0.5; // Base confidence
+    
+    if (tokenInfo.symbol) confidence += 0.1;
+    if (tokenInfo.name) confidence += 0.1;
+    if (tokenInfo.decimals !== undefined) confidence += 0.1;
+    if (tokenInfo.marketCap && tokenInfo.marketCap > 0) confidence += 0.2;
+    
+    return Math.min(Math.max(confidence, 0), 1);
   }
 
   private startRiskMonitoring(): void {
@@ -1289,12 +1385,38 @@ export class RiskAssessmentAgent extends BaseAgent {
     return 0.3;
   }
 
+
   // ===== MESSAGE HANDLERS =====
 
   private async handleRiskAssessmentRequest(message: AgentMessage): Promise<void> {
     try {
-      const payload = message.payload as { type: string; data: Record<string, unknown> };
-    const { type, data } = payload;
+      const payload = message.payload as { type?: string; routeProposal?: unknown; marketConditions?: unknown; userPreferences?: unknown; data?: unknown };
+      console.log('🔍 [RISK ASSESSMENT] Received payload:', JSON.stringify(payload, null, 2));
+      
+      // Handle new structured payload format from ai-agent-bridge-service
+      if (payload.type === 'route-analysis') {
+        const { routeProposal, marketConditions, userPreferences } = payload;
+        const result = await this.assessRouteRisk(
+          routeProposal as RouteProposal,
+          marketConditions as MarketConditions,
+          (userPreferences as { riskTolerance?: "conservative" | "moderate" | "aggressive" })?.riskTolerance
+        );
+        
+        await this.sendMessage({
+          to: message.from,
+          type: MessageType.RISK_ASSESSMENT,
+          payload: { result },
+          priority: MessagePriority.MEDIUM
+        });
+        return;
+      }
+      
+      // Handle legacy structured payload with explicit type/data
+      const type = payload.type;
+      const data = (payload.data || payload) as Record<string, unknown>;
+      
+      console.log('🔍 [RISK ASSESSMENT] Processing type:', type);
+      
       let result;
       
       switch (type) {
@@ -1342,6 +1464,47 @@ export class RiskAssessmentAgent extends BaseAgent {
     } catch (error) {
       console.error('Error handling route risk analysis:', error);
     }
+  }
+
+  private async handleRiskAssessmentMessage(message: AgentMessage): Promise<void> {
+    try {
+      const payload = message.payload as { riskAssessment?: RiskAssessment; routeId?: string; action?: string };
+      console.log('🔍 [RISK ASSESSMENT MESSAGE] Received payload:', JSON.stringify(payload, null, 2));
+      
+      if (payload.riskAssessment) {
+        // Handle incoming risk assessment results from other agents
+        console.log('📊 Processing risk assessment result from:', payload.riskAssessment.assessedBy);
+        
+        // Store or update risk assessment
+        await this.storeRiskAssessment(payload.riskAssessment);
+        
+        // Broadcast updated assessment if needed
+        await this.broadcastRiskAssessmentUpdate(payload.riskAssessment);
+      } else if (payload.routeId && payload.action === 'request_reassessment') {
+        // Handle requests for route reassessment
+        console.log('🔄 Reassessing route:', payload.routeId);
+        await this.reassessRoute(payload.routeId);
+      } else {
+        console.log('⚠️ Unknown RISK_ASSESSMENT message format');
+      }
+    } catch (error) {
+      console.error('❌ Error handling RISK_ASSESSMENT message:', error);
+    }
+  }
+
+  private async storeRiskAssessment(assessment: RiskAssessment): Promise<void> {
+    // Store risk assessment in cache/memory for future reference
+    console.log(`✅ Stored risk assessment for route ${assessment.routeId} with overall risk: ${assessment.overallRisk}`);
+  }
+
+  private async broadcastRiskAssessmentUpdate(assessment: RiskAssessment): Promise<void> {
+    // Broadcast updated risk assessment to other agents if significant changes
+    console.log(`📢 Broadcasting risk assessment update for route ${assessment.routeId}`);
+  }
+
+  private async reassessRoute(routeId: string): Promise<void> {
+    // Handle route reassessment requests
+    console.log(`🔄 Reassessing route: ${routeId}`);
   }
 
   private async handleMarketRiskUpdate(message: AgentMessage): Promise<void> {

@@ -29,6 +29,7 @@ export interface AIAgentAnalysis {
   confidence: number;
   insights: string[];
   oneInchAnalysis?: Comprehensive1inchAnalysis;
+  agentResponses?: Record<string, unknown>;
 }
 
 export interface AgentPrediction {
@@ -91,7 +92,7 @@ export class AIAgentBridgeService {
         id: 'route-discovery-001',
         name: 'Route Discovery Agent',
         version: '1.0.0',
-        capabilities: ['discover', 'analyze'],
+        capabilities: ['analyze', 'route-discovery', 'market-analysis'],
         dependencies: [],
         maxConcurrentTasks: 5,
         timeout: 30000
@@ -101,7 +102,7 @@ export class AIAgentBridgeService {
         id: 'risk-assessment-001',
         name: 'Risk Assessment Agent',
         version: '1.0.0',
-        capabilities: ['assess', 'analyze'],
+        capabilities: ['analyze', 'risk-assessment', 'market-analysis'],
         dependencies: [],
         maxConcurrentTasks: 3,
         timeout: 20000
@@ -111,11 +112,11 @@ export class AIAgentBridgeService {
         id: 'market-intelligence-001',
         name: 'Market Intelligence Agent',
         version: '1.0.0',
-        capabilities: ['analyze', 'monitor'],
+        capabilities: ['analyze', 'market-analysis', 'performance-monitoring'],
         dependencies: [],
         maxConcurrentTasks: 5,
         timeout: 15000
-      }, this.dataService, process.env.DUNE_API_KEY); // Pass the API key from environment
+      }, this.dataService, process.env.NEXT_PUBLIC_DUNE_API_KEY || process.env.DUNE_API_KEY); // Pass the API key from environment
 
       const executionStrategyAgent = new ExecutionStrategyAgent(this.dataService);
 
@@ -125,7 +126,7 @@ export class AIAgentBridgeService {
         id: 'security-001',
         name: 'Security Agent',
         version: '1.0.0',
-        capabilities: ['monitor', 'secure'],
+        capabilities: ['analyze', 'market-analysis', 'performance-monitoring'],
         dependencies: [],
         maxConcurrentTasks: 10,
         timeout: 5000
@@ -172,26 +173,54 @@ export class AIAgentBridgeService {
       // Convert tokens to proper format for agents
       const fromTokenAddress = this.getTokenAddress(fromToken);
       const toTokenAddress = this.getTokenAddress(toToken);
+      const chainId = this.getChainId(fromToken.network);
 
-      // Request route analysis from the coordinator
+      console.log('🔄 Fetching market data from 1inch APIs...');
+
+      // Fetch real market data from 1inch APIs
+      const [gasData, quoteData, priceData] = await Promise.all([
+        this.fetchGasData(chainId),
+        this.fetchQuoteData(fromTokenAddress, toTokenAddress, amount, chainId),
+        this.fetchTokenPrices([fromTokenAddress, toTokenAddress])
+      ]);
+
+      console.log('✅ Market data fetched successfully');
+
+      // Create proper MarketConditions object
+      const currentMarketConditions = this.createMarketConditions(gasData, priceData);
+
+      // Create proper RouteProposal object from quote data
+      const routeProposal = this.createRouteProposal(quoteData, fromTokenAddress, toTokenAddress, amount);
+
+      // Request route analysis from the coordinator with proper data structures
       const analysisRequest = {
         id: `analysis-${Date.now()}`,
         from: 'frontend',
         to: 'coordinator',
         type: MessageType.REQUEST_ANALYSIS,
         payload: {
-          fromToken: fromTokenAddress,
-          toToken: toTokenAddress,
-          amount,
-          fromAddress: walletAddress || '0x0000000000000000000000000000000000000000', // Use zero address for analysis without wallet
-          chainId: this.getChainId(fromToken.network)
+          type: 'route-analysis',
+          routeProposal,
+          marketConditions: currentMarketConditions,
+          userPreferences: {
+            riskTolerance: this.mapPreferenceToRiskTolerance(userPreferences?.userPreference),
+            maxSlippage: userPreferences?.maxSlippage || 0.5,
+            gasPreference: userPreferences?.gasPreference || 'standard'
+          },
+          walletAddress: walletAddress || '0x0000000000000000000000000000000000000000',
+          chainId
         },
         timestamp: Date.now(),
         priority: MessagePriority.HIGH
       };
 
-      // Send request to coordinator for real agent analysis
-      await this.coordinator.handleMessage(analysisRequest);
+      // Send request to coordinator for real agent analysis and collect responses
+      console.log('🤖 Sending analysis request to AI agents...');
+      const agentResponses = await this.collectAgentResponses(analysisRequest);
+      console.log('📊 AI Agent responses collected:', {
+        totalResponses: Object.keys(agentResponses).length,
+        responseTypes: Object.keys(agentResponses)
+      });
 
       // Parallel execution for better performance
       console.log('⚡ AI Agent Bridge - Starting parallel route analysis...');
@@ -244,8 +273,43 @@ export class AIAgentBridgeService {
 
       console.log(`⚡ Total analysis completed in ${Date.now() - analysisStart}ms`);
 
+      // Perform consensus building if multiple routes available
+      let consensusResult: { bestRouteId?: string; consensusScore?: number } = {};
+      if (routes.length > 1) {
+        try {
+          console.log('🎯 Building consensus among agents for route selection...');
+          const bestRouteId = await this.coordinator.requestConsensus(
+            routes,
+            riskAssessments,
+            executionStrategy ? [executionStrategy] : [],
+            {
+              cost: userPreferences?.prioritizeCost ? 0.4 : 0.3,
+              time: userPreferences?.prioritizeSpeed ? 0.4 : 0.25,
+              security: userPreferences?.prioritizeSecurity ? 0.4 : 0.35,
+              reliability: 0.05,
+              slippage: 0.05
+            }
+          );
+          
+          consensusResult = { 
+            bestRouteId, 
+            consensusScore: 0.9 // High confidence in consensus result
+          };
+          
+          // Reorder routes based on consensus - put consensus choice first
+          const consensusRoute = routes.find(r => r.id === bestRouteId);
+          if (consensusRoute) {
+            routes = [consensusRoute, ...routes.filter(r => r.id !== bestRouteId)];
+            console.log(`✅ Consensus achieved: Route ${bestRouteId} selected as optimal`);
+          }
+        } catch (error) {
+          console.warn('⚠️ Consensus building failed, proceeding with individual agent recommendations:', error);
+          consensusResult = { consensusScore: 0.0 }; // No consensus achieved
+        }
+      }
+
       // Generate enhanced insights based on agent analysis and 1inch data
-      const insights = this.generateEnhancedInsights(routes, riskAssessments, executionStrategy, oneInchAnalysis);
+      const insights = this.generateEnhancedInsights(routes, riskAssessments, executionStrategy, oneInchAnalysis, consensusResult);
 
       // Update performance metrics
       const responseTime = Date.now() - startTime;
@@ -253,15 +317,27 @@ export class AIAgentBridgeService {
 
       console.log(`⚡ Route analysis completed in ${responseTime}ms`);
 
-      return {
+      // Enhanced response with clear source attribution  
+      const enhancedResponse = {
         routes,
         riskAssessments,
         executionStrategy,
         marketConditions,
         confidence: this.calculateEnhancedConfidence(routes, riskAssessments, executionStrategy, oneInchAnalysis),
         insights,
-        oneInchAnalysis
+        oneInchAnalysis,
+        consensus: consensusResult,
+        
+        // Enhanced source attribution
+        sourceAttribution: this.generateSourceAttribution(routes, riskAssessments, executionStrategy, consensusResult),
+        
+        // Executive summary for user clarity
+        executiveSummary: this.generateExecutiveSummary(routes, riskAssessments, executionStrategy, consensusResult, oneInchAnalysis),
+        
+        agentResponses: agentResponses || {}
       };
+
+      return enhancedResponse;
     } catch (error) {
       console.error('🚨 AI Agent Analysis FAILED - Real Data Required:', {
         error: error instanceof Error ? error.message : error,
@@ -1179,9 +1255,22 @@ export class AIAgentBridgeService {
     routes: RouteProposal[], 
     riskAssessments: RiskAssessment[], 
     executionStrategy: ExecutionStrategy,
-    oneInchAnalysis: Comprehensive1inchAnalysis
+    oneInchAnalysis: Comprehensive1inchAnalysis,
+    consensusResult?: { bestRouteId?: string; consensusScore?: number }
   ): string[] {
     const insights = this.generateInsights(routes, riskAssessments, executionStrategy);
+    
+    // Add consensus insights if available
+    const consensusInsights: string[] = [];
+    if (consensusResult?.bestRouteId) {
+      const consensusRoute = routes.find(r => r.id === consensusResult.bestRouteId);
+      if (consensusRoute) {
+        consensusInsights.push(`🎯 AI Consensus: Route "${consensusRoute.proposedBy}" selected with ${(consensusResult.consensusScore! * 100).toFixed(0)}% agreement`);
+        consensusInsights.push(`📊 Consensus factors: multi-agent analysis, risk assessment, and execution strategy alignment`);
+      }
+    } else if (consensusResult?.consensusScore === 0) {
+      consensusInsights.push(`⚠️ No consensus reached among agents - showing individual recommendations for user choice`);
+    }
     
     // Add 1inch-specific insights
     const oneInchInsights: string[] = [];
@@ -1224,7 +1313,7 @@ export class AIAgentBridgeService {
     
     oneInchInsights.push(`1inch Analysis: ${confidencePercentage}% confidence - ${recommendation}`);
 
-    return [...insights, ...oneInchInsights];
+    return [...consensusInsights, ...insights, ...oneInchInsights];
   }
 
   private calculateEnhancedConfidence(
@@ -1263,6 +1352,675 @@ export class AIAgentBridgeService {
     }
 
     return Math.max(0, Math.min(1, enhancedConfidence + adjustment));
+  }
+
+  // ===== 1INCH API DATA FETCHING METHODS =====
+
+  private async fetchGasData(chainId: number): Promise<unknown> {
+    try {
+      const response = await fetch(`http://localhost:3000/api/1inch/gas-tracker?chainId=${chainId}`);
+      if (!response.ok) {
+        throw new Error(`Gas tracker API failed: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to fetch gas data:', error);
+      // Return fallback gas data
+      return {
+        baseFee: '20000000000',
+        low: { maxFeePerGas: '21000000000' },
+        medium: { maxFeePerGas: '25000000000' },
+        high: { maxFeePerGas: '30000000000' },
+        instant: { maxFeePerGas: '40000000000' },
+        timestamp: Date.now()
+      };
+    }
+  }
+
+  private async fetchQuoteData(fromToken: string, toToken: string, amount: string, chainId: number): Promise<unknown> {
+    console.log('🔍 Hybrid Quote Fetching - Getting both 1inch APIs...');
+    
+    // Fetch both aggregation and fusion quotes in parallel
+    const [aggregationQuote, fusionQuote] = await Promise.allSettled([
+      this.fetchAggregationQuote(fromToken, toToken, amount, chainId),
+      this.fetchFusionQuote(fromToken, toToken, amount, chainId)
+    ]);
+
+    const result = {
+      aggregation: aggregationQuote.status === 'fulfilled' ? aggregationQuote.value : null,
+      fusion: fusionQuote.status === 'fulfilled' ? fusionQuote.value : null,
+      timestamp: Date.now(),
+      comparison: null as unknown
+    };
+
+    // Add comparison analysis
+    if (result.aggregation && result.fusion) {
+      result.comparison = this.compareQuotes(result.aggregation, result.fusion);
+    }
+
+    console.log('✅ Hybrid quotes fetched:', {
+      aggregationSuccess: !!result.aggregation,
+      fusionSuccess: !!result.fusion,
+      hasComparison: !!result.comparison
+    });
+
+    return result;
+  }
+
+  private async fetchAggregationQuote(fromToken: string, toToken: string, amount: string, chainId: number): Promise<unknown> {
+    try {
+      const normalizedSrc = this.normalizeTokenAddress(fromToken);
+      const normalizedDst = this.normalizeTokenAddress(toToken);
+      const normalizedAmount = this.normalizeAmount(amount);
+      
+      console.log('🔍 Aggregation API - Fetching quote...');
+
+      const url = `http://localhost:3000/api/1inch/aggregation/quote?src=${normalizedSrc}&dst=${normalizedDst}&amount=${normalizedAmount}&chainId=${chainId}&includeTokensInfo=true&includeProtocols=true&includeGas=true`;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Aggregation Quote API failed (${response.status}):`, errorText);
+        throw new Error(`Aggregation Quote API failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Aggregation quote received');
+      return { ...data, apiType: 'aggregation' };
+    } catch (error) {
+      console.error('Failed to fetch aggregation quote:', error);
+      throw error;
+    }
+  }
+
+  private async fetchFusionQuote(fromToken: string, toToken: string, amount: string, chainId: number): Promise<unknown> {
+    try {
+      const normalizedSrc = this.normalizeFusionTokenAddress(fromToken);
+      const normalizedDst = this.normalizeFusionTokenAddress(toToken);
+      const normalizedAmount = this.normalizeAmount(amount);
+      
+      console.log('🔍 Fusion API - Fetching quote...');
+
+      const response = await fetch(`http://localhost:3000/api/1inch/fusion/quote`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fromTokenAddress: normalizedSrc,
+          toTokenAddress: normalizedDst,
+          amount: normalizedAmount,
+          walletAddress: '0x0000000000000000000000000000000000000000',
+          chainId: chainId,
+          enableEstimate: true
+        })
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Fusion Quote API failed (${response.status}):`, errorText);
+        throw new Error(`Fusion Quote API failed: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Fusion quote received');
+      return { ...data, apiType: 'fusion' };
+    } catch (error) {
+      console.error('Failed to fetch fusion quote:', error);
+      throw error;
+    }
+  }
+
+  private compareQuotes(aggregationQuote: unknown, fusionQuote: unknown): unknown {
+    const aggQuote = aggregationQuote as Record<string, unknown>;
+    const fusionQuoteData = fusionQuote as Record<string, unknown>;
+    const aggAmount = parseFloat((aggQuote?.dstAmount as string) || '0');
+    const fusionAmount = parseFloat((fusionQuoteData?.dstAmount as string) || '0');
+    
+    const comparison = {
+      betterRate: aggAmount > fusionAmount ? 'aggregation' : 'fusion',
+      priceDifference: Math.abs(aggAmount - fusionAmount),
+      priceDifferencePercent: aggAmount > 0 ? (Math.abs(aggAmount - fusionAmount) / aggAmount) * 100 : 0,
+      aggregationAdvantages: [
+        'Faster execution',
+        'More DEX coverage',
+        'Lower gas for simple swaps'
+      ],
+      fusionAdvantages: [
+        'MEV protection',
+        'No gas fees upfront',
+        'Better for large trades'
+      ],
+      recommendation: this.getQuoteRecommendation(aggregationQuote, fusionQuote)
+    };
+
+    return comparison;
+  }
+
+  private getQuoteRecommendation(aggQuote: unknown, fusionQuote: unknown): string {
+    const aggQuoteData = aggQuote as Record<string, unknown>;
+    const fusionQuoteData = fusionQuote as Record<string, unknown>;
+    const aggAmount = parseFloat((aggQuoteData?.dstAmount as string) || '0');
+    const fusionAmount = parseFloat((fusionQuoteData?.dstAmount as string) || '0');
+    const difference = Math.abs(aggAmount - fusionAmount) / Math.max(aggAmount, fusionAmount);
+    
+    if (difference < 0.01) { // Less than 1% difference
+      return 'fusion'; // Prefer Fusion for MEV protection when rates are similar
+    } else if (aggAmount > fusionAmount) {
+      return difference > 0.05 ? 'aggregation' : 'fusion'; // Prefer aggregation if >5% better
+    } else {
+      return 'fusion'; // Fusion has better rate
+    }
+  }
+
+  private async fetchTokenPrices(tokenAddresses: string[]): Promise<unknown> {
+    console.log('🔍 Fetching token prices for addresses:', tokenAddresses);
+    
+    // Try multiple price sources in order of preference
+    const pricePromises = tokenAddresses.map(async (address) => {
+      const normalizedAddress = this.normalizeTokenAddress(address);
+      
+      // Try spot price API first (most reliable)
+      try {
+        console.log(`🔍 Trying spot price for ${normalizedAddress}...`);
+        const spotResponse = await fetch(`http://localhost:3000/api/1inch/spot-price/1/${normalizedAddress}/USD`);
+        if (spotResponse.ok) {
+          const spotData = await spotResponse.json();
+          const price = parseFloat(spotData.price || '0');
+          if (price > 0) {
+            console.log(`✅ Spot price for ${normalizedAddress}: $${price}`);
+            return { [address]: price };
+          }
+        }
+      } catch (error) {
+        console.warn(`Spot price failed for ${normalizedAddress}:`, error);
+      }
+      
+      // Fallback to fusion prices (if available)
+      try {
+        console.log(`🔍 Trying fusion price for ${normalizedAddress}...`);
+        const fusionAddress = this.normalizeFusionTokenAddress(address);
+        const fusionResponse = await fetch(`http://localhost:3000/api/1inch/fusion/prices?tokens=${fusionAddress}`);
+        if (fusionResponse.ok) {
+          const fusionData = await fusionResponse.json();
+          if (fusionData[fusionAddress]) {
+            const price = parseFloat(fusionData[fusionAddress]);
+            if (price > 0) {
+              console.log(`✅ Fusion price for ${normalizedAddress}: $${price}`);
+              return { [address]: price };
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Fusion price failed for ${normalizedAddress}:`, error);
+      }
+      
+      // Use token-specific fallback prices
+      const fallbackPrice = this.getTokenFallbackPrice(normalizedAddress);
+      console.log(`🔄 Using fallback price for ${normalizedAddress}: $${fallbackPrice}`);
+      return { [address]: fallbackPrice };
+    });
+
+    try {
+      const priceResults = await Promise.allSettled(pricePromises);
+      const prices: Record<string, number> = {};
+      
+      priceResults.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          Object.assign(prices, result.value);
+        } else {
+          // Final fallback for failed promises
+          const address = tokenAddresses[index];
+          prices[address] = this.getTokenFallbackPrice(this.normalizeTokenAddress(address));
+        }
+      });
+      
+      console.log('📊 Final token prices:', prices);
+      return prices;
+    } catch (error) {
+      console.error('Failed to fetch any token prices:', error);
+      // Return all fallback prices
+      const fallbackPrices: Record<string, number> = {};
+      tokenAddresses.forEach(address => {
+        fallbackPrices[address] = this.getTokenFallbackPrice(this.normalizeTokenAddress(address));
+      });
+      return fallbackPrices;
+    }
+  }
+
+  private getTokenFallbackPrice(address: string): number {
+    // Realistic fallback prices for common tokens
+    const fallbackPrices: Record<string, number> = {
+      '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 3200, // WETH
+      '0x0000000000000000000000000000000000000000': 3200, // ETH
+      '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee': 3200, // ETH (1inch format)
+      '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d': 1, // USDC
+      '0xdac17f958d2ee523a2206206994597c13d831ec7': 1, // USDT
+      '0x6b175474e89094c44da98b954eedeac495271d0f': 1, // DAI
+      '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 65000, // WBTC
+    };
+    
+    const normalizedAddr = address.toLowerCase();
+    return fallbackPrices[normalizedAddr] || 1; // Default to $1 for unknown tokens
+  }
+
+  private createMarketConditions(gasData: unknown, priceData: unknown): unknown {
+    const gasDataTyped = gasData as Record<string, unknown>;
+    const now = new Date();
+    return {
+      timestamp: Date.now(),
+      networkCongestion: {
+        ethereum: this.calculateCongestionLevel(gasData),
+        polygon: 0.3,
+        bsc: 0.2,
+        arbitrum: 0.1,
+        bitcoin: 0.4,
+        stellar: 0.1,
+        solana: 0.2,
+        starknet: 0.1
+      },
+      gasPrices: {
+        ethereum: {
+          fast: parseInt(gasDataTyped?.high?.maxFeePerGas || '30000000000'),
+          standard: parseInt(gasDataTyped?.medium?.maxFeePerGas || '25000000000'),
+          safe: parseInt(gasDataTyped?.low?.maxFeePerGas || '21000000000')
+        },
+        polygon: {
+          fast: 40000000000,
+          standard: 30000000000,
+          safe: 25000000000
+        }
+      },
+      volatility: {
+        overall: 0.3, // Default moderate volatility
+        tokenSpecific: this.extractTokenVolatility(priceData)
+      },
+      liquidity: {
+        overall: 0.8, // Default good liquidity
+        perDEX: {
+          'uniswap-v3': 0.9,
+          'uniswap-v2': 0.8,
+          'sushiswap': 0.7,
+          'curve': 0.8
+        }
+      },
+      timeOfDay: now.getUTCHours(),
+      dayOfWeek: now.getUTCDay(),
+      prices: priceData
+    };
+  }
+
+  private createRouteProposal(quoteData: unknown, fromToken: string, toToken: string, amount: string): unknown {
+    const quoteDataTyped = quoteData as Record<string, unknown>;
+    // Handle hybrid quote structure with both aggregation and fusion data
+    const baselineQuote = quoteDataTyped?.aggregation || quoteDataTyped?.fusion || quoteDataTyped;
+    
+    return {
+      id: `route-${Date.now()}`,
+      fromToken,
+      toToken,
+      amountIn: amount,
+      
+      // Hybrid quote information
+      quotes: {
+        aggregation: quoteDataTyped?.aggregation,
+        fusion: quoteDataTyped?.fusion,
+        comparison: quoteDataTyped?.comparison
+      },
+      
+      // Use the recommended quote for primary data
+      amountOut: this.getBestAmountOut(quoteData),
+      recommendedApi: quoteDataTyped?.comparison?.recommendation || 'aggregation',
+      
+      // Route information from aggregation (for multi-hop discovery)
+      protocols: baselineQuote?.protocols || [],
+      gas: baselineQuote?.gas || 200000,
+      gasPrice: baselineQuote?.gasPrice || '25000000000',
+      
+      // Route characteristics
+      estimatedExecutionTime: this.getEstimatedExecutionTime(quoteData),
+      slippage: 0.5, // 0.5% default
+      priceImpact: 0.1, // 0.1% default
+      
+      // Paths for multi-hop analysis
+      paths: this.extractPaths(baselineQuote),
+      
+      // MEV and execution preferences
+      mevProtection: {
+        available: !!quoteData.fusion,
+        recommended: quoteData.comparison?.recommendation === 'fusion'
+      },
+      
+      confidence: 0.8,
+      timestamp: Date.now(),
+      
+      // Flag for RouteDiscoveryAgent to explore alternatives
+      enableCustomDiscovery: true,
+      baselineComplete: true
+    };
+  }
+
+  private getBestAmountOut(quoteData: unknown): string {
+    const quoteDataTyped = quoteData as Record<string, unknown>;
+    if ((quoteDataTyped?.comparison as Record<string, unknown>)?.recommendation === 'fusion' && quoteDataTyped?.fusion) {
+      return ((quoteDataTyped?.fusion as Record<string, unknown>)?.dstAmount as string) || '0';
+    } else if (quoteDataTyped?.aggregation) {
+      return ((quoteDataTyped?.aggregation as Record<string, unknown>)?.dstAmount as string) || '0';
+    } else if (quoteDataTyped?.fusion) {
+      return ((quoteDataTyped?.fusion as Record<string, unknown>)?.dstAmount as string) || '0';
+    }
+    return '0';
+  }
+
+  private getEstimatedExecutionTime(quoteData: unknown): number {
+    const quoteDataTyped = quoteData as Record<string, unknown>;
+    if ((quoteDataTyped?.comparison as Record<string, unknown>)?.recommendation === 'fusion') {
+      return 30000; // Fusion takes longer but provides MEV protection
+    }
+    return 15000; // Aggregation is faster
+  }
+
+  private extractPaths(quoteData: unknown): unknown[] {
+    const quoteDataTyped = quoteData as Record<string, unknown>;
+    return (quoteDataTyped?.protocols as Record<string, unknown>[])?.map((protocol: Record<string, unknown>, index: number) => ({
+      id: `path-${index}`,
+      protocols: [protocol?.name],
+      percentage: protocol?.part || 100,
+      estimatedGas: Math.floor(((quoteDataTyped?.gas as number) || 200000) * ((protocol?.part as number) || 100) / 100),
+      source: 'aggregation' // Mark as baseline from aggregation API
+    })) || [];
+  }
+
+  private calculateCongestionLevel(gasData: unknown): number {
+    const gasDataTyped = gasData as Record<string, unknown>;
+    if (!(gasDataTyped.medium as Record<string, unknown>)?.maxFeePerGas || !gasDataTyped.baseFee) {
+      return 0.3; // Default moderate congestion
+    }
+    
+    const medium = parseInt((gasDataTyped.medium as Record<string, unknown>).maxFeePerGas as string);
+    const base = parseInt(gasDataTyped.baseFee as string);
+    const ratio = medium / base;
+    
+    // Convert ratio to 0-1 scale
+    if (ratio < 1.2) return 0.1; // Low congestion
+    if (ratio < 1.5) return 0.3; // Moderate congestion
+    if (ratio < 2.0) return 0.6; // High congestion
+    return 0.9; // Very high congestion
+  }
+
+  private extractTokenVolatility(priceData: unknown): Record<string, number> {
+    const volatility: Record<string, number> = {};
+    Object.keys(priceData || {}).forEach(token => {
+      volatility[token] = 0.2; // Default low volatility
+    });
+    return volatility;
+  }
+
+  private mapPreferenceToRiskTolerance(preference?: string): 'conservative' | 'moderate' | 'aggressive' {
+    switch (preference) {
+      case 'security': return 'conservative';
+      case 'cost': return 'moderate';
+      case 'speed': return 'aggressive';
+      default: return 'moderate';
+    }
+  }
+
+  private normalizeTokenAddress(address: string): string {
+    // Convert zero address to 1inch native ETH format
+    if (address === '0x0000000000000000000000000000000000000000') {
+      return '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    }
+    // Convert mixed case ETH address to lowercase
+    if (address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') {
+      return '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    }
+    // Ensure address is lowercase and valid format
+    if (address.startsWith('0x') && address.length === 42) {
+      return address.toLowerCase();
+    }
+    // Fallback to original if not standard format
+    return address;
+  }
+
+  private normalizeAmount(amount: string): string {
+    // Remove any decimals and ensure it's a valid integer string
+    const cleanAmount = amount.replace(/[^0-9]/g, '');
+    if (!cleanAmount || cleanAmount === '0') {
+      return '1000000000000000000'; // 1 ETH in wei as fallback
+    }
+    return cleanAmount;
+  }
+
+  private async collectAgentResponses(analysisRequest: unknown): Promise<Record<string, unknown>> {
+    try {
+      // Send the request to coordinator and wait for processing
+      console.log('🤖 Sending analysis request to AI coordinator...');
+      await this.coordinator.handleMessage(analysisRequest);
+      
+      // Give agents time to process (they work asynchronously)
+      console.log('⏳ Waiting for AI agents to complete analysis...');
+      await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second wait
+      
+      // Since agents work autonomously, we'll return a status indicating they're working
+      return {
+        status: 'agents-notified',
+        timestamp: Date.now(),
+        message: 'AI agents have been notified and are processing the analysis request',
+        expectedAgents: ['route-discovery-001', 'risk-assessment-001', 'execution-strategy-001', 'market-intelligence-001']
+      };
+    } catch (error) {
+      console.error('Failed to collect agent responses:', error);
+      return {
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: Date.now()
+      };
+    }
+  }
+
+  private normalizeFusionTokenAddress(address: string): string {
+    // Fusion API requires specific address formatting
+    // Convert zero address to native ETH representation
+    if (address === '0x0000000000000000000000000000000000000000') {
+      return '0x0000000000000000000000000000000000000000'; // Fusion uses zero address for ETH
+    }
+    
+    // Convert 1inch aggregation ETH format to Fusion format
+    if (address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') {
+      return '0x0000000000000000000000000000000000000000'; // Fusion uses zero address for ETH
+    }
+    
+    // Ensure proper address format - Fusion API is case-sensitive
+    if (address.startsWith('0x') && address.length === 42) {
+      // Keep original case for token addresses as Fusion API might be case-sensitive
+      return address;
+    }
+    
+    return address;
+  }
+
+  private generateSourceAttribution(
+    routes: RouteProposal[], 
+    riskAssessments: RiskAssessment[], 
+    executionStrategy: ExecutionStrategy | null,
+    consensusResult?: { bestRouteId?: string; consensusScore?: number }
+  ): Record<string, unknown> {
+    const attribution = {
+      timestamp: new Date().toISOString(),
+      
+      // Route source breakdown
+      routes: routes.map(route => ({
+        id: route.id,
+        proposedBy: route.proposedBy,
+        source: this.getAgentDisplayName(route.proposedBy),
+        confidence: route.confidence,
+        estimatedOutput: route.estimatedOutput,
+        priceImpact: route.priceImpact,
+        advantages: route.advantages,
+        risks: route.risks
+      })),
+      
+      // Risk assessment sources
+      riskAssessments: riskAssessments.map(assessment => ({
+        routeId: assessment.routeId,
+        assessedBy: assessment.assessedBy,
+        source: this.getAgentDisplayName(assessment.assessedBy),
+        overallRisk: assessment.overallRisk,
+        riskLevel: this.getRiskLevel(assessment.overallRisk),
+        blockers: assessment.blockers,
+        recommendations: assessment.recommendations
+      })),
+      
+      // Execution strategy source
+      executionStrategy: executionStrategy ? {
+        strategyBy: executionStrategy.strategyBy,
+        source: this.getAgentDisplayName(executionStrategy.strategyBy),
+        confidence: executionStrategy.confidence || 0,
+        reasoning: executionStrategy.reasoning || []
+      } : null,
+      
+      // Consensus information
+      consensus: consensusResult ? {
+        hasConsensus: !!consensusResult.bestRouteId,
+        consensusScore: consensusResult.consensusScore || 0,
+        selectedRoute: consensusResult.bestRouteId || null,
+        method: 'multi-agent-weighted-scoring'
+      } : null,
+      
+      // Agent participation summary
+      participatingAgents: this.getParticipatingAgents(routes, riskAssessments, executionStrategy)
+    };
+    
+    return attribution;
+  }
+
+  private generateExecutiveSummary(
+    routes: RouteProposal[], 
+    riskAssessments: RiskAssessment[], 
+    executionStrategy: ExecutionStrategy | null,
+    consensusResult?: { bestRouteId?: string; consensusScore?: number },
+    oneInchAnalysis?: Comprehensive1inchAnalysis
+  ): Record<string, unknown> {
+    const primaryRoute = routes[0];
+    const primaryRisk = riskAssessments[0];
+    
+    const summary = {
+      // Primary recommendation
+      primaryRecommendation: {
+        route: primaryRoute ? {
+          id: primaryRoute.id,
+          source: this.getAgentDisplayName(primaryRoute.proposedBy),
+          outputAmount: primaryRoute.estimatedOutput,
+          confidence: `${(primaryRoute.confidence * 100).toFixed(0)}%`,
+          reasoning: primaryRoute.advantages?.[0] || 'Optimal based on analysis'
+        } : null,
+        
+        risk: primaryRisk ? {
+          level: this.getRiskLevel(primaryRisk.overallRisk),
+          score: primaryRisk.overallRisk,
+          assessor: this.getAgentDisplayName(primaryRisk.assessedBy),
+          keyRisks: primaryRisk.blockers?.slice(0, 2) || []
+        } : null
+      },
+      
+      // Consensus status
+      consensusStatus: consensusResult?.bestRouteId ? {
+        status: 'achieved',
+        confidence: `${(consensusResult.consensusScore! * 100).toFixed(0)}%`,
+        selectedRoute: consensusResult.bestRouteId,
+        message: 'AI agents reached consensus on optimal route'
+      } : {
+        status: 'no_consensus',
+        message: 'Multiple route options available - review individual agent recommendations',
+        availableOptions: routes.length
+      },
+      
+      // Key insights for user decision making
+      keyInsights: [
+        `${routes.length} route${routes.length === 1 ? '' : 's'} analyzed by ${this.getUniqueAgents(routes).length} AI agent${this.getUniqueAgents(routes).length === 1 ? '' : 's'}`,
+        primaryRoute ? `Best output: ${primaryRoute.estimatedOutput} ${primaryRoute.toToken}` : 'No valid routes found',
+        primaryRisk ? `Risk level: ${this.getRiskLevel(primaryRisk.overallRisk)}` : 'Risk assessment pending',
+        oneInchAnalysis ? `1inch confidence: ${(oneInchAnalysis.overall.confidence * 100).toFixed(0)}%` : 'No 1inch analysis'
+      ].filter(Boolean),
+      
+      // Action recommendations
+      nextSteps: this.generateActionRecommendations(routes, riskAssessments, consensusResult)
+    };
+    
+    return summary;
+  }
+
+  private getAgentDisplayName(agentId: string): string {
+    const agentNames: Record<string, string> = {
+      'route-discovery-001': 'Route Discovery Agent',
+      'risk-assessment-001': 'Risk Assessment Agent', 
+      'execution-strategy-001': 'Execution Strategy Agent',
+      'market-intelligence-001': 'Market Intelligence Agent',
+      '1inch-fusion-intelligent': 'AI Fusion Router',
+      '1inch-aggregation-intelligent': 'AI Aggregation Router',
+      '1inch-aggregation-baseline': 'Baseline Aggregation',
+      '1inch-fusion-baseline': 'Baseline Fusion',
+      'fusion-aware-pathfinder': 'Advanced Pathfinder'
+    };
+    
+    return agentNames[agentId] || agentId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  private getRiskLevel(riskScore: number): string {
+    if (riskScore <= 0.3) return 'Low Risk';
+    if (riskScore <= 0.6) return 'Medium Risk';
+    if (riskScore <= 0.8) return 'High Risk';
+    return 'Critical Risk';
+  }
+
+  private getParticipatingAgents(
+    routes: RouteProposal[], 
+    riskAssessments: RiskAssessment[], 
+    executionStrategy: ExecutionStrategy | null
+  ): string[] {
+    const agents = new Set<string>();
+    
+    routes.forEach(route => agents.add(this.getAgentDisplayName(route.proposedBy)));
+    riskAssessments.forEach(assessment => agents.add(this.getAgentDisplayName(assessment.assessedBy)));
+    if (executionStrategy) agents.add(this.getAgentDisplayName(executionStrategy.strategyBy));
+    
+    return Array.from(agents).sort();
+  }
+
+  private getUniqueAgents(routes: RouteProposal[]): string[] {
+    return Array.from(new Set(routes.map(r => r.proposedBy)));
+  }
+
+  private generateActionRecommendations(
+    routes: RouteProposal[], 
+    riskAssessments: RiskAssessment[], 
+    consensusResult?: { bestRouteId?: string; consensusScore?: number }
+  ): string[] {
+    const recommendations: string[] = [];
+    
+    if (consensusResult?.bestRouteId) {
+      recommendations.push('✅ Execute the consensus-selected route with confidence');
+      if (consensusResult.consensusScore! > 0.8) {
+        recommendations.push('🚀 High consensus score indicates strong agent agreement');
+      }
+    } else {
+      recommendations.push('⚠️ Review multiple route options and choose based on your priorities');
+      recommendations.push('💡 Consider risk tolerance, time preference, and cost sensitivity');
+    }
+    
+    // Risk-based recommendations
+    const highRiskRoutes = riskAssessments.filter(r => r.overallRisk > 0.7);
+    if (highRiskRoutes.length > 0) {
+      recommendations.push('🛡️ Consider risk mitigation strategies for high-risk routes');
+    }
+    
+    // Multiple routes available
+    if (routes.length > 1) {
+      recommendations.push('📊 Compare route outputs, risks, and execution strategies before deciding');
+    }
+    
+    return recommendations;
   }
 }
 

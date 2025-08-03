@@ -6,12 +6,20 @@ const FUSION_API_CONFIG = {
   timeout: 30000,
 };
 
-// Also try the standard 1inch aggregation API as fallback
-const AGGREGATION_API_CONFIG = {
-  baseUrl: 'https://api.1inch.dev/swap/v6.0/1', // Ethereum mainnet
-  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || 'demo_api_key',
-  timeout: 30000,
+// Multi-chain support configuration
+const SUPPORTED_CHAINS = {
+  1: 'Ethereum',
+  137: 'Polygon', 
+  42161: 'Arbitrum',
+  10: 'Optimism',
+  56: 'BSC'
 };
+
+const getAggregationApiConfig = (chainId: number) => ({
+  baseUrl: `https://api.1inch.dev/swap/v6.0/${chainId}`,
+  apiKey: process.env.NEXT_PUBLIC_1INCH_API_KEY || '',
+  timeout: 30000,
+});
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,8 +28,49 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('📋 Request body:', body);
     
-    // Use the correct v2.0 Fusion API endpoint structure (GET method with query params)
-    const chainId = 1; // Ethereum mainnet for now
+    // Validate addresses before proceeding
+    const addresses = {
+      fromTokenAddress: body.fromTokenAddress,
+      toTokenAddress: body.toTokenAddress,
+      walletAddress: body.walletAddress
+    };
+    
+    console.log('🔍 Address validation:', {
+      fromToken: `${addresses.fromTokenAddress} (length: ${addresses.fromTokenAddress?.length || 0})`,
+      toToken: `${addresses.toTokenAddress} (length: ${addresses.toTokenAddress?.length || 0})`,
+      wallet: `${addresses.walletAddress} (length: ${addresses.walletAddress?.length || 0})`
+    });
+    
+    // Check for valid Ethereum address format (0x + 40 hex chars = 42 total)
+    const isValidAddress = (addr: string) => addr && /^0x[0-9a-fA-F]{40}$/.test(addr);
+    const addressValidation = {
+      fromToken: isValidAddress(addresses.fromTokenAddress),
+      toToken: isValidAddress(addresses.toTokenAddress),
+      wallet: isValidAddress(addresses.walletAddress)
+    };
+    
+    console.log('✅ Address format validation:', addressValidation);
+    
+    if (!addressValidation.fromToken || !addressValidation.toToken || !addressValidation.wallet) {
+      console.error('❌ Invalid address format detected:', {
+        fromToken: !addressValidation.fromToken ? addresses.fromTokenAddress : 'valid',
+        toToken: !addressValidation.toToken ? addresses.toTokenAddress : 'valid', 
+        wallet: !addressValidation.wallet ? addresses.walletAddress : 'valid'
+      });
+    }
+    
+    // Support multi-chain requests
+    const chainId = body.chainId || 1;
+    
+    // Validate chain support
+    if (!SUPPORTED_CHAINS[chainId as keyof typeof SUPPORTED_CHAINS]) {
+      return NextResponse.json(
+        { error: `Unsupported chain ID: ${chainId}. Supported chains: ${Object.keys(SUPPORTED_CHAINS).join(', ')}` },
+        { status: 400 }
+      );
+    }
+    
+    console.log(`🌐 Processing request for ${SUPPORTED_CHAINS[chainId as keyof typeof SUPPORTED_CHAINS]} (Chain ID: ${chainId})`);
     
     // Convert POST body to GET query parameters for Fusion API
     const fusionParams = new URLSearchParams({
@@ -72,12 +121,13 @@ export async function POST(request: NextRequest) {
         allowPartialFill: 'false'
       });
       
-      const fallbackResponse = await fetch(`${AGGREGATION_API_CONFIG.baseUrl}/quote?${queryParams}`, {
+      const aggregationConfig = getAggregationApiConfig(chainId);
+      const fallbackResponse = await fetch(`${aggregationConfig.baseUrl}/quote?${queryParams}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${AGGREGATION_API_CONFIG.apiKey}`,
+          'Authorization': `Bearer ${aggregationConfig.apiKey}`,
         },
-        signal: AbortSignal.timeout(AGGREGATION_API_CONFIG.timeout),
+        signal: AbortSignal.timeout(aggregationConfig.timeout),
       });
       
       if (!fallbackResponse.ok) {
@@ -96,6 +146,49 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     console.log('✅ 1inch Fusion API Success - Quote received');
+    
+    // Enhanced diagnostics for Fusion API response
+    console.log('🔍 [FUSION DIAGNOSTICS] Response analysis:', {
+      hasToAmount: !!(data.toAmount || data.toTokenAmount || data.dstAmount),
+      toAmount: data.toAmount || data.toTokenAmount || data.dstAmount || 'undefined',
+      hasFromAmount: !!(data.fromAmount || data.fromTokenAmount || data.srcAmount),
+      fromAmount: data.fromAmount || data.fromTokenAmount || data.srcAmount || 'undefined',
+      responseKeys: Object.keys(data),
+      requestParams: {
+        srcToken: body.fromTokenAddress,
+        dstToken: body.toTokenAddress,
+        amount: body.amount,
+        walletAddress: body.walletAddress
+      }
+    });
+    
+    // Check for zero output and investigate potential causes
+    const outputAmount = data.toAmount || data.toTokenAmount || data.dstAmount;
+    if (!outputAmount || outputAmount === '0' || outputAmount === 0) {
+      console.warn('⚠️ [FUSION ZERO OUTPUT] Fusion API returned 0 output amount:');
+      console.warn('📋 Detailed investigation:', {
+        rawResponse: JSON.stringify(data, null, 2),
+        possibleCauses: [
+          'Insufficient liquidity for token pair',
+          'Amount too small or too large',
+          'Token addresses invalid or not supported',
+          'Fusion not available for this pair',
+          'Request parameters malformed'
+        ],
+        requestValidation: {
+          hasValidSrcToken: body.fromTokenAddress && body.fromTokenAddress.length === 42,
+          hasValidDstToken: body.toTokenAddress && body.toTokenAddress.length === 42,
+          hasValidAmount: body.amount && parseFloat(body.amount) > 0,
+          hasValidWallet: body.walletAddress && body.walletAddress.length === 42
+        },
+        recommendations: [
+          'Check token pair is supported by Fusion',
+          'Verify amount is within reasonable limits',
+          'Try aggregation API as fallback',
+          'Check if tokens are properly approved'
+        ]
+      });
+    }
     
     return NextResponse.json(data);
   } catch (error) {

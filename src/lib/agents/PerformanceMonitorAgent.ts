@@ -181,14 +181,14 @@ export class PerformanceMonitorAgent extends BaseAgent {
       id: 'performance-monitor',
       name: 'PerformanceMonitorAgent',
       version: '1.0.0',
-      capabilities: ['performance-monitoring', 'analytics', 'alerting'],
+      capabilities: ['analyze', 'performance-monitoring', 'analytics', 'alerting'],
       dependencies: [],
       maxConcurrentTasks: 5,
       timeout: 30000
     };
     
     const capabilities: AgentCapabilities = {
-      canAnalyzeMarket: false,
+      canAnalyzeMarket: true,
       canDiscoverRoutes: false,
       canAssessRisk: false,
       canExecuteTransactions: false,

@@ -390,7 +390,7 @@ export class MarketIntelligenceAgent extends BaseAgent {
 
     super(defaultConfig, marketCapabilities);
     this.dataService = dataService;
-    this.duneClient = new DuneAnalyticsClient(duneApiKey || process.env.DUNE_API_KEY || '');
+    this.duneClient = new DuneAnalyticsClient(duneApiKey || process.env.NEXT_PUBLIC_DUNE_API_KEY || process.env.DUNE_API_KEY || '');
   }
 
   async initialize(): Promise<void> {
@@ -431,16 +431,50 @@ export class MarketIntelligenceAgent extends BaseAgent {
   }
 
   async processMessage(message: AgentMessage, signal: AbortSignal): Promise<void> {
-    switch (message.type) {
-      case MessageType.REQUEST_ANALYSIS:
-        await this.handleAnalysisRequest(message);
-        break;
-      case MessageType.MARKET_DATA:
-        await this.handleMarketDataUpdate(message);
-        break;
-      default:
-        console.log(`📊 Market Intelligence Agent received: ${message.type}`);
+    console.log('📊 [MARKET INTELLIGENCE AGENT] ========== PROCESSING MESSAGE ==========');
+    console.log('📨 INPUT MESSAGE:', {
+      id: message.id,
+      type: message.type,
+      from: message.from,
+      priority: message.priority,
+      timestamp: message.timestamp,
+      payloadKeys: Object.keys(message.payload || {}),
+      payloadSize: JSON.stringify(message.payload || {}).length
+    });
+    
+    const startTime = Date.now();
+    let result: unknown = null;
+    let error: Error | null = null;
+    
+    try {
+      switch (message.type) {
+        case MessageType.REQUEST_ANALYSIS:
+          console.log('🔄 Processing MARKET ANALYSIS REQUEST...');
+          result = await this.handleAnalysisRequest(message);
+          break;
+        case MessageType.MARKET_DATA:
+          console.log('🔄 Processing MARKET DATA UPDATE...');
+          result = await this.handleMarketDataUpdate(message);
+          break;
+        default:
+          console.log(`🔄 Processing UNKNOWN message type: ${message.type}`);
+          result = { type: 'unknown', processed: false };
+      }
+    } catch (err) {
+      error = err instanceof Error ? err : new Error(String(err));
+      console.error('❌ [MARKET INTELLIGENCE AGENT] Error processing message:', err);
     }
+    
+    const processingTime = Date.now() - startTime;
+    
+    console.log('📤 [MARKET INTELLIGENCE AGENT] OUTPUT RESULT:', {
+      success: !error,
+      processingTimeMs: processingTime,
+      resultType: typeof result,
+      resultKeys: result && typeof result === 'object' ? Object.keys(result) : [],
+      error: error ? error.message : null
+    });
+    console.log('📊 [MARKET INTELLIGENCE AGENT] ========== MESSAGE COMPLETE ==========\n');
   }
 
   async handleTask(task: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {

@@ -602,7 +602,12 @@ export abstract class BaseAgent extends EventEmitter {
   }
 
   getCapabilities(): AgentCapabilities {
-    // Convert string array to capabilities object for backward compatibility
+    // If capabilities were explicitly provided in constructor, use those
+    if (this.capabilities) {
+      return this.capabilities;
+    }
+    
+    // Otherwise, convert string array to capabilities object for backward compatibility
     const capabilityStrings = this.config.capabilities || [];
     return {
       canAnalyzeMarket: capabilityStrings.includes('market-analysis'),

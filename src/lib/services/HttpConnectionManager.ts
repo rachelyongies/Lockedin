@@ -48,11 +48,45 @@ export class HttpConnectionManager {
       keepalive: true,
       headers: {
         'Connection': 'keep-alive',
+        'User-Agent': 'UniteDefi/1.0 (compatible)',
         ...options.headers
       }
     };
 
-    return fetch(url, optimizedOptions);
+    try {
+      const response = await fetch(url, optimizedOptions);
+      
+      // Check if response was successful but had protocol issues
+      if (response.status === 200 && response.body) {
+        return response;
+      }
+      
+      return response;
+    } catch (error) {
+      // Handle HTTP/2 protocol errors by retrying with a simpler request
+      if (error instanceof TypeError && 
+          (error.message.includes('ERR_HTTP2_PROTOCOL_ERROR') || 
+           error.message.includes('Failed to fetch'))) {
+        
+        console.warn(`🔄 HTTP/2 error detected for ${url}, retrying with fallback options`);
+        
+        // Retry without keep-alive and with simpler headers
+        const fallbackOptions: RequestInit = {
+          ...options,
+          keepalive: false,
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (compatible; UniteDefi/1.0)',
+            ...options.headers
+          }
+        };
+        
+        return fetch(url, fallbackOptions);
+      }
+      
+      // Re-throw other errors
+      throw error;
+    }
   }
 
   private async serverFetch(url: string, options: RequestInit = {}): Promise<Response> {
@@ -128,11 +162,20 @@ export class OptimizedApiClient {
 
   async get(url: string, options: RequestInit = {}): Promise<Response> {
     const fetchFn = this.connectionManager.getOptimizedFetch();
-    return fetchFn(url, {
-      method: 'GET',
-      ...this.baseOptions,
-      ...options
-    });
+    
+    try {
+      const response = await fetchFn(url, {
+        method: 'GET',
+        ...this.baseOptions,
+        ...options
+      });
+      
+      return response;
+    } catch (error) {
+      // Log the error for debugging but still throw it for handling upstream
+      console.warn(`🔴 API request failed for ${url}:`, error instanceof Error ? error.message : error);
+      throw error;
+    }
   }
 
   async post(url: string, data: unknown, options: RequestInit = {}): Promise<Response> {

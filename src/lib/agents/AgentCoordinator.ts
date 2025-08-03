@@ -371,35 +371,75 @@ export class AgentCoordinator extends EventEmitter {
 
   // Main message routing logic with retry and fallback
   private async routeMessage(message: AgentMessage): Promise<void> {
+    const startTime = Date.now();
+    
+    console.log('🎯 [AGENT COORDINATOR] ========== ROUTING MESSAGE ==========');
+    console.log('📨 INPUT MESSAGE:', {
+      id: message.id,
+      type: message.type,
+      from: message.from,
+      to: message.to,
+      priority: message.priority,
+      timestamp: message.timestamp,
+      payloadKeys: Object.keys(message.payload || {}),
+      payloadSize: JSON.stringify(message.payload || {}).length + ' chars'
+    });
+    
     try {
       // Use custom router if available
       const router = this.messageRouters.get(message.type);
       if (router && router.canRoute(message)) {
+        console.log('🔀 Using custom router for message type:', message.type);
         await router.route(message, this);
+        console.log('✅ Custom router completed successfully');
+        console.log('⏱️ Processing time:', Date.now() - startTime + 'ms');
+        console.log('🎯 [AGENT COORDINATOR] ========== MESSAGE ROUTING COMPLETE ==========\n');
         return;
       }
 
       // Route to specific agent
       if (message.to && message.to !== 'coordinator' && message.to !== 'broadcast') {
+        console.log('🎯 Routing to specific agent:', message.to);
         await this.routeToSpecificAgent(message);
+        console.log('✅ Specific agent routing completed successfully');
+        console.log('⏱️ Processing time:', Date.now() - startTime + 'ms');
+        console.log('🎯 [AGENT COORDINATOR] ========== MESSAGE ROUTING COMPLETE ==========\n');
         return;
       }
 
       // Broadcast messages
       if (message.to === 'broadcast') {
+        console.log('📢 Broadcasting message to all agents');
         await this.broadcastMessage(message);
+        console.log('✅ Broadcast completed successfully');
+        console.log('⏱️ Processing time:', Date.now() - startTime + 'ms');
+        console.log('🎯 [AGENT COORDINATOR] ========== MESSAGE ROUTING COMPLETE ==========\n');
         return;
       }
 
       // Handle coordinator messages
       if (message.to === 'coordinator') {
+        console.log('🏢 Handling coordinator message');
         await this.handleCoordinatorMessage(message);
+        console.log('✅ Coordinator message handled successfully');
+        console.log('⏱️ Processing time:', Date.now() - startTime + 'ms');
+        console.log('🎯 [AGENT COORDINATOR] ========== MESSAGE ROUTING COMPLETE ==========\n');
         return;
       }
 
-      console.warn(`Unroutable message: ${message.type} from ${message.from} to ${message.to}`);
+      console.warn(`⚠️ Unroutable message: ${message.type} from ${message.from} to ${message.to}`);
+      console.log('❌ Message could not be routed');
+      console.log('⏱️ Processing time:', Date.now() - startTime + 'ms');
+      console.log('🎯 [AGENT COORDINATOR] ========== MESSAGE ROUTING FAILED ==========\n');
     } catch (error) {
-      console.error('Message routing failed:', error);
+      console.error('❌ Message routing failed:', error);
+      console.log('📊 ERROR DETAILS:', {
+        messageId: message.id,
+        messageType: message.type,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        processingTime: Date.now() - startTime + 'ms'
+      });
+      console.log('🎯 [AGENT COORDINATOR] ========== MESSAGE ROUTING ERROR ==========\n');
       this.emit('routingError', { message, error });
     }
   }
@@ -407,15 +447,25 @@ export class AgentCoordinator extends EventEmitter {
   // Route message to specific agent with retry and fallback
   private async routeToSpecificAgent(message: AgentMessage, attempt: number = 0): Promise<void> {
     const targetAgentId = message.to;
+    const MAX_ATTEMPTS = 3;
+
+    // Prevent infinite recursion
+    if (attempt >= MAX_ATTEMPTS) {
+      console.error(`❌ Max routing attempts (${MAX_ATTEMPTS}) exceeded for message ${message.id} to ${targetAgentId}`);
+      throw new Error(`Unable to route message to ${targetAgentId} after ${MAX_ATTEMPTS} attempts`);
+    }
+
     const registry = this.agents.get(targetAgentId);
+
+    console.log(`🎯 [SPECIFIC AGENT ROUTING] Attempt ${attempt + 1}/${MAX_ATTEMPTS} to route to ${targetAgentId}`);
 
     if (!registry) {
       // Try to find fallback agent
       const fallback = await this.findFallbackAgent(targetAgentId);
-      if (fallback) {
+      if (fallback && fallback !== targetAgentId) { // Prevent fallback to same agent
         console.log(`📎 Using fallback agent ${fallback} for ${targetAgentId}`);
         message.to = fallback;
-        await this.routeToSpecificAgent(message, attempt);
+        await this.routeToSpecificAgent(message, attempt + 1);
       } else {
         throw new Error(`Agent ${targetAgentId} not found and no fallback available`);
       }
@@ -425,17 +475,23 @@ export class AgentCoordinator extends EventEmitter {
     // Check if agent can handle the message
     if (!this.canAgentHandleMessage(registry, message)) {
       const fallback = await this.findFallbackAgent(targetAgentId);
-      if (fallback) {
+      if (fallback && fallback !== targetAgentId) { // Prevent fallback to same agent
+        console.log(`📎 Agent ${targetAgentId} cannot handle message, using fallback ${fallback}`);
         message.to = fallback;
-        await this.routeToSpecificAgent(message, attempt);
+        await this.routeToSpecificAgent(message, attempt + 1);
         return;
+      } else {
+        console.warn(`⚠️ Agent ${targetAgentId} cannot handle message type ${message.type} and no fallback available`);
+        // Continue anyway to let the agent decide
       }
     }
 
     // Attempt delivery
     try {
+      console.log(`📤 Delivering message ${message.id} to agent ${targetAgentId}`);
       await registry.agent.receiveMessage(message);
       this.recordAgentSuccess(targetAgentId);
+      console.log(`✅ Message ${message.id} successfully delivered to ${targetAgentId}`);
     } catch (error) {
       this.recordAgentFailure(targetAgentId);
 
@@ -547,7 +603,9 @@ export class AgentCoordinator extends EventEmitter {
 
   // Broadcast message to all capable agents with load balancing
   private async broadcastMessage(message: AgentMessage): Promise<void> {
+    console.log('📢 [BROADCAST] Starting message broadcast');
     const eligibleAgents = this.getEligibleAgents(message);
+    console.log(`📢 [BROADCAST] Found ${eligibleAgents.length} eligible agents`);
 
     // Sort by load and priority
     eligibleAgents.sort((a, b) => {
@@ -558,15 +616,26 @@ export class AgentCoordinator extends EventEmitter {
 
     // Send to eligible agents (limit broadcast size)
     const maxRecipients = Math.min(eligibleAgents.length, 5);
+    console.log(`📢 [BROADCAST] Broadcasting to ${maxRecipients} agents (max: 5)`);
     const promises: Promise<void>[] = [];
 
     for (let i = 0; i < maxRecipients; i++) {
       const targetId = eligibleAgents[i].agent.getConfig().id;
+      console.log(`📢 [BROADCAST] Adding ${targetId} to broadcast list`);
       const routingMessage = { ...message, to: targetId };
       promises.push(this.routeToSpecificAgent(routingMessage));
     }
 
-    await Promise.allSettled(promises);
+    const results = await Promise.allSettled(promises);
+    const successful = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+    
+    console.log(`📢 [BROADCAST] Broadcast complete: ${successful} successful, ${failed} failed`);
+    if (failed > 0) {
+      console.log('📢 [BROADCAST] Failed deliveries:', 
+        results.filter(r => r.status === 'rejected').map(r => (r as PromiseRejectedResult).reason)
+      );
+    }
   }
 
   // Broadcast to agents with specific capability
@@ -776,7 +845,20 @@ export class AgentCoordinator extends EventEmitter {
 
   // Handle incoming messages (route them appropriately)
   async handleMessage(message: AgentMessage): Promise<void> {
+    console.log('🎯 [AGENT COORDINATOR] ========== HANDLING INCOMING MESSAGE ==========');
+    console.log('📬 Received message for handling:', {
+      id: message.id,
+      type: message.type,
+      from: message.from,
+      to: message.to,
+      priority: message.priority,
+      timestamp: message.timestamp
+    });
+    
     await this.routeMessage(message);
+    
+    console.log('✅ Message handling complete for:', message.id);
+    console.log('🎯 [AGENT COORDINATOR] ========== MESSAGE HANDLING COMPLETE ==========\n');
   }
 
   // Shutdown the coordinator (alias for stop for compatibility)
@@ -1022,6 +1104,46 @@ export class AgentCoordinator extends EventEmitter {
     }
   }
 
+  // Route analysis request to individual agents for comprehensive processing
+  private async routeAnalysisToAgents(message: AgentMessage): Promise<void> {
+    console.log('🚀 [ANALYSIS ROUTING] Starting comprehensive agent analysis');
+    
+    // Create analysis tasks for each agent type
+    const analysisAgents = [
+      'route-discovery-001',
+      'market-intelligence-001', 
+      'risk-assessment-001',
+      'execution-strategy-001'
+    ];
+
+    const routingPromises = analysisAgents.map(async (agentId) => {
+      // Create a specific message for each agent
+      const agentMessage: AgentMessage = {
+        id: `${message.id}-${agentId}`,
+        from: 'coordinator',
+        to: agentId,
+        type: MessageType.REQUEST_ANALYSIS,
+        timestamp: Date.now(),
+        priority: message.priority || MessagePriority.MEDIUM,
+        payload: message.payload
+      };
+
+      console.log(`🎯 [ANALYSIS ROUTING] Sending analysis request to ${agentId}`);
+      
+      try {
+        await this.routeToSpecificAgent(agentMessage);
+        console.log(`✅ [ANALYSIS ROUTING] Successfully routed to ${agentId}`);
+      } catch (error) {
+        console.error(`❌ [ANALYSIS ROUTING] Failed to route to ${agentId}:`, error);
+      }
+    });
+
+    // Wait for all agent routing attempts to complete
+    await Promise.allSettled(routingPromises);
+    
+    console.log('🏁 [ANALYSIS ROUTING] All agents have been contacted for analysis');
+  }
+
   private async handleConsensusMessage(message: AgentMessage): Promise<void> {
     const payload = message.payload as ConsensusResponse & { responseId: string };
     const { responseId, ...response } = payload;
@@ -1052,8 +1174,9 @@ export class AgentCoordinator extends EventEmitter {
     const { type } = payload;
     
     if (!type) {
-      // Handle route analysis requests (legacy format)
-      console.log('📊 Processing route analysis request');
+      // Handle route analysis requests - route to individual agents
+      console.log('📊 Processing route analysis request - routing to individual agents');
+      await this.routeAnalysisToAgents(message);
       return;
     }
     
@@ -1065,6 +1188,10 @@ export class AgentCoordinator extends EventEmitter {
       case 'agent-metrics':
         const metrics = this.getAgentStatistics();
         await this.sendResponse(message, metrics);
+        break;
+      case 'route-analysis':
+        console.log('📊 Processing route-analysis request - routing to AI agents');
+        await this.routeAnalysisToAgents(message);
         break;
       default:
         console.log(`Unknown analysis request: ${type}`);
