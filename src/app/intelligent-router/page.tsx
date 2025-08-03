@@ -653,8 +653,51 @@ export default function IntelligentAIRouterPage() {
             </div>
           </motion.div>
 
-          {/* Market Analysis - Next to Bridge */}
-          {routerState.aiResults && routerState.aiResults.routes && routerState.aiResults.routes.length > 0 && (
+          {/* Active Agents Display - During Analysis */}
+          {routerState.executionStatus === 'analyzing' && routerState.activeAgents.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              <h2 className="text-2xl font-bold mb-6 flex items-center space-x-2">
+                <Bot className="w-6 h-6 text-cyan-400" />
+                <span>AI Agents Active</span>
+              </h2>
+              
+              <div className="bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-2xl p-6">
+                <div className="space-y-4">
+                  <div className="text-sm text-gray-300 mb-4">
+                    {routerState.currentPhase || 'AI Agents Analyzing...'}
+                  </div>
+                  
+                  <div className="grid gap-3">
+                    {routerState.activeAgents.map((agentId, index) => (
+                      <motion.div
+                        key={agentId}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="flex items-center space-x-3 p-3 bg-cyan-500/10 border border-cyan-500/20 rounded-lg"
+                      >
+                        <motion.div
+                          animate={{ scale: [1, 1.2, 1] }}
+                          transition={{ duration: 1.5, repeat: Infinity }}
+                          className="w-3 h-3 bg-cyan-400 rounded-full"
+                        />
+                        <span className="text-sm font-medium text-cyan-300">
+                          {AGENT_NAMES[agentId as keyof typeof AGENT_NAMES] || agentId}
+                        </span>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Market Analysis - Next to Bridge (After Analysis Complete) */}
+          {routerState.aiResults && routerState.aiResults.routes && routerState.aiResults.routes.length > 0 && routerState.executionStatus !== 'analyzing' && (
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
