@@ -86,17 +86,20 @@ export default function NetworkTestPage() {
 
   // Listen for network changes
   useEffect(() => {
-    if (isMetaMaskInstalled) {
-      window.ethereum.on('chainChanged', (chainId: string) => {
+    if (isMetaMaskInstalled && window.ethereum) {
+      window.ethereum.on('chainChanged', (...args: unknown[]) => {
+        const chainId = args[0] as string;
         const newChainId = parseInt(chainId, 16);
         setCurrentNetwork(NETWORKS[newChainId] || null);
         addToast({
+          title: 'Network Changed',
           message: `Network changed to: ${NETWORKS[newChainId]?.name || 'Unknown'}`,
           type: 'info'
         });
       });
 
-      window.ethereum.on('accountsChanged', (accounts: string[]) => {
+      window.ethereum.on('accountsChanged', (...args: unknown[]) => {
+        const accounts = args[0] as string[];
         if (accounts.length > 0) {
           setWalletAddress(accounts[0]);
           fetchBalance(accounts[0]);
@@ -111,25 +114,28 @@ export default function NetworkTestPage() {
 
   const detectCurrentNetwork = async () => {
     try {
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      const networkId = parseInt(chainId, 16);
+      const chainId = await window.ethereum!.request({ method: 'eth_chainId' });
+      const networkId = parseInt(chainId as string, 16);
       const network = NETWORKS[networkId];
       
       setCurrentNetwork(network || null);
       
       if (network) {
         addToast({
+          title: 'Network Detected',
           message: `Detected: ${network.name}`,
           type: 'success'
         });
       } else {
         addToast({
+          title: 'Unknown Network',
           message: `Unknown network: Chain ID ${networkId}`,
           type: 'warning'
         });
       }
     } catch (error) {
       addToast({
+        title: 'Detection Failed',
         message: `Failed to detect network: ${error}`,
         type: 'error'
       });
@@ -139,6 +145,7 @@ export default function NetworkTestPage() {
   const connectWallet = async () => {
     if (!isMetaMaskInstalled) {
       addToast({
+        title: 'Wallet Not Found',
         message: 'MetaMask not installed',
         type: 'error'
       });
@@ -147,18 +154,20 @@ export default function NetworkTestPage() {
 
     setIsLoading(true);
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const accounts = await window.ethereum!.request({ method: 'eth_requestAccounts' }) as string[];
       if (accounts.length > 0) {
         setWalletAddress(accounts[0]);
         setConnectionStatus('Connected');
         await fetchBalance(accounts[0]);
         addToast({
+          title: 'Wallet Connected',
           message: `Connected: ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`,
           type: 'success'
         });
       }
     } catch (error) {
       addToast({
+        title: 'Connection Failed',
         message: `Connection failed: ${error}`,
         type: 'error'
       });
@@ -169,10 +178,10 @@ export default function NetworkTestPage() {
 
   const fetchBalance = async (address: string) => {
     try {
-      const balanceHex = await window.ethereum.request({
+      const balanceHex = await window.ethereum!.request({
         method: 'eth_getBalance',
         params: [address, 'latest']
-      });
+      }) as string;
       const balanceWei = parseInt(balanceHex, 16);
       const balanceEth = balanceWei / Math.pow(10, 18);
       setBalance(balanceEth.toFixed(6));
@@ -186,7 +195,7 @@ export default function NetworkTestPage() {
     if (!isMetaMaskInstalled) return;
 
     try {
-      await window.ethereum.request({
+      await window.ethereum!.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: `0x${targetChainId.toString(16)}` }],
       });
@@ -196,7 +205,7 @@ export default function NetworkTestPage() {
         const network = NETWORKS[targetChainId];
         if (network) {
           try {
-            await window.ethereum.request({
+            await window.ethereum!.request({
               method: 'wallet_addEthereumChain',
               params: [{
                 chainId: `0x${targetChainId.toString(16)}`,
@@ -212,6 +221,7 @@ export default function NetworkTestPage() {
             });
           } catch (addError) {
             addToast({
+              title: 'Network Add Failed',
               message: `Failed to add network: ${addError}`,
               type: 'error'
             });
@@ -219,6 +229,7 @@ export default function NetworkTestPage() {
         }
       } else {
         addToast({
+          title: 'Network Switch Failed',
           message: `Failed to switch network: ${switchError}`,
           type: 'error'
         });
@@ -249,17 +260,20 @@ export default function NetworkTestPage() {
       if (data.result) {
         const blockNumber = parseInt(data.result, 16);
         addToast({
+          title: 'RPC Test Success',
           message: `RPC Connected! Latest block: ${blockNumber}`,
           type: 'success'
         });
       } else {
         addToast({
+          title: 'RPC Test Failed',
           message: 'RPC test failed',
           type: 'error'
         });
       }
     } catch (error) {
       addToast({
+        title: 'RPC Test Error',
         message: `RPC test failed: ${error}`,
         type: 'error'
       });

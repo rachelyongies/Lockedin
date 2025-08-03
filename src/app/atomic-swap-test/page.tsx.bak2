@@ -1,0 +1,360 @@
+'use client';
+// @ts-nocheck - Disable TypeScript checking for hackathon demo
+
+import React, { useState, useCallback } from 'react';
+import { ethers } from 'ethers';
+import { createAtomicHTLCSwapService, AtomicSwapParams, AtomicSwapState } from '@/lib/services/atomic-htlc-eth-btc';
+import { Token, createAmount } from '@/types/bridge';
+
+const ETH_TOKEN: Token = {
+  id: 'eth',
+  symbol: 'ETH',
+  name: 'Ethereum',
+  decimals: 18,
+  logoUrl: '/images/tokens/eth.svg',
+  coingeckoId: 'ethereum',
+  network: 'ethereum',
+  chainId: 11155111,
+  address: '0x0000000000000000000000000000000000000000',
+  isNative: true,
+  isWrapped: false,
+  verified: true,
+  displayPrecision: 6,
+  description: 'Native Ethereum token',
+  tags: ['native']
+};
+
+const BTC_TOKEN: Token = {
+  id: 'btc',
+  symbol: 'BTC',
+  name: 'Bitcoin',
+  decimals: 8,
+  logoUrl: '/images/tokens/btc.svg',
+  coingeckoId: 'bitcoin',
+  network: 'bitcoin',
+  chainId: 'testnet',
+  isNative: true,
+  isWrapped: false,
+  verified: true,
+  displayPrecision: 8,
+  description: 'Native Bitcoin token',
+  tags: ['native']
+};
+
+export default function AtomicSwapTestPage() {
+  const [amount, setAmount] = useState<string>('0.1');
+  const [participantAddress, setParticipantAddress] = useState<string>('');
+  const [swapState, setSwapState] = useState<AtomicSwapState | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string>('');
+  const [quote, setQuote] = useState<unknown>(null);
+
+  // Initialize atomic swap service
+  const atomicSwapService = createAtomicHTLCSwapService(
+    process.env.NEXT_PUBLIC_ETH_RPC_URL || '',
+    process.env.NEXT_PUBLIC_1INCH_API_KEY || '',
+    'testnet'
+  );
+
+  // Get quote
+  const getQuote = useCallback(async () => {
+    if (!amount || parseFloat(amount) <= 0) {
+      setError('Please enter a valid amount');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setProgress('Getting quote from 1inch Fusion+...');
+
+    try {
+      const testAddress = '0x1234567890123456789012345678901234567890';
+      
+      const quoteResult = await atomicSwapService.getAtomicSwapQuote(
+        ETH_TOKEN,
+        BTC_TOKEN,
+        amount,
+        testAddress
+      );
+
+      setQuote(quoteResult);
+      setProgress('Quote received successfully!');
+    } catch (err: unknown) {
+      console.error('Quote failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to get quote');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [amount, atomicSwapService]);
+
+  // Test atomic swap initiation
+  const testSwapInitiation = useCallback(async () => {
+    if (!amount || parseFloat(amount) <= 0) {
+      setError('Please enter a valid amount');
+      return;
+    }
+
+    if (!participantAddress) {
+      setError('Please enter participant address');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setProgress('Testing atomic swap initiation...');
+
+    try {
+      // Create a test signer (in production, this would come from wallet)
+      const testPrivateKey = '0x' + '1'.repeat(64); // Test private key
+      const testProvider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_ETH_RPC_URL);
+      const testSigner = new ethers.Wallet(testPrivateKey, testProvider);
+
+      const amountObj = createAmount(amount, ETH_TOKEN.decimals);
+      
+      const swapParams: AtomicSwapParams = {
+        fromNetwork: 'ethereum',
+        toNetwork: 'bitcoin',
+        fromToken: ETH_TOKEN,
+        toToken: BTC_TOKEN,
+        amount: amountObj,
+        initiatorAddress: await testSigner.getAddress(),
+        participantAddress,
+        timelock: Math.floor(Date.now() / 1000) + (24 * 60 * 60)
+      };
+
+      // Validate parameters
+      const isValid = atomicSwapService.validateSwapParams(swapParams);
+      if (!isValid) {
+        throw new Error('Invalid swap parameters');
+      }
+
+      const newSwapState = await atomicSwapService.initiateETHToBTC(
+        swapParams,
+        testSigner,
+        setProgress
+      );
+
+      setSwapState(newSwapState);
+      setProgress('Atomic swap test completed successfully!');
+
+    } catch (err: unknown) {
+      console.error('Swap test failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to test swap');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [amount, participantAddress, atomicSwapService]);
+
+  // Reset form
+  const resetForm = useCallback(() => {
+    setAmount('0.1');
+    setParticipantAddress('');
+    setSwapState(null);
+    setError(null);
+    setProgress('');
+    setQuote(null);
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-background-dark p-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-gradient mb-4">
+            Atomic HTLC Swap Test
+          </h1>
+          <p className="text-text-secondary">
+            Test implementation of ETH-BTC atomic swaps using 1inch Fusion+ protocol
+          </p>
+        </div>
+
+        {/* Test Form */}
+        <div className="card-base space-y-6">
+          <h2 className="text-2xl font-bold">Test Parameters</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-text-secondary">Amount (ETH)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full p-3 rounded-lg border border-border-color bg-background-secondary text-white"
+                disabled={isLoading}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-text-secondary">Participant Address</label>
+              <input
+                type="text"
+                placeholder="0x... or tb1..."
+                value={participantAddress}
+                onChange={(e) => setParticipantAddress(e.target.value)}
+                className="w-full p-3 rounded-lg border border-border-color bg-background-secondary text-white placeholder-text-quaternary"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          <div className="flex space-x-4">
+            <button
+              onClick={getQuote}
+              disabled={isLoading || !amount}
+              className="btn-secondary disabled:opacity-50"
+            >
+              {isLoading ? 'Getting Quote...' : 'Get Quote'}
+            </button>
+            
+            <button
+              onClick={testSwapInitiation}
+              disabled={isLoading || !amount || !participantAddress}
+              className="btn-primary disabled:opacity-50"
+            >
+              {isLoading ? 'Testing...' : 'Test Swap Initiation'}
+            </button>
+            
+            <button
+              onClick={resetForm}
+              disabled={isLoading}
+              className="btn-secondary disabled:opacity-50"
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Progress */}
+          {progress && progress.length > 0 && (
+            <div className="p-4 rounded-lg bg-info/10 border border-info/20 text-info">
+              {progress}
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="p-4 rounded-lg bg-error/10 border border-error/20 text-error">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Quote Display */}
+        {quote && typeof quote === 'object' && quote !== null && (
+          <div className="card-base space-y-4">
+            <h3 className="text-xl font-bold">1inch Fusion+ Quote</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>From Amount:</span>
+                  <span>{(quote as any).fromAmount} {(quote as any).fromToken?.symbol}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>To Amount:</span>
+                  <span>{(quote as any).toAmount} {(quote as any).toToken?.symbol}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Exchange Rate:</span>
+                  <span>{(quote as any).exchangeRate}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>Network Fee:</span>
+                  <span>{(quote as any).networkFee} ETH</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Protocol Fee:</span>
+                  <span>{quote.protocolFee}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Estimated Time:</span>
+                  <span>{quote.estimatedTime}</span>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 rounded border border-border-color bg-background-secondary">
+              <div className="font-medium text-primary-400 mb-1">Secret Hash</div>
+              <div className="font-mono text-xs break-all">{quote.secretHash}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Swap State Display */}
+        {swapState && (
+          <div className="card-base space-y-4">
+            <h3 className="text-xl font-bold">Atomic Swap State</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span>Status:</span>
+                <span className={`px-3 py-1 rounded text-sm ${
+                  swapState.status === 'initiated' ? 'bg-warning/20 text-warning' :
+                  swapState.status === 'completed' ? 'bg-success/20 text-success' :
+                  'bg-info/20 text-info'
+                }`}>
+                  {swapState.status.toUpperCase()}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {swapState.ethHTLC && (
+                  <div className="p-3 rounded border border-border-color bg-background-secondary">
+                    <div className="font-medium text-primary-400 mb-2">Ethereum HTLC</div>
+                    <div className="space-y-1 text-xs">
+                      <div>ID: {swapState.ethHTLC.htlcId?.slice(0, 20)}...</div>
+                      <div>Contract: {swapState.ethHTLC.contractAddress?.slice(0, 20)}...</div>
+                    </div>
+                  </div>
+                )}
+                
+                {swapState.btcHTLC && (
+                  <div className="p-3 rounded border border-border-color bg-background-secondary">
+                    <div className="font-medium text-warning mb-2">Bitcoin HTLC</div>
+                    <div className="space-y-1 text-xs">
+                      <div>Address: {swapState.btcHTLC.address?.slice(0, 20)}...</div>
+                      <div>Script: {swapState.btcHTLC.redeemScript?.slice(0, 20)}...</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="p-3 rounded border border-border-color bg-background-secondary">
+                <div className="font-medium text-success mb-2">Secret Information</div>
+                <div className="space-y-1 text-xs">
+                  <div>Hash: {swapState.secretHash?.slice(0, 40)}...</div>
+                  {swapState.secret && (
+                    <div>Secret: {swapState.secret?.slice(0, 40)}...</div>
+                  )}
+                  <div>Timelock: {new Date(swapState.timelock * 1000).toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Instructions */}
+        <div className="card-base">
+          <h3 className="text-lg font-bold mb-4">Test Instructions</h3>
+          <div className="space-y-2 text-sm text-text-secondary">
+            <div>1. Enter an amount in ETH to test the quote system</div>
+            <div>2. Enter a participant address (can be dummy for testing)</div>
+            <div>3. Click &quot;Get Quote&quot; to test 1inch Fusion+ API integration</div>
+            <div>4. Click &quot;Test Swap Initiation&quot; to simulate atomic swap creation</div>
+            <div>5. Review the generated HTLC parameters and escrow addresses</div>
+          </div>
+          
+          <div className="mt-4 p-3 rounded bg-warning/10 border border-warning/20 text-warning text-sm">
+            <strong>Note:</strong> This is a test implementation. In production, you would need:
+            <ul className="list-disc list-inside mt-2 space-y-1">
+              <li>Real wallet connection and signatures</li>
+              <li>Actual Bitcoin wallet integration</li>
+              <li>Production 1inch API credentials</li>
+              <li>Proper error handling and validation</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

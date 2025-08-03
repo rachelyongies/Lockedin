@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { PageWrapper } from '@/components/layout/PageWrapper';
 import { BridgeForm } from '@/components/bridge/BridgeForm';
-import { ToastContainer, useToast } from '@/components/ui/Toast';
+import { useToast } from '@/components/ui/Toast';
 import { useWalletStore } from '@/store/useWalletStore';
 import { Token } from '@/types/bridge';
 import { solanaBridgeService } from '@/lib/services/solana-bridge-service';
@@ -15,7 +15,7 @@ export default function SolanaTestPage() {
   const { isConnected, account, walletType, connect, disconnect } = useWalletStore();
   
   // Toast notifications
-  const { addToast } = useToast();
+  const toast = useToast();
   
   // Test result interface
   interface TestResult {
@@ -124,9 +124,9 @@ export default function SolanaTestPage() {
       await testBridgeQuote();
       await testBridgeExecution();
       
-      addToast({ type: 'success', message: 'All tests completed!' });
+      toast.success('Success', 'All tests completed!');
     } catch (error) {
-      addToast({ type: 'error', message: 'Some tests failed' });
+      toast.error('Error', 'Some tests failed');
     } finally {
       setIsTesting(false);
     }
@@ -135,7 +135,7 @@ export default function SolanaTestPage() {
   // Handle bridge
   const handleBridge = async (fromToken: Token, toToken: Token, amount: string) => {
     try {
-      addToast({ type: 'info', message: `Bridging ${amount} ${fromToken.symbol} to ${toToken.symbol}...` });
+      toast.info('Info', `Bridging ${amount} ${fromToken.symbol} to ${toToken.symbol}...`);
       
       const transaction = await solanaBridgeService.executeBridge(
         fromToken,
@@ -148,11 +148,7 @@ export default function SolanaTestPage() {
         }
       );
       
-      addToast({ 
-        type: 'success', 
-        message: `Successfully bridged ${amount} ${fromToken.symbol} to ${toToken.symbol}!`,
-        duration: 7000
-      });
+      toast.success('Bridge Successful', `Successfully bridged ${amount} ${fromToken.symbol} to ${toToken.symbol}!`, 7000);
       
       addTestResult('Manual Bridge', 'success', 'Manual bridge executed successfully', {
         transactionId: transaction.id,
@@ -162,7 +158,7 @@ export default function SolanaTestPage() {
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Bridge failed';
-      addToast({ type: 'error', message: errorMessage });
+      toast.error('Error', errorMessage);
       addTestResult('Manual Bridge', 'error', errorMessage);
     }
   };
@@ -206,9 +202,9 @@ export default function SolanaTestPage() {
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Bridge Interface</h2>
                 <BridgeForm
                   onBridge={handleBridge}
-                  onQuoteError={(error) => addToast({ type: 'error', message: error })}
-                  onError={(message) => addToast({ type: 'error', message })}
-                  onSuccess={(message) => addToast({ type: 'success', message })}
+                  onQuoteError={(error) => toast.error('Error', error )}
+                  onError={(message) => toast.error('Error', message )}
+                  onSuccess={(message) => toast.success('Success', message )}
                 />
               </div>
             </div>
@@ -290,7 +286,7 @@ export default function SolanaTestPage() {
         </div>
       </div>
       
-      <ToastContainer toasts={[]} onRemoveToast={() => {}} />
+      {/* Toast notifications are handled by ToastProvider */}
     </PageWrapper>
   );
 }

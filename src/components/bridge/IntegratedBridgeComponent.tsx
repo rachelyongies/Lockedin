@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Spinner } from '@/components/ui/Spinner';
-import { ToastComponent } from '@/components/ui/Toast';
+import { useToast } from '@/components/ui/Toast';
 
 interface IntegratedBridgeComponentProps {
   walletAddress: string;
@@ -22,6 +22,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
   walletAddress,
   onTransactionComplete
 }) => {
+  const toast = useToast();
   // Form state
   const [fromChain, setFromChain] = useState<'ethereum' | 'bitcoin'>('ethereum');
   const [toChain, setToChain] = useState<'ethereum' | 'bitcoin'>('bitcoin');
@@ -40,8 +41,6 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
   const [isLoading, setIsLoading] = useState(false);
   const [currentHTLC, setCurrentHTLC] = useState<IntegratedHTLC | null>(null);
   const [htlcList, setHtlcList] = useState<IntegratedHTLC[]>([]);
-  const [error, setError] = useState<string>('');
-  const [success, setSuccess] = useState<string>('');
 
   // Get token options based on chain
   const getTokenOptions = (chain: string) => {
@@ -62,12 +61,11 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
   // Create cross-chain swap
   const createSwap = async () => {
     if (!fromToken || !toToken || !amount || !walletAddress) {
-      setError('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const request: CrossChainSwapRequest = {
@@ -83,7 +81,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
 
       const result = await integratedBridgeService.createCrossChainSwap(request);
       setCurrentHTLC(result.htlc);
-      setSuccess(`Cross-chain swap created! HTLC ID: ${result.htlc.id}`);
+      toast.success(`Cross-chain swap created! HTLC ID: ${result.htlc.id}`);
       
       if (onTransactionComplete) {
         onTransactionComplete(result);
@@ -92,7 +90,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
       // Refresh HTLC list
       await loadHTLCs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create swap');
+      toast.error(err instanceof Error ? err.message : 'Failed to create swap');
     } finally {
       setIsLoading(false);
     }
@@ -101,12 +99,11 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
   // Fund Bitcoin HTLC
   const fundBitcoinHTLC = async () => {
     if (!currentHTLC || !bitcoinPrivateKey || !bitcoinAmount) {
-      setError('Please provide Bitcoin private key and amount');
+      toast.error('Please provide Bitcoin private key and amount');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const amount = parseFloat(bitcoinAmount);
@@ -121,7 +118,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
         10 // fee rate
       );
 
-      setSuccess(`Bitcoin HTLC funded! TXID: ${result.txid}`);
+      toast.success(`Bitcoin HTLC funded! TXID: ${result.txid}`);
       
       // Update current HTLC
       const updatedHTLC = await integratedBridgeService.monitorHTLC(currentHTLC.id);
@@ -132,7 +129,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
       // Refresh HTLC list
       await loadHTLCs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fund Bitcoin HTLC');
+      toast.error(err instanceof Error ? err.message : 'Failed to fund Bitcoin HTLC');
     } finally {
       setIsLoading(false);
     }
@@ -141,12 +138,11 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
   // Claim Bitcoin HTLC
   const claimBitcoinHTLC = async () => {
     if (!currentHTLC || !bitcoinPrivateKey || !destinationAddress) {
-      setError('Please provide Bitcoin private key and destination address');
+      toast.error('Please provide Bitcoin private key and destination address');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const result = await integratedBridgeService.claimBitcoinHTLC(
@@ -156,7 +152,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
         10 // fee rate
       );
 
-      setSuccess(`Bitcoin HTLC claimed! TXID: ${result.txid}`);
+      toast.success(`Bitcoin HTLC claimed! TXID: ${result.txid}`);
       
       // Update current HTLC
       const updatedHTLC = await integratedBridgeService.monitorHTLC(currentHTLC.id);
@@ -167,7 +163,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
       // Refresh HTLC list
       await loadHTLCs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to claim Bitcoin HTLC');
+      toast.error(err instanceof Error ? err.message : 'Failed to claim Bitcoin HTLC');
     } finally {
       setIsLoading(false);
     }
@@ -176,12 +172,11 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
   // Refund Bitcoin HTLC
   const refundBitcoinHTLC = async () => {
     if (!currentHTLC || !bitcoinPrivateKey || !destinationAddress) {
-      setError('Please provide Bitcoin private key and destination address');
+      toast.error('Please provide Bitcoin private key and destination address');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const result = await integratedBridgeService.refundBitcoinHTLC(
@@ -191,7 +186,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
         10 // fee rate
       );
 
-      setSuccess(`Bitcoin HTLC refunded! TXID: ${result.txid}`);
+      toast.success(`Bitcoin HTLC refunded! TXID: ${result.txid}`);
       
       // Update current HTLC
       const updatedHTLC = await integratedBridgeService.monitorHTLC(currentHTLC.id);
@@ -202,7 +197,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
       // Refresh HTLC list
       await loadHTLCs();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to refund Bitcoin HTLC');
+      toast.error(err instanceof Error ? err.message : 'Failed to refund Bitcoin HTLC');
     } finally {
       setIsLoading(false);
     }
@@ -346,7 +341,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
             
             {/* Generate Bitcoin Key Pair */}
             <div className="mb-4">
-              <Button onClick={generateBitcoinKeyPair} variant="outline" className="mb-2">
+              <Button onClick={generateBitcoinKeyPair} variant="secondary" className="mb-2">
                 Generate Bitcoin Key Pair (Test)
               </Button>
             </div>
@@ -403,7 +398,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
                   <Button
                     onClick={refundBitcoinHTLC}
                     disabled={isLoading || !bitcoinPrivateKey || !destinationAddress}
-                    variant="outline"
+                    variant="secondary"
                   >
                     {isLoading ? <Spinner /> : 'Refund HTLC'}
                   </Button>
@@ -483,13 +478,7 @@ export const IntegratedBridgeComponent: React.FC<IntegratedBridgeComponentProps>
         )}
       </Card>
 
-      {/* Error and Success Messages */}
-      {error && (
-        <ToastComponent type="error" onClose={() => setError('')} message={error} />
-      )}
-      {success && (
-        <ToastComponent type="success" onClose={() => setSuccess('')} message={success} />
-      )}
+      {/* Toast notifications are handled by the ToastProvider */}
     </div>
   );
 }; 

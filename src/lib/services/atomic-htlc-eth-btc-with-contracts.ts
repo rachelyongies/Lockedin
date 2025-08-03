@@ -2,6 +2,7 @@ import { ethers } from 'ethers';
 import { Token, BridgeQuote, BridgeTransaction, BridgeError, BridgeErrorCode, Amount, createAmount } from '@/types/bridge';
 import { BitcoinHTLCService, BitcoinHTLCParams, BitcoinHTLCResult } from './bitcoin-htlc-service';
 import { HTLCContractService, HTLCParams, HTLCState } from './htlc-contract-service';
+import { WETHWrapper, createWETHWrapper } from './weth-wrapper';
 import { CONTRACT_ADDRESSES } from '@/config/contracts';
 
 export interface AtomicSwapParams {
@@ -42,6 +43,11 @@ export interface AtomicSwapState {
     publicKey: string;
     address: string;
   };
+  participantKeyPair?: {
+    privateKey: string;
+    publicKey: string;
+    address: string;
+  };
 }
 
 /**
@@ -51,6 +57,7 @@ export interface AtomicSwapState {
 export class AtomicHTLCSwapServiceWithContracts {
   private htlcContractService: HTLCContractService;
   private btcHTLCService: BitcoinHTLCService;
+  private wethWrapper: WETHWrapper;
   private ethProvider: ethers.Provider;
   private isInitialized = false;
   private network: string;
@@ -67,6 +74,7 @@ export class AtomicHTLCSwapServiceWithContracts {
     // Initialize YOUR HTLC contract service with 1inch API for real quotes
     this.htlcContractService = new HTLCContractService(this.ethProvider, network, apiKey);
     this.btcHTLCService = new BitcoinHTLCService(bitcoinNetwork);
+    this.wethWrapper = createWETHWrapper(this.ethProvider, network);
   }
 
   async initialize() {
@@ -145,9 +153,42 @@ export class AtomicHTLCSwapServiceWithContracts {
       onProgress?.('🏗️ Creating HTLC on Ethereum with YOUR contract...');
       
       // Step 3: Create HTLC using YOUR deployed contract
+      // Note: resolver should be an Ethereum address, not Bitcoin address
+      // Your contract only supports ERC20 tokens, so use WETH for ETH swaps
+      const fromTokenAddress = params.fromToken.isNative 
+        ? CONTRACT_ADDRESSES.sepolia.WETH // Use WETH for native ETH
+        : (params.fromToken as any).address;
+
+      // Handle ETH → WETH wrapping for contract compatibility
+      if (params.fromToken.isNative) {
+        onProgress?.('🔄 Converting ETH to WETH for contract compatibility...');
+        
+        // Step 3a: Wrap ETH to WETH
+        await this.wethWrapper.wrapETH(params.amount.raw, signer, onProgress);
+        
+        // Step 3b: Approve WETH for HTLC contract
+        const htlcContractAddress = this.htlcContractService.getContractAddressForNetwork();
+        const needsApproval = await this.wethWrapper.needsApproval(
+          params.initiatorAddress,
+          htlcContractAddress,
+          params.amount.raw
+        );
+        
+        if (needsApproval) {
+          await this.wethWrapper.approveWETH(
+            htlcContractAddress,
+            params.amount.raw,
+            signer,
+            onProgress
+          );
+        }
+        
+        onProgress?.('✅ ETH successfully converted to WETH and approved');
+      }
+
       const htlcParams: HTLCParams = {
-        resolver: params.participantAddress,
-        fromToken: params.fromToken.address || '0x0000000000000000000000000000000000000000',
+        resolver: params.initiatorAddress, // Use initiator's Ethereum address as resolver
+        fromToken: fromTokenAddress,
         toToken: CONTRACT_ADDRESSES.sepolia.WBTC, // Use configured WBTC address
         amount: ethers.parseUnits(params.amount.raw, params.fromToken.decimals).toString(),
         expectedAmount: ethers.parseUnits(quote.toAmount, 8).toString(),
@@ -167,14 +208,19 @@ export class AtomicHTLCSwapServiceWithContracts {
       
       onProgress?.('₿ Generating Bitcoin HTLC escrow...');
       
-      // Step 4: Generate Bitcoin key pair for this swap
+      // Step 4: Generate Bitcoin key pair for this swap (recipient)
       const bitcoinKeyPair = this.btcHTLCService.generateKeyPair();
       
-      // Step 5: Generate Bitcoin HTLC parameters for destination escrow
+      // Step 5: Generate Bitcoin key pair for sender (participant)
+      // Note: In a real implementation, the participant would provide their public key
+      // For testing, we generate a key pair that represents the participant
+      const participantKeyPair = this.btcHTLCService.generateKeyPair();
+      
+      // Step 6: Generate Bitcoin HTLC parameters for destination escrow
       const btcHTLCParams: BitcoinHTLCParams = {
         secretHash: secretHash,
-        recipientPubKey: bitcoinKeyPair.publicKey,
-        senderPubKey: params.participantAddress,
+        recipientPubKey: bitcoinKeyPair.publicKey, // Recipient's public key (hex)
+        senderPubKey: participantKeyPair.publicKey, // Participant's public key (hex)
         timelock: htlcParams.timelock,
         network: 'testnet'
       };
@@ -209,7 +255,8 @@ export class AtomicHTLCSwapServiceWithContracts {
         secretHash: secretHash,
         timelock: htlcParams.timelock,
         createdAt: Date.now(),
-        bitcoinKeyPair
+        bitcoinKeyPair,
+        participantKeyPair
       };
 
       return swapState;

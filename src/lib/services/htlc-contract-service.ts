@@ -337,6 +337,8 @@ export class HTLCContractService {
         
         console.log(`🌉 Cross-chain quote: ${sourceChain} (${srcChainId}) → ${destinationChain} (${dstChainId})`);
         console.log(`📍 Tokens: ${srcTokenAddress} → ${dstTokenAddress}`);
+        console.log(`💰 Amount: ${ethers.parseUnits(amount, fromToken.decimals).toString()} (${amount} ${fromToken.symbol})`);
+        console.log(`👤 Wallet: ${walletAddress}`);
           
         const fusionQuote = await this.fusionQuoter.getQuote({
           srcChain: srcChainId,

@@ -166,12 +166,12 @@ export class TrueBridgeService {
           symbol: data.fromToken?.symbol || 'UNKNOWN',
           address: params.srcTokenAddress,
           chainId: params.srcChainId
-        },
+        } as any,
         toToken: {
-          symbol: data.toToken?.symbol || 'UNKNOWN',
+          symbol: data.toToken?.symbol || 'UNKNOWN',  
           address: params.dstTokenAddress,
           chainId: params.dstChainId
-        },
+        } as any,
         fromAmount: params.amount,
         toAmount: data.toTokenAmount || '0',
         exchangeRate: data.exchangeRate || '1',
@@ -197,7 +197,7 @@ export class TrueBridgeService {
    * @see https://portal.1inch.dev/documentation/apis/swap/fusion-plus/fusion-plus-sdk/for-integrators/create-order
    */
   async createOrder(params: {
-    quote: any;
+    quote: unknown;
     walletAddress: string;
     secretHash: string;
     secretHashes: string[];
@@ -343,7 +343,7 @@ export class TrueBridgeService {
 
       // Step 4: Create order on source chain with proper secret hashes
       const sourceOrder = await this.createOrder({
-        quote,
+        quote: quote as unknown,
         walletAddress: request.walletAddress,
         secretHash,
         secretHashes: [secretHash],
@@ -381,7 +381,7 @@ export class TrueBridgeService {
         });
 
         destinationOrder = await this.createOrder({
-          quote: destQuote,
+          quote: destQuote as unknown,
           walletAddress: request.recipientAddress || request.walletAddress,
           secretHash,
           secretHashes: [secretHash],
@@ -441,7 +441,7 @@ export class TrueBridgeService {
       const sourceTxHash = await this.submitSecret(
         htlcEscrow.orderHash,
         htlcEscrow.secret,
-        this.getChainId(htlcEscrow.sourceChain as any)
+        this.getChainId(htlcEscrow.sourceChain as string)
       );
 
       console.log('✅ Source HTLC executed:', sourceTxHash);
@@ -458,7 +458,7 @@ export class TrueBridgeService {
         const destTxHash = await this.submitSecret(
           htlcEscrow.destinationOrderHash,
           htlcEscrow.secret,
-          this.getChainId(htlcEscrow.destinationChain as any)
+          this.getChainId(htlcEscrow.destinationChain as string)
         );
         destinationTxHash = destTxHash.txHash;
         console.log('✅ Destination HTLC executed:', destTxHash);

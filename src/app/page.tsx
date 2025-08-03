@@ -3,7 +3,7 @@
 import React from 'react';
 import { PageWrapper } from '@/components/layout/PageWrapper';
 import { BridgeForm } from '@/components/bridge/BridgeForm';
-import { ToastContainer, useToast } from '@/components/ui/Toast';
+import { useToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { useWalletStore } from '@/store/useWalletStore';
 import { useBridgeStore } from '@/store/useBridgeStore';
@@ -53,7 +53,7 @@ export default function Home() {
   } = useNetworkStore();
 
   // Toast notifications
-  const { toasts, addToast, removeToast } = useToast();
+  const toast = useToast();
 
   // Refresh balances when wallet connects
   useEffect(() => {
@@ -71,12 +71,12 @@ export default function Home() {
       
       // Check if MetaMask is available
       if (typeof window === 'undefined') {
-        addToast({ type: 'error', message: 'Window not available' });
+        toast.error('Error', 'Window not available');
         return;
       }
       
       if (!window.ethereum) {
-        addToast({ type: 'error', message: 'MetaMask not installed' });
+        toast.error('Error', 'MetaMask not installed');
         return;
       }
 
@@ -84,7 +84,7 @@ export default function Home() {
       const providers = (window.ethereum as any).providers || [];
       if (providers.length > 1) {
         console.log('⚠️ Multiple wallet providers detected:', providers.length);
-        addToast({ type: 'warning', message: 'Multiple wallet extensions detected. Please disable other wallets temporarily.' });
+        toast.warning('Warning', 'Multiple wallet extensions detected. Please disable other wallets temporarily.');
       }
       
       console.log('🔍 MetaMask detected:', {
@@ -100,7 +100,7 @@ export default function Home() {
       // Get the updated state
       const currentAddress = useWalletStore.getState().address;
       if (currentAddress) {
-        addToast({ type: 'success', message: `Connected: ${currentAddress.slice(0, 6)}...${currentAddress.slice(-4)}` });
+        toast.success('Success', `Connected: ${currentAddress.slice(0, 6)}...${currentAddress.slice(-4)}`);
       }
       
     } catch (error) {
@@ -108,14 +108,14 @@ export default function Home() {
       
       if (error instanceof Error) {
         if (error.message.includes('User rejected')) {
-          addToast({ type: 'error', message: 'Connection rejected by user' });
+          toast.error('Error', 'Connection rejected by user');
         } else if (error.message.includes('Could not establish connection')) {
-          addToast({ type: 'error', message: 'MetaMask extension error. Try refreshing the page.' });
+          toast.error('Error', 'MetaMask extension error. Try refreshing the page.');
         } else {
-          addToast({ type: 'error', message: `Connection failed: ${error.message}` });
+          toast.error('Error', `Connection failed: ${error.message}`);
         }
       } else {
-        addToast({ type: 'error', message: 'Failed to connect wallet' });
+        toast.error('Error', 'Failed to connect wallet');
       }
     }
   };
@@ -126,9 +126,9 @@ export default function Home() {
       // Simulate network switch
       await new Promise(resolve => setTimeout(resolve, 800));
       setNetwork(1, true); // Mainnet
-      addToast({ type: 'success', message: 'Network switched successfully!' });
+      toast.success('Success', 'Network switched successfully!');
     } catch {
-      addToast({ type: 'error', message: 'Failed to switch network' });
+      toast.error('Error', 'Failed to switch network');
       setSwitchingNetwork(false);
     }
   };
@@ -140,11 +140,11 @@ export default function Home() {
       // Simulate token approval
       await new Promise(resolve => setTimeout(resolve, 2000));
       setApprovalSuccess(true);
-      addToast({ type: 'success', message: 'Token approval successful!' });
+      toast.success('Success', 'Token approval successful!');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Approval failed';
       setApprovalError(errorMessage);
-      addToast({ type: 'error', message: errorMessage });
+      toast.error('Error', errorMessage);
     } finally {
       setApprovalLoading(false);
     }
@@ -154,24 +154,20 @@ export default function Home() {
     console.log('🚀 Starting bridge transaction:', { fromToken, toToken, amount });
     
     if (!walletAddress) {
-      addToast({ type: 'error', message: 'Wallet not connected' });
+      toast.error('Error', 'Wallet not connected');
       return;
     }
 
     // Validate amount
     const amountNum = parseFloat(amount);
     if (isNaN(amountNum) || amountNum <= 0) {
-      addToast({ type: 'error', message: 'Invalid amount' });
+      toast.error('Error', 'Invalid amount');
       return;
     }
 
     try {
       // Simulate bridge transaction for now
-      addToast({ 
-        type: 'info', 
-        message: `🔄 Initiating bridge: ${amount} ${fromToken.symbol} → ${toToken.symbol}`,
-        duration: 3000
-      });
+      toast.info('Bridge Transaction', `🔄 Initiating bridge: ${amount} ${fromToken.symbol} → ${toToken.symbol}`, 3000);
 
       // Simulate transaction processing
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -179,11 +175,7 @@ export default function Home() {
       // Generate mock transaction ID
       const txId = `0x${Math.random().toString(16).substr(2, 40)}`;
       
-      addToast({ 
-        type: 'success', 
-        message: `✅ Bridge successful! ${amount} ${fromToken.symbol} → ${toToken.symbol} | TX: ${txId.slice(0, 10)}...`,
-        duration: 7000
-      });
+      toast.success('Bridge Successful', `✅ Bridge successful! ${amount} ${fromToken.symbol} → ${toToken.symbol} | TX: ${txId.slice(0, 10)}...`, 7000);
 
       console.log('Bridge transaction completed:', { txId, fromToken, toToken, amount });
       
@@ -195,21 +187,21 @@ export default function Home() {
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Bridge transaction failed';
-      addToast({ type: 'error', message: errorMessage });
+      toast.error('Error', errorMessage);
       throw error; // Re-throw to let the form handle it
     }
   };
 
   const handleQuoteError = (error: string) => {
-    addToast({ type: 'error', message: `Quote error: ${error}` });
+    toast.error('Error', `Quote error: ${error}`);
   };
 
   const handleError = (message: string) => {
-    addToast({ type: 'error', message });
+    toast.error('Error', message);
   };
 
   const handleSuccess = (message: string) => {
-    addToast({ type: 'success', message });
+    toast.success('Success', message);
   };
 
   return (
@@ -228,10 +220,11 @@ export default function Home() {
         {/* Hero Section */}
         <div className="text-center mb-12">
           <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gradient">
-            Cross-Chain Bridge
+            All Assets - Locked In
           </h1>
           <p className="text-lg max-w-2xl mx-auto text-text-secondary">
-            Seamlessly bridge your assets between Bitcoin and Ethereum networks with the best rates and lowest fees.
+            Seamlessly bridge your assets between Bitcoin and Ethereum networks with the best rates and lowest fees, get latest AI-powered quotes and routing, 
+            aggregate all your wallets and balances, and get the best rates and lowest fees.
           </p>
         </div>
 
@@ -273,23 +266,23 @@ export default function Home() {
         {/* Bridge Navigation */}
         <div className="mb-8 max-w-4xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Link href="/cross-chain-htlc-bridge">
-              <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 rounded-lg p-6 border border-orange-200/20 hover:border-orange-300/40 transition-all cursor-pointer">
+            <Link href="/fusion-atomic-bridge">
+              <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 rounded-lg p-6 border border-orange-200/20 hover:border-orange-300/40 transition-all cursor-pointer h-full">
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
                     <span className="text-white text-lg font-bold">🔒</span>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-white text-lg">Cross-Chain HTLC Bridge</h3>
+                    <h3 className="font-semibold text-white text-lg">Fusion Atomic Bridge</h3>
                     <p className="text-sm text-gray-300">ETH ↔ BTC bridging with 1inch Fusion+ HTLC escrows</p>
-                    <p className="text-xs text-orange-400 mt-1">🔗 Atomic cross-chain swaps</p>
+                    <p className="text-xs text-orange-400 mt-1">🔗 Real atomic swaps with auto-resolver</p>
                   </div>
                 </div>
               </div>
             </Link>
             
             <Link href="/multi-wallet">
-              <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg p-6 border border-purple-200/20 hover:border-purple-300/40 transition-all cursor-pointer">
+              <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg p-6 border border-purple-200/20 hover:border-purple-300/40 transition-all cursor-pointer h-full">
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 bg-purple-500 rounded-full flex items-center justify-center">
                     <span className="text-white text-lg font-bold">👛</span>
@@ -361,64 +354,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Debug Wallet State Button */}
-        <div className="mb-4 text-center">
-          <Button
-            onClick={() => {
-              const state = useWalletStore.getState();
-              console.log('🔍 Current wallet state:', {
-                isConnected: state.isConnected,
-                address: state.address,
-                account: state.account,
-                status: state.status,
-                walletType: state.walletType
-              });
-              addToast({ type: 'info', message: `Wallet state logged to console` });
-            }}
-            variant="secondary"
-            size="sm"
-            className="mx-auto"
-          >
-            🔍 Debug Wallet State
-          </Button>
-        </div>
+      
 
-        {/* Wallet Status Display */}
-        {isWalletConnected && (
-          <div className="mb-8 text-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 rounded-full">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              <span className="font-medium">Connected: {walletAddress?.slice(0, 6)}...{walletAddress?.slice(-4)}</span>
-            </div>
-            <p className="text-sm text-gray-400 mt-2">
-              Chain ID: {isCorrectNetwork ? 'Mainnet' : 'Testnet'} | Ready to bridge
-            </p>
-            {/* Debug info */}
-            <div className="mt-2 p-2 bg-gray-800 rounded text-xs text-gray-300">
-              Debug: walletAddress = {walletAddress || 'undefined'}
-            </div>
-          </div>
-        )}
-
-        {/* Bridge Form */}
-        <div className="flex justify-center">
-          <BridgeForm
-            onBridge={handleBridge}
-            onQuoteError={handleQuoteError}
-            isWalletConnected={isWalletConnected}
-            isCorrectNetwork={isCorrectNetwork && !isSwitchingNetwork}
-            walletAddress={walletAddress}
-            onConnectWallet={handleConnectWallet}
-            onSwitchNetwork={handleSwitchNetwork}
-            approvalNeeded={approvalNeeded}
-            approvalLoading={approvalLoading}
-            approvalSuccess={approvalSuccess}
-            onApprove={handleApprove}
-            onError={handleError}
-            onSuccess={handleSuccess}
-            className="w-full max-w-md"
-          />
-        </div>
 
         {/* Loading States Overlay */}
         {(isConnecting || isSwitchingNetwork) && (
@@ -553,145 +490,11 @@ export default function Home() {
             <p className="text-text-secondary">Competitive exchange rates with minimal slippage and transparent fees.</p>
           </div>
         </div>
-
-        {/* Status Bar */}
-        <div className="mt-8 text-center space-y-4">
-          <WalletConnector 
-            variant="gradient"
-            size="lg"
-            className="mx-auto"
-          />
           
-          {/* Testnet Connection Section */}
-          <div className="mt-8 p-6 rounded-xl border border-blue-500/20 bg-blue-500/5">
-            <h3 className="text-lg font-semibold text-white mb-4">🧪 Test with Testnet Tokens</h3>
-            <p className="text-gray-300 mb-4 text-sm">
-              Connect your MetaMask wallet with Sepolia testnet tokens to test the bridge functionality
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Button
-                variant="primary"
-                size="md"
-                onClick={async () => {
-                  try {
-                    if (typeof window === 'undefined' || !window.ethereum) {
-                      addToast({ type: 'error', message: 'MetaMask not installed' });
-                      return;
-                    }
-
-                    // Request accounts
-                    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' }) as string[];
-                    
-                    if (accounts && accounts.length > 0) {
-                      const address = accounts[0];
-                      
-                      // Check current network
-                      const chainId = await window.ethereum.request({ method: 'eth_chainId' }) as string;
-                      const currentChainId = parseInt(chainId, 16);
-                      
-                                              if (currentChainId === 11155111) { // Sepolia
-                          // Get balance to verify connection
-                          const balance = await window.ethereum.request({
-                            method: 'eth_getBalance',
-                            params: [address, 'latest']
-                          }) as string;
-                          const ethBalance = (parseInt(balance, 16) / Math.pow(10, 18)).toFixed(4);
-                          
-                          addToast({ 
-                            type: 'success', 
-                            message: `✅ Connected to Sepolia: ${address.slice(0, 6)}...${address.slice(-4)} (${ethBalance} ETH)` 
-                          });
-                        } else {
-                        // Try to switch to Sepolia
-                        try {
-                          await window.ethereum.request({
-                            method: 'wallet_switchEthereumChain',
-                            params: [{ chainId: '0xaa36a7' }], // Sepolia
-                          });
-                          // Get balance after switching
-                          const balance = await window.ethereum.request({
-                            method: 'eth_getBalance',
-                            params: [address, 'latest']
-                          }) as string;
-                          const ethBalance = (parseInt(balance, 16) / Math.pow(10, 18)).toFixed(4);
-                          
-                          addToast({ 
-                            type: 'success', 
-                            message: `✅ Switched to Sepolia and connected: ${address.slice(0, 6)}...${address.slice(-4)} (${ethBalance} ETH)` 
-                          });
-                        } catch (switchError: any) {
-                          if (switchError.code === 4902) {
-                            // Add Sepolia network
-                            await window.ethereum.request({
-                              method: 'wallet_addEthereumChain',
-                              params: [{
-                                chainId: '0xaa36a7',
-                                chainName: 'Sepolia Testnet',
-                                nativeCurrency: {
-                                  name: 'ETH',
-                                  symbol: 'ETH',
-                                  decimals: 18
-                                },
-                                rpcUrls: ['https://rpc.sepolia.org'],
-                                blockExplorerUrls: ['https://sepolia.etherscan.io']
-                              }],
-                            });
-                            // Get balance after adding network
-                            const balance = await window.ethereum.request({
-                              method: 'eth_getBalance',
-                              params: [address, 'latest']
-                            }) as string;
-                            const ethBalance = (parseInt(balance, 16) / Math.pow(10, 18)).toFixed(4);
-                            
-                            addToast({ 
-                              type: 'success', 
-                              message: `✅ Added Sepolia and connected: ${address.slice(0, 6)}...${address.slice(-4)} (${ethBalance} ETH)` 
-                            });
-                          } else {
-                            addToast({ 
-                              type: 'error', 
-                              message: 'Failed to switch to Sepolia network' 
-                            });
-                          }
-                        }
-                      }
-                    }
-                  } catch (error) {
-                    addToast({ 
-                      type: 'error', 
-                      message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}` 
-                    });
-                  }
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                🔗 Connect MetaMask (Sepolia)
-              </Button>
-              
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={() => window.open('https://sepoliafaucet.com/', '_blank')}
-                className="bg-gray-600 hover:bg-gray-700 text-white"
-              >
-                💧 Get Test ETH
-              </Button>
-            </div>
-            
-            <div className="mt-4 text-xs text-gray-400">
-              💡 Make sure you have Sepolia ETH tokens in your MetaMask wallet
-            </div>
-          </div>
-        </div>
+     
       </div>
 
-      {/* Toast Notifications */}
-      <ToastContainer
-        toasts={toasts}
-        onRemoveToast={removeToast}
-        position="top-right"
-      />
+      {/* Toast notifications are handled by ToastProvider */}
     </PageWrapper>
     </div>
     </ErrorBoundary>

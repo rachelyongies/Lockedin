@@ -47,7 +47,7 @@ export function BridgeDebug() {
     if (!window.ethereum) return;
 
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' }) as string[];
       const connected = accounts && accounts.length > 0;
       
       setDebugInfo(prev => ({
@@ -71,7 +71,7 @@ export function BridgeDebug() {
     if (!window.ethereum) return;
 
     try {
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' }) as string;
       const networkId = parseInt(chainId, 16);
       
       const networks: Record<number, { name: string; isTestnet: boolean; rpcUrl: string }> = {
@@ -104,7 +104,7 @@ export function BridgeDebug() {
       const balanceHex = await window.ethereum.request({
         method: 'eth_getBalance',
         params: [address, 'latest']
-      });
+      }) as string;
       const balanceWei = parseInt(balanceHex, 16);
       const balanceEth = balanceWei / Math.pow(10, 18);
       
@@ -157,7 +157,7 @@ export function BridgeDebug() {
 
     setIsLoading(true);
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' }) as string[];
       if (accounts && accounts.length > 0) {
         setDebugInfo(prev => ({
           ...prev,
@@ -178,12 +178,14 @@ export function BridgeDebug() {
   // Listen for network changes
   useEffect(() => {
     if (window.ethereum) {
-      const handleChainChanged = (chainId: string) => {
+      const handleChainChanged = (...args: unknown[]) => {
+        const chainId = args[0] as string;
         console.log('Chain changed:', chainId);
         checkWalletConnection();
       };
 
-      const handleAccountsChanged = (accounts: string[]) => {
+      const handleAccountsChanged = (...args: unknown[]) => {
+        const accounts = args[0] as string[];
         console.log('Accounts changed:', accounts);
         checkWalletConnection();
       };
@@ -195,24 +197,18 @@ export function BridgeDebug() {
       checkWalletConnection();
 
       return () => {
-        window.ethereum.removeListener('chainChanged', handleChainChanged);
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum?.removeListener('chainChanged', handleChainChanged);
+        window.ethereum?.removeListener('accountsChanged', handleAccountsChanged);
       };
     }
   }, []);
 
   return (
     <Card className="p-6 bg-gray-800 border-gray-700 mb-6">
-      <h3 className="text-lg font-semibold text-white mb-4">🔍 Bridge Debug Info</h3>
+      <h3 className="text-lg font-semibold text-white mb-4">Your connection</h3>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        <div>
-          <span className="text-gray-300">MetaMask:</span>
-          <span className={`ml-2 px-2 py-1 rounded text-sm ${debugInfo.metamaskInstalled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            {debugInfo.metamaskInstalled ? '✅ Installed' : '❌ Not Installed'}
-          </span>
-        </div>
-        
+      
         <div>
           <span className="text-gray-300">Wallet:</span>
           <span className={`ml-2 px-2 py-1 rounded text-sm ${debugInfo.walletConnected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>

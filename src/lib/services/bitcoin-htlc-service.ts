@@ -3,6 +3,11 @@ import * as bitcoin from 'bitcoinjs-lib';
 import { ECPairFactory } from 'ecpair';
 import * as ecc from 'tiny-secp256k1';
 
+// Helper function to convert Uint8Array to Buffer
+function toBuffer(uint8Array: Uint8Array): Buffer {
+  return Buffer.from(uint8Array);
+}
+
 // Initialize ECPair factory
 const ECPair = ECPairFactory(ecc);
 
@@ -53,10 +58,70 @@ export class BitcoinHTLCService {
   generateHTLCAddress(params: BitcoinHTLCParams): BitcoinHTLCResult {
     const { secretHash, recipientPubKey, senderPubKey, timelock } = params;
 
-    // Convert hex strings to Buffer
+    // Convert hex strings to Buffer and validate public keys
     const secretHashBuffer = Buffer.from(secretHash.slice(2), 'hex'); // Remove '0x' prefix
-    const recipientPubKeyBuffer = Buffer.from(recipientPubKey, 'hex');
-    const senderPubKeyBuffer = Buffer.from(senderPubKey, 'hex');
+    
+    // Ensure public keys are valid 33-byte compressed format
+    let recipientPubKeyBuffer: Buffer;
+    let senderPubKeyBuffer: Buffer;
+    
+    try {
+      // Validate input format
+      if (!recipientPubKey || !senderPubKey) {
+        throw new Error('Both recipient and sender public keys are required');
+      }
+      
+      // Remove '0x' prefix if present
+      const cleanRecipientPubKey = recipientPubKey.startsWith('0x') ? recipientPubKey.slice(2) : recipientPubKey;
+      const cleanSenderPubKey = senderPubKey.startsWith('0x') ? senderPubKey.slice(2) : senderPubKey;
+      
+      console.log('Debug - Recipient pubkey (hex):', cleanRecipientPubKey);
+      console.log('Debug - Sender pubkey (hex):', cleanSenderPubKey);
+      
+      recipientPubKeyBuffer = Buffer.from(cleanRecipientPubKey, 'hex');
+      senderPubKeyBuffer = Buffer.from(cleanSenderPubKey, 'hex');
+      
+      console.log('Debug - Recipient pubkey buffer length:', recipientPubKeyBuffer.length);
+      console.log('Debug - Sender pubkey buffer length:', senderPubKeyBuffer.length);
+      
+      // Validate public key lengths (should be 33 bytes for compressed)
+      if (recipientPubKeyBuffer.length !== 33) {
+        throw new Error(`Invalid recipient public key length: ${recipientPubKeyBuffer.length}, expected 33`);
+      }
+      if (senderPubKeyBuffer.length !== 33) {
+        throw new Error(`Invalid sender public key length: ${senderPubKeyBuffer.length}, expected 33`);
+      }
+      
+      // Validate that they are valid secp256k1 public keys using ECPair
+      try {
+        const recipientECPair = ECPair.fromPublicKey(recipientPubKeyBuffer);
+        console.log('Debug - Recipient ECPair created successfully:', !!recipientECPair);
+      } catch (eccError) {
+        console.error('Debug - Recipient public key validation failed:', {
+          pubkey: cleanRecipientPubKey,
+          buffer: recipientPubKeyBuffer,
+          length: recipientPubKeyBuffer.length,
+          error: eccError
+        });
+        throw new Error(`Recipient public key validation failed: ${eccError instanceof Error ? eccError.message : 'Invalid secp256k1 point'}`);
+      }
+      
+      try {
+        const senderECPair = ECPair.fromPublicKey(senderPubKeyBuffer);
+        console.log('Debug - Sender ECPair created successfully:', !!senderECPair);
+      } catch (eccError) {
+        console.error('Debug - Sender public key validation failed:', {
+          pubkey: cleanSenderPubKey,
+          buffer: senderPubKeyBuffer,
+          length: senderPubKeyBuffer.length,
+          error: eccError
+        });
+        throw new Error(`Sender public key validation failed: ${eccError instanceof Error ? eccError.message : 'Invalid secp256k1 point'}`);
+      }
+      
+    } catch (error) {
+      throw new Error(`Public key validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
 
     // Create HTLC redeem script (witness script for P2WSH)
     const witnessScript = bitcoin.script.compile([
@@ -110,14 +175,51 @@ export class BitcoinHTLCService {
     
     // Add inputs from UTXOs
     for (const utxo of utxos) {
-      psbt.addInput({
-        hash: utxo.txid,
-        index: utxo.vout,
-        witnessUtxo: {
-          script: Buffer.from(utxo.scriptPubKey, 'hex'),
-          value: utxo.value
+      // Validate UTXO data
+      if (!utxo.scriptPubKey || utxo.scriptPubKey.length === 0) {
+        throw new Error(`Invalid UTXO: missing or empty scriptPubKey for txid ${utxo.txid}`);
+      }
+      
+      const scriptBuffer = Buffer.from(utxo.scriptPubKey, 'hex');
+      if (scriptBuffer.length === 0) {
+        throw new Error(`Invalid UTXO: empty script buffer for txid ${utxo.txid}`);
+      }
+      
+      // Check if this is a SegWit output (P2WPKH = 22 bytes starting with 0x00, P2WSH = 34 bytes starting with 0x00)
+      const isSegWit = (scriptBuffer.length === 22 || scriptBuffer.length === 34) && scriptBuffer[0] === 0x00;
+      
+      console.log(`🔍 UTXO script: ${utxo.scriptPubKey} (${scriptBuffer.length} bytes, SegWit: ${isSegWit})`);
+      
+      if (isSegWit) {
+        // SegWit output - use witnessUtxo
+        psbt.addInput({
+          hash: utxo.txid,
+          index: utxo.vout,
+          witnessUtxo: {
+            script: scriptBuffer,
+            value: utxo.value
+          }
+        });
+      } else {
+        // Legacy output - we need the full transaction for nonWitnessUtxo
+        console.log(`⚠️ Legacy UTXO detected, fetching full transaction data...`);
+        try {
+          const txData = await this.getTransaction(utxo.txid);
+          if (txData && txData.hex) {
+            psbt.addInput({
+              hash: utxo.txid,
+              index: utxo.vout,
+              nonWitnessUtxo: Buffer.from(txData.hex, 'hex')
+            });
+          } else {
+            throw new Error(`Could not fetch transaction ${utxo.txid} for legacy UTXO`);
+          }
+        } catch (error) {
+          console.error(`Failed to get transaction ${utxo.txid}:`, error);
+          throw new Error(`Legacy UTXO requires full transaction data. Please ensure UTXOs are SegWit outputs.`);
         }
-      });
+      }
+      
       totalInput += utxo.value;
     }
 
@@ -132,7 +234,7 @@ export class BitcoinHTLCService {
     const change = totalInput - amount - fee;
     if (change > 0) {
       const senderAddress = bitcoin.payments.p2wpkh({ 
-        pubkey: keyPair.publicKey, 
+        pubkey: toBuffer(keyPair.publicKey), 
         network: this.network 
       }).address!;
       
@@ -142,20 +244,42 @@ export class BitcoinHTLCService {
       });
     }
 
-    // Sign all inputs
+    // Sign all inputs based on their type
     for (let i = 0; i < utxos.length; i++) {
-      psbt.signInput(i, keyPair);
+      const scriptBuffer = Buffer.from(utxos[i].scriptPubKey, 'hex');
+      const isSegWit = (scriptBuffer.length === 22 || scriptBuffer.length === 34) && scriptBuffer[0] === 0x00;
+      
+      if (isSegWit) {
+        // SegWit signing
+        psbt.signInput(i, {
+          publicKey: toBuffer(keyPair.publicKey),
+          sign: (hash: Buffer) => toBuffer(keyPair.sign(hash))
+        });
+      } else {
+        // Legacy signing - set sighash type on the input
+        psbt.data.inputs[i].sighashType = bitcoin.Transaction.SIGHASH_ALL;
+        psbt.signInput(i, {
+          publicKey: toBuffer(keyPair.publicKey),
+          sign: (hash: Buffer) => toBuffer(keyPair.sign(hash))
+        });
+      }
     }
 
-    psbt.finalizeAllInputs();
-    const tx = psbt.extractTransaction();
-    
-    return {
-      txid: tx.getId(),
-      hex: tx.toHex(),
-      size: tx.byteLength(),
-      vsize: tx.virtualSize()
-    };
+    try {
+      psbt.finalizeAllInputs();
+      const tx = psbt.extractTransaction();
+      
+      return {
+        txid: tx.getId(),
+        hex: tx.toHex(),
+        size: tx.byteLength(),
+        vsize: tx.virtualSize()
+      };
+    } catch (error) {
+      console.error('❌ Failed to finalize or extract transaction:', error);
+      console.error('PSBT data:', psbt.data);
+      throw error;
+    }
   }
 
   // Create HTLC spending transaction with secret (for recipient)
@@ -188,7 +312,7 @@ export class BitcoinHTLCService {
     });
 
     // Custom signing for HTLC (secret path)
-    const sighash = psbt.data.inputs[0].sighash || bitcoin.Transaction.SIGHASH_ALL;
+    const sighash = bitcoin.Transaction.SIGHASH_ALL;
     const transaction = psbt.extractTransaction(false);
     const hash = transaction.hashForWitnessV0(
       0,
@@ -197,7 +321,7 @@ export class BitcoinHTLCService {
       sighash
     );
     
-    const signature = bitcoin.script.signature.encode(keyPair.sign(hash), sighash);
+    const signature = bitcoin.script.signature.encode(toBuffer(keyPair.sign(hash)), sighash);
     
     // Witness stack: [signature] [secret] [1] [witnessScript]
     const witness = [
@@ -252,7 +376,7 @@ export class BitcoinHTLCService {
     });
 
     // Custom signing for HTLC (timeout path)
-    const sighash = psbt.data.inputs[0].sighash || bitcoin.Transaction.SIGHASH_ALL;
+    const sighash = bitcoin.Transaction.SIGHASH_ALL;
     const refundTransaction = psbt.extractTransaction(false);
     const hash = refundTransaction.hashForWitnessV0(
       0,
@@ -261,7 +385,7 @@ export class BitcoinHTLCService {
       sighash
     );
     
-    const signature = bitcoin.script.signature.encode(keyPair.sign(hash), sighash);
+    const signature = bitcoin.script.signature.encode(toBuffer(keyPair.sign(hash)), sighash);
     
     // Witness stack: [signature] [0] [witnessScript] (ELSE path)
     const witness = [
@@ -316,12 +440,15 @@ export class BitcoinHTLCService {
 
       const utxos = await response.json();
       
-      return utxos.map((utxo: any) => ({
-        txid: utxo.txid,
-        vout: utxo.vout,
-        value: utxo.value,
-        scriptPubKey: utxo.scriptPubKey || ''
-      }));
+      // Filter out UTXOs without scriptPubKey and map the rest
+      return utxos
+        .filter((utxo: any) => utxo.scriptPubKey && utxo.scriptPubKey.length > 0)
+        .map((utxo: any) => ({
+          txid: utxo.txid,
+          vout: utxo.vout,
+          value: utxo.value,
+          scriptPubKey: utxo.scriptPubKey
+        }));
     } catch (error) {
       console.error('Failed to get UTXOs:', error);
       throw error;
@@ -368,17 +495,50 @@ export class BitcoinHTLCService {
 
   // Generate key pair for Bitcoin operations
   generateKeyPair() {
-    const keyPair = ECPair.makeRandom({ network: this.network });
-    const address = bitcoin.payments.p2wpkh({ 
-      pubkey: keyPair.publicKey, 
-      network: this.network 
-    }).address!;
-    
-    return {
-      privateKey: keyPair.privateKey?.toString('hex'),
-      publicKey: keyPair.publicKey.toString('hex'),
-      address
-    };
+    try {
+      // Generate a compressed key pair by default
+      const keyPair = ECPair.makeRandom({ 
+        network: this.network,
+        compressed: true  // Ensure compressed format
+      });
+      
+      // Ensure private key is always available
+      if (!keyPair.privateKey) {
+        throw new Error('Failed to generate private key');
+      }
+      
+      // ECPair.makeRandom with compressed: true should always give us 33-byte public key
+      const publicKey = keyPair.publicKey;
+      
+      console.log('Debug - Generated public key length:', publicKey.length);
+      console.log('Debug - Generated public key (hex):', Buffer.from(publicKey).toString('hex'));
+      
+      // Validate the public key before using it
+      if (publicKey.length !== 33) {
+        throw new Error(`Invalid public key length: ${publicKey.length}, expected 33 bytes`);
+      }
+      
+      // Validate with ECPair to ensure it's a valid secp256k1 point
+      try {
+        ECPair.fromPublicKey(publicKey);
+      } catch (eccError) {
+        throw new Error(`Generated public key validation failed: ${eccError instanceof Error ? eccError.message : 'Invalid key'}`);
+      }
+      
+      const address = bitcoin.payments.p2wpkh({ 
+        pubkey: toBuffer(publicKey), 
+        network: this.network 
+      }).address!;
+      
+      return {
+        privateKey: Buffer.from(keyPair.privateKey).toString('hex'),
+        publicKey: Buffer.from(publicKey).toString('hex'),
+        address
+      };
+    } catch (error) {
+      console.error('Error generating Bitcoin key pair:', error);
+      throw error;
+    }
   }
 
   // Validate Bitcoin address

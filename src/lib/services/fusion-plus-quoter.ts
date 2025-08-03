@@ -90,6 +90,25 @@ export class FusionPlusQuoterService {
    */
   async getQuote(params: FusionPlusQuoteParams): Promise<FusionPlusQuoteResponse> {
     try {
+      // Validate parameters
+      console.log('🔍 Validating quote parameters:', params);
+      
+      if (!params.srcChain || !params.dstChain) {
+        throw new Error('Source and destination chain IDs are required');
+      }
+      
+      if (!params.srcTokenAddress || !params.dstTokenAddress) {
+        throw new Error('Source and destination token addresses are required');
+      }
+      
+      if (!params.amount || params.amount === '0') {
+        throw new Error('Valid amount is required');
+      }
+      
+      if (!params.walletAddress) {
+        throw new Error('Wallet address is required');
+      }
+
       // Construct query parameters
       const queryParams = new URLSearchParams({
         srcChain: params.srcChain.toString(),
@@ -116,6 +135,7 @@ export class FusionPlusQuoterService {
       const url = `/api/1inch/fusion-quote?${queryParams.toString()}`;
       
       console.log('🔄 Making 1inch Fusion+ quote request via server:', url);
+      console.log('📋 Query parameters:', Object.fromEntries(queryParams.entries()));
 
       const response = await fetch(url, {
         method: 'GET',

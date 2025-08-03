@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Spinner } from '@/components/ui/Spinner';
-import { ToastComponent } from '@/components/ui/Toast';
+import { useToast } from '@/components/ui/Toast';
 
 interface TrueBridgeComponentProps {
   walletAddress?: string;
@@ -20,6 +20,7 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
   walletAddress,
   onTransactionComplete
 }) => {
+  const toast = useToast();
   const [fromChain, setFromChain] = useState<'ethereum' | 'bitcoin' | 'solana' | 'starknet' | 'stellar'>('ethereum');
   const [toChain, setToChain] = useState<'ethereum' | 'bitcoin' | 'solana' | 'starknet' | 'stellar'>('bitcoin');
   const [fromToken, setFromToken] = useState<string>('');
@@ -32,8 +33,6 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
   const [quote, setQuote] = useState<any>(null);
   const [htlcEscrow, setHtlcEscrow] = useState<HTLCEscrow | null>(null);
   const [swapResult, setSwapResult] = useState<CrossChainSwapResult | null>(null);
-  const [error, setError] = useState<string>('');
-  const [success, setSuccess] = useState<string>('');
 
   // Available chains
   const chains = [
@@ -75,12 +74,11 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
   // Get quote for the swap
   const getQuote = async () => {
     if (!walletAddress || !fromToken || !toToken || !amount) {
-      setError('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const quoteResult = await trueBridgeService.getQuote({
@@ -93,9 +91,9 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
       });
 
       setQuote(quoteResult);
-      setSuccess('Quote received successfully!');
+      toast.success('Quote received successfully!');
     } catch (err) {
-      setError(`Failed to get quote: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to get quote: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -104,12 +102,11 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
   // Create cross-chain swap
   const createSwap = async () => {
     if (!walletAddress || !fromToken || !toToken || !amount) {
-      setError('Please fill in all required fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const request: CrossChainSwapRequest = {
@@ -127,11 +124,11 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
       
       setSwapResult(result);
       setHtlcEscrow(result.htlcEscrow);
-      setSuccess('Cross-chain swap created successfully!');
+      toast.success('Cross-chain swap created successfully!');
       
       onTransactionComplete?.(result);
     } catch (err) {
-      setError(`Failed to create swap: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to create swap: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -140,18 +137,17 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
   // Execute HTLC
   const executeHTLC = async () => {
     if (!htlcEscrow) {
-      setError('No HTLC escrow to execute');
+      toast.error('No HTLC escrow to execute');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const result = await trueBridgeService.executeHTLC(htlcEscrow);
-      setSuccess(`HTLC executed successfully! Source: ${result.sourceTxHash}, Destination: ${result.destinationTxHash || 'N/A'}`);
+      toast.success(`HTLC executed successfully! Source: ${result.sourceTxHash}, Destination: ${result.destinationTxHash || 'N/A'}`);
     } catch (err) {
-      setError(`Failed to execute HTLC: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to execute HTLC: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -160,18 +156,17 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
   // Refund HTLC
   const refundHTLC = async () => {
     if (!htlcEscrow) {
-      setError('No HTLC escrow to refund');
+      toast.error('No HTLC escrow to refund');
       return;
     }
 
     setIsLoading(true);
-    setError('');
 
     try {
       const result = await trueBridgeService.refundHTLC(htlcEscrow);
-      setSuccess(`HTLC refunded successfully! Source: ${result.sourceTxHash}, Destination: ${result.destinationTxHash || 'N/A'}`);
+      toast.success(`HTLC refunded successfully! Source: ${result.sourceTxHash}, Destination: ${result.destinationTxHash || 'N/A'}`);
     } catch (err) {
-      setError(`Failed to refund HTLC: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(`Failed to refund HTLC: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -401,14 +396,7 @@ export const TrueBridgeComponent: React.FC<TrueBridgeComponentProps> = ({
           </Card>
         )}
 
-        {/* Error and Success Messages */}
-        {error && (
-          <ToastComponent type="error" onClose={() => setError('')} message={error} />
-        )}
-        
-        {success && (
-          <ToastComponent type="success" onClose={() => setSuccess('')} message={success} />
-        )}
+        {/* Toast notifications are handled by the ToastProvider */}
       </Card>
     </div>
   );
