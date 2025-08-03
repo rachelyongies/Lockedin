@@ -186,7 +186,10 @@ export function UserPreferences({
                   {PREFERENCE_OPTIONS.map((option) => (
                     <motion.button
                       key={option.value}
-                      onClick={() => onUserPreferenceChange(option.value)}
+                      onClick={() => {
+                        onUserPreferenceChange(option.value);
+                        onToggleVisibility?.();
+                      }}
                       disabled={disabled}
                       className={cn(
                         'p-4 rounded-lg border text-left transition-all',

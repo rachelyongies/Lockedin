@@ -1017,7 +1017,7 @@ export class AIAgentBridgeService {
         name: 'USD Coin',
         network: 'ethereum',
         chainId: 1,
-        address: '0xa0b86a33e6441b8c4c8c8c8c8c8c8c8c8c8c8c8c',
+        address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
         decimals: 6,
         isNative: false,
         isWrapped: false
@@ -1282,11 +1282,11 @@ export class AIAgentBridgeService {
     if (consensusResult?.bestRouteId) {
       const consensusRoute = routes.find(r => r.id === consensusResult.bestRouteId);
       if (consensusRoute) {
-        consensusInsights.push(`🎯 AI Consensus: Route "${consensusRoute.proposedBy}" selected with ${(consensusResult.consensusScore! * 100).toFixed(0)}% agreement`);
-        consensusInsights.push(`📊 Consensus factors: multi-agent analysis, risk assessment, and execution strategy alignment`);
+        consensusInsights.push(`AI Consensus: Route "${consensusRoute.proposedBy}" selected with ${(consensusResult.consensusScore! * 100).toFixed(0)}% agreement`);
+        consensusInsights.push(`Consensus factors: multi-agent analysis, risk assessment, and execution strategy alignment`);
       }
     } else if (consensusResult?.consensusScore === 0) {
-      consensusInsights.push(`⚠️ No consensus reached among agents - showing individual recommendations for user choice`);
+      consensusInsights.push(`No consensus reached among agents - showing individual recommendations for user choice`);
     }
     
     // Add 1inch-specific insights
@@ -1612,7 +1612,7 @@ export class AIAgentBridgeService {
       '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 3200, // WETH
       '0x0000000000000000000000000000000000000000': 3200, // ETH
       '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee': 3200, // ETH (1inch format)
-      '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d': 1, // USDC
+      '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': 1, // USDC
       '0xdac17f958d2ee523a2206206994597c13d831ec7': 1, // USDT
       '0x6b175474e89094c44da98b954eedeac495271d0f': 1, // DAI
       '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 65000, // WBTC
@@ -1857,7 +1857,7 @@ export class AIAgentBridgeService {
     // Standard token decimals mapping - all addresses in lowercase for consistent matching
     const tokenDecimals: Record<string, number> = {
       '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 8,  // WBTC
-      '0xa0b86a33e6441431c0b7a5cec6ecb99f2fb83a4d': 6,  // USDC  
+      '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': 6,  // USDC  
       '0xdac17f958d2ee523a2206206994597c13d831ec7': 6,  // USDT
       '0x6b175474e89094c44da98b954eedeac495271d0f': 18, // DAI
       '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 18, // WETH

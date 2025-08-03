@@ -88,8 +88,7 @@ const REAL_AI_METRICS = {
   bridgeServices: 5, // Regular bridge, Solana, Starknet, Stellar, 1inch Fusion
   tradingBuddyStatus: 'Online',
   networkHealth: '100%',
-  apiResponseTime: '245ms',
-  confidenceScore: '96.4%'
+  apiResponseTime: '245ms'
 };
 
 export default function IntelligentAIRouterPage() {
@@ -102,7 +101,7 @@ export default function IntelligentAIRouterPage() {
 
   // Debug wallet connection (optional - can be removed after testing)
   useEffect(() => {
-    console.log('🔍 AI Router - Wallet detection status:', {
+    console.log('AI Router - Wallet detection status:', {
       storeConnected: storeConnected,
       storeAccount: account ? 'present' : 'none',
       walletAddress: walletAddress ? walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4) : 'none',
@@ -141,11 +140,7 @@ export default function IntelligentAIRouterPage() {
         // Occasionally update response time realistically
         apiResponseTime: Math.random() > 0.8 ? 
           `${Math.floor(Math.random() * 100) + 200}ms` : 
-          prev.apiResponseTime,
-        // Slightly adjust confidence score
-        confidenceScore: Math.random() > 0.9 ? 
-          `${(95 + Math.random() * 3).toFixed(1)}%` : 
-          prev.confidenceScore
+          prev.apiResponseTime
       }));
     }, 5000);
 
@@ -238,7 +233,7 @@ export default function IntelligentAIRouterPage() {
         executionStatus: 'ready'
       }));
     } catch (error) {
-      console.error('🚨 AI Analysis failed - no mock fallback:', error);
+      console.error('AI Analysis failed - no mock fallback:', error);
       setRouterState(prev => ({ 
         ...prev, 
         isAnalyzing: false,
@@ -570,7 +565,7 @@ export default function IntelligentAIRouterPage() {
                     className="w-full py-4 px-6 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold rounded-xl transition-all duration-200 flex items-center justify-center space-x-3"
                   >
                     <Brain className="w-6 h-6" />
-                    <span>Analyze with AI</span>
+                    <span>Analyze with Agents</span>
                   </motion.button>
                 )}
 

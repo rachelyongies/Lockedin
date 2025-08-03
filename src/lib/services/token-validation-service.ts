@@ -45,7 +45,7 @@ export class TokenValidationService {
         symbol: 'USDT'
       },
       'USDC': {
-        address: '0xA0b86a33E6441b8C4F27eAD9083C756Cc2',
+        address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
         decimals: 6,
         symbol: 'USDC'
       },
