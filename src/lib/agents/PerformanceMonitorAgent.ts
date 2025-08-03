@@ -236,6 +236,9 @@ export class PerformanceMonitorAgent extends BaseAgent {
       case MessageType.ERROR_REPORT:
         await this.handleErrorReport(message.payload);
         break;
+      case MessageType.CONSENSUS_REQUEST:
+        await this.handleConsensusRequest(message);
+        break;
       default:
         console.log(`PerformanceMonitorAgent: Unhandled message type ${message.type}`);
     }
@@ -985,6 +988,123 @@ class InsightGenerator {
     const intercept = (sumY - slope * sumX) / n;
     
     return { slope, intercept };
+  }
+
+  // Consensus handling for multi-agent decision making
+  private async handleConsensusRequest(message: AgentMessage): Promise<void> {
+    try {
+      const payload = message.payload as {
+        responseId: string;
+        routes: RouteProposal[];
+        criteria: DecisionCriteria;
+      };
+
+      console.log(`🎯 [CONSENSUS] Performance Monitor evaluating ${payload.routes?.length || 0} routes`);
+      
+      // Performance monitor focuses on execution efficiency
+      const bestRoute = this.selectBestRouteForPerformance(payload.routes || [], payload.criteria);
+      
+      const consensusResponse = {
+        responseId: payload.responseId,
+        agentId: this.config.id,
+        recommendedRoute: bestRoute.routeId,
+        score: bestRoute.score,
+        confidence: bestRoute.confidence,
+        reasoning: bestRoute.reasoning
+      };
+
+      // Send response back to coordinator
+      await this.sendMessage({
+        to: message.from,
+        type: MessageType.CONSENSUS_REQUEST,
+        payload: consensusResponse,
+        priority: MessagePriority.HIGH
+      });
+
+      console.log(`✅ [CONSENSUS] Performance Monitor sent recommendation: ${bestRoute.routeId}`);
+      
+    } catch (error) {
+      console.error('❌ [CONSENSUS] Performance Monitor error:', error);
+      
+      // Send fallback response
+      const payload = message.payload as { responseId: string };
+      const fallbackResponse = {
+        responseId: payload.responseId,
+        agentId: this.config.id,
+        recommendedRoute: 'performance-fallback-route',
+        score: {
+          totalScore: 55,
+          breakdown: { cost: 55, time: 70, security: 50, reliability: 55, slippage: 55 },
+          reasoning: ['Performance monitor fallback']
+        },
+        confidence: 0.35,
+        reasoning: ['Performance analysis fallback due to error']
+      };
+      
+      await this.sendMessage({
+        to: message.from,
+        type: MessageType.CONSENSUS_REQUEST,
+        payload: fallbackResponse,
+        priority: MessagePriority.HIGH
+      });
+    }
+  }
+
+  private selectBestRouteForPerformance(routes: RouteProposal[], criteria: DecisionCriteria): {
+    routeId: string;
+    score: any;
+    confidence: number;
+    reasoning: string[];
+  } {
+    if (routes.length === 0) {
+      return {
+        routeId: 'no-routes-available',
+        score: { totalScore: 0, breakdown: {}, reasoning: [] },
+        confidence: 0,
+        reasoning: ['No routes provided for performance evaluation']
+      };
+    }
+
+    let bestRoute = routes[0];
+    let bestScore = 0;
+    
+    for (const route of routes) {
+      // Focus on execution time and gas efficiency
+      const timeScore = Math.max(0, 1 - (route.estimatedTime / 300)); // Normalize against 5 minutes
+      const gasScore = Math.max(0, 1 - (parseFloat(route.estimatedGas) / 400000)); // Normalize against 400k gas
+      const reliabilityScore = route.confidence || 0.5;
+      
+      const combinedScore = 
+        (timeScore * criteria.time) +
+        (gasScore * criteria.cost) +
+        (reliabilityScore * criteria.reliability);
+      
+      if (combinedScore > bestScore) {
+        bestScore = combinedScore;
+        bestRoute = route;
+      }
+    }
+
+    return {
+      routeId: bestRoute.id,
+      score: {
+        totalScore: bestScore,
+        breakdown: {
+          cost: bestScore * criteria.cost,
+          time: bestScore * criteria.time,
+          security: 50, // Performance monitor neutral on security
+          reliability: bestScore * criteria.reliability,
+          slippage: 60
+        },
+        reasoning: ['Performance-optimized recommendation']
+      },
+      confidence: bestScore,
+      reasoning: [
+        `Selected route ${bestRoute.id} for optimal performance`,
+        `Execution time: ${route.estimatedTime}s`,
+        `Gas efficiency: ${parseFloat(route.estimatedGas)} units`
+      ]
+    };
   }
 }
 

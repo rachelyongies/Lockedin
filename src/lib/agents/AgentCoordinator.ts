@@ -772,7 +772,8 @@ export class AgentCoordinator extends EventEmitter {
       .filter(r => 
         (r.capabilities.canAnalyzeMarket || r.capabilities.canAssessRisk) &&
         this.canAgentHandleMessage(r, null) &&
-        !r.isBackup // Prefer primary agents for consensus
+        !r.isBackup && // Prefer primary agents for consensus
+        r.agent.getConfig().id !== 'performance-monitor' // Exclude performance monitor from consensus
       )
       .sort((a, b) => b.priority - a.priority);
   }

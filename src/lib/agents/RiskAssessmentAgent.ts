@@ -1527,7 +1527,12 @@ export class RiskAssessmentAgent extends BaseAgent {
         responseId: string;
       };
 
-      console.log(`🎯 [CONSENSUS] Risk Assessment Agent evaluating ${payload.routes.length} routes for consensus`);
+      console.log(`🎯 [CONSENSUS] Risk Assessment Agent evaluating ${payload.routes?.length || 0} routes for consensus`);
+      
+      // Validate input parameters
+      if (!payload.routes || payload.routes.length === 0) {
+        throw new Error('No routes provided for consensus evaluation');
+      }
 
       // Evaluate routes based on risk criteria
       const bestRoute = this.selectBestRouteForConsensus(payload.routes, payload.assessments, payload.criteria);
@@ -1559,11 +1564,43 @@ export class RiskAssessmentAgent extends BaseAgent {
       };
     } catch (error) {
       console.error('❌ [CONSENSUS] Error handling consensus request:', error);
-      return {
-        type: 'consensus-error',
-        messageSent: false,
-        agentId: this.config.id
-      };
+      
+      // Send fallback response to prevent timeout
+      try {
+        const payload = message.payload as { responseId: string };
+        const fallbackResponse = {
+          responseId: payload.responseId,
+          agentId: this.config.id,
+          recommendedRoute: 'fallback-risk-route',
+          score: {
+            totalScore: 60,
+            breakdown: { cost: 60, time: 60, security: 80, reliability: 60, slippage: 60 },
+            reasoning: ['Risk assessment fallback']
+          },
+          confidence: 0.4,
+          reasoning: ['Error occurred during risk consensus evaluation']
+        };
+        
+        await this.sendMessage({
+          to: message.from,
+          type: MessageType.CONSENSUS_REQUEST,
+          payload: fallbackResponse,
+          priority: MessagePriority.HIGH
+        });
+        
+        return {
+          type: 'consensus-fallback',
+          messageSent: true,
+          agentId: this.config.id
+        };
+      } catch (fallbackError) {
+        console.error('❌ [CONSENSUS] Failed to send fallback response:', fallbackError);
+        return {
+          type: 'consensus-error',
+          messageSent: false,
+          agentId: this.config.id
+        };
+      }
     }
   }
 

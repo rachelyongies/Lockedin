@@ -300,7 +300,10 @@ export class AIAgentBridgeService {
           // Reorder routes based on consensus - put consensus choice first
           const consensusRoute = routes.find(r => r.id === bestRouteId);
           if (consensusRoute) {
-            routes = [consensusRoute, ...routes.filter(r => r.id !== bestRouteId)];
+            // Create new array instead of reassigning const
+            const reorderedRoutes = [consensusRoute, ...routes.filter(r => r.id !== bestRouteId)];
+            routes.length = 0; // Clear the array
+            routes.push(...reorderedRoutes); // Repopulate with reordered routes
             console.log(`✅ Consensus achieved: Route ${bestRouteId} selected as optimal`);
           }
         } catch (error) {

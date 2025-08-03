@@ -1652,26 +1652,37 @@ class ConfidenceCalibrator {
 
   // Consensus handling for multi-agent decision making
   private async handleConsensusRequest(payload: ConsensusRequest & { responseId: string }): Promise<void> {
-    const { requestId, routes, assessments, strategies, criteria, responseId } = payload;
-    
-    console.log('🎯 [EXECUTION STRATEGY AGENT] Handling consensus request:', {
-      requestId,
-      routeCount: routes.length,
-      assessmentCount: assessments.length,
-      strategyCount: strategies.length,
-      criteria
-    });
-
-    // Analyze each route from execution strategy perspective
-    const routeScores: { routeId: string; score: DecisionScore; confidence: number; reasoning: string[] }[] = [];
-
-    for (const route of routes) {
-      const routeAssessment = assessments.find(a => a.routeId === route.id);
-      const routeStrategy = strategies.find(s => s.routeId === route.id);
+    try {
+      const { requestId, routes, assessments, strategies, criteria, responseId } = payload;
       
-      const score = await this.evaluateRouteForConsensus(route, routeAssessment, routeStrategy, criteria);
-      routeScores.push(score);
-    }
+      console.log('🎯 [EXECUTION STRATEGY AGENT] Handling consensus request:', {
+        requestId,
+        routeCount: routes?.length || 0,
+        assessmentCount: assessments?.length || 0,
+        strategyCount: strategies?.length || 0,
+        criteria
+      });
+
+      // Validate input parameters
+      if (!routes || routes.length === 0) {
+        throw new Error('No routes provided for consensus evaluation');
+      }
+
+      // Analyze each route from execution strategy perspective
+      const routeScores: { routeId: string; score: DecisionScore; confidence: number; reasoning: string[] }[] = [];
+
+      for (const route of routes) {
+        try {
+          const routeAssessment = assessments?.find(a => a.routeId === route.id);
+          const routeStrategy = strategies?.find(s => s.routeId === route.id);
+          
+          const score = await this.evaluateRouteForConsensus(route, routeAssessment, routeStrategy, criteria);
+          routeScores.push(score);
+        } catch (error) {
+          console.warn(`⚠️ Error evaluating route ${route.id}:`, error);
+          // Continue with other routes
+        }
+      }
 
     // Select the best route based on execution strategy criteria
     const bestRoute = routeScores.reduce((best, current) => 
@@ -1711,8 +1722,38 @@ class ConfidenceCalibrator {
       responseId
     });
 
-    // Emit the response message
-    this.emit('message', responseMessage);
+      // Emit the response message
+      this.emit('message', responseMessage);
+      
+    } catch (error) {
+      console.error('❌ [EXECUTION STRATEGY AGENT] Error in consensus request:', error);
+      
+      // Send fallback response to prevent timeout
+      const fallbackResponse = {
+        responseId: payload.responseId,
+        agentId: this.config.id,
+        recommendedRoute: 'fallback-route',
+        score: {
+          totalScore: 50,
+          breakdown: { cost: 50, time: 50, security: 50, reliability: 50, slippage: 50 },
+          reasoning: ['Fallback due to consensus error']
+        },
+        confidence: 0.3,
+        reasoning: ['Error occurred during consensus evaluation']
+      };
+      
+      const fallbackMessage: AgentMessage = {
+        id: `consensus-fallback-${Date.now()}`,
+        from: this.config.id,
+        to: 'coordinator',
+        type: MessageType.CONSENSUS_REQUEST,
+        payload: { ...fallbackResponse, responseId: payload.responseId },
+        timestamp: Date.now(),
+        priority: MessagePriority.HIGH
+      };
+      
+      this.emit('message', fallbackMessage);
+    }
   }
 
   private async evaluateRouteForConsensus(
